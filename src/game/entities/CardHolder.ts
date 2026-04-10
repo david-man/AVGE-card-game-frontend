@@ -17,11 +17,13 @@ export class CardHolder
 {
     readonly id: string;
     readonly label: string;
-    readonly x: number;
-    readonly y: number;
+    x: number;
+    y: number;
     readonly width: number;
     readonly height: number;
     readonly zone: Phaser.GameObjects.Zone;
+    readonly background: Phaser.GameObjects.Rectangle;
+    readonly labelText: Phaser.GameObjects.BitmapText;
 
     readonly cards: Card[];
 
@@ -35,7 +37,7 @@ export class CardHolder
         this.height = config.height;
         this.cards = [];
 
-        scene.add.rectangle(config.x, config.y, config.width, config.height, config.color, 0.22)
+        this.background = scene.add.rectangle(config.x, config.y, config.width, config.height, config.color, 0.22)
             .setStrokeStyle(3, 0xffffff, 0.9)
             .setDepth(1);
 
@@ -43,10 +45,19 @@ export class CardHolder
             .setRectangleDropZone(config.width, config.height)
             .setData('zoneId', config.id);
 
-        scene.add.bitmapText(config.x, config.y, 'minogram', config.label, Math.max(12, Math.round(18 * UI_SCALE)))
+        this.labelText = scene.add.bitmapText(config.x, config.y, 'minogram', config.label, Math.max(12, Math.round(18 * UI_SCALE)))
             .setOrigin(0.5)
             .setTint(0xffffff)
             .setDepth(2);
+    }
+
+    setPosition (x: number, y: number): void
+    {
+        this.x = x;
+        this.y = y;
+        this.background.setPosition(x, y);
+        this.zone.setPosition(x, y);
+        this.labelText.setPosition(x, y);
     }
 
     addCard (card: Card): void

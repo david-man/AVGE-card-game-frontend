@@ -1,6 +1,6 @@
 import { Scene } from 'phaser';
 
-import { Card, CardHolder, CardHolderConfig } from '../entities';
+import { Card, CardHolder, CardHolderConfig, EnergyHolder, EnergyHolderConfig, EnergyToken, PlayerId } from '../entities';
 import {
     BASE_HEIGHT,
     BASE_WIDTH,
@@ -9,6 +9,7 @@ import {
     CARD_BASE_WIDTH,
     CARDHOLDER_BASE_WIDTH,
     CARDHOLDER_HEIGHT_MULTIPLIER,
+    ENERGYHOLDER_LAYOUT,
     CARDHOLDER_SPACING_MULTIPLIERS,
     GAME_CENTER_X,
     GAME_CENTER_Y,
@@ -34,6 +35,21 @@ export class Game extends Scene
     cardHolders: CardHolder[];
     cardHolderById: Record<string, CardHolder>;
 
+    energyHolders: EnergyHolder[];
+    energyHolderById: Record<string, EnergyHolder>;
+
+    energyTokens: EnergyToken[];
+    energyTokenById: Record<number, EnergyToken>;
+    energyTokenByBody: Map<Phaser.GameObjects.GameObject, EnergyToken>;
+    activelyDraggedEnergyTokenIds: Set<number>;
+    energyDragStartPositionById: Map<number, { x: number; y: number }>;
+    energyDragDistanceById: Map<number, number>;
+
+    energyZoneIdByOwner: Record<PlayerId, string>;
+    activeViewPlayerId: PlayerId;
+    baseCardHolderPositionById: Record<string, { x: number; y: number }>;
+    baseEnergyHolderPositionById: Record<string, { x: number; y: number }>;
+
     objectWidth: number;
     objectHeight: number;
 
@@ -46,6 +62,7 @@ export class Game extends Scene
     terminalScrollOffset: number;
     terminalPanelBounds: Phaser.Geom.Rectangle;
     terminalCursorVisible: boolean;
+    terminalOutputMaskGraphics: Phaser.GameObjects.Graphics;
 
     cardPreviewPanel: Phaser.GameObjects.Rectangle;
     cardPreviewBody: Phaser.GameObjects.Rectangle;
@@ -62,6 +79,7 @@ export class Game extends Scene
     {
         this.load.setPath('assets');
         this.load.image('background', 'bg.png');
+        this.load.image('pixelviolin', 'pixelviolin.jpg');
         this.load.bitmapFont('minogram', 'minogram_6x10.png', 'minogram_6x10.xml');
     }
 
@@ -85,12 +103,35 @@ export class Game extends Scene
         const holderConfigs = this.buildCardHolderConfigs(BOARD_SCALE);
         this.cardHolders = [];
         this.cardHolderById = {};
+        this.baseCardHolderPositionById = {};
+        this.baseEnergyHolderPositionById = {};
+        this.activeViewPlayerId = 'p1';
 
         for (const config of holderConfigs) {
             const holder = new CardHolder(this, config);
             this.cardHolders.push(holder);
             this.cardHolderById[holder.id] = holder;
+            this.baseCardHolderPositionById[holder.id] = { x: holder.x, y: holder.y };
         }
+
+        this.energyTokens = [];
+        this.energyTokenById = {};
+        this.energyTokenByBody = new Map();
+        this.activelyDraggedEnergyTokenIds = new Set();
+        this.energyDragStartPositionById = new Map();
+        this.energyDragDistanceById = new Map();
+        this.energyZoneIdByOwner = {
+            p1: 'p1-energy',
+            p2: 'p2-energy'
+        };
+        this.energyHolders = [];
+        this.energyHolderById = {};
+
+        this.createEnergyHolders();
+        for (const holder of this.energyHolders) {
+            this.baseEnergyHolderPositionById[holder.id] = { x: holder.x, y: holder.y };
+        }
+        this.createEnergyTokens();
 
         this.cards = [];
         this.cardById = {};
@@ -168,6 +209,7 @@ export class Game extends Scene
 
         this.layoutAllHolders();
         this.redrawAllCardMarks();
+        this.applyBoardView(this.activeViewPlayerId);
 
         this.input.on('dragstart', (_pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.Rectangle) => {
             const card = this.getCardFromGameObject(gameObject);
@@ -387,6 +429,141 @@ export class Game extends Scene
 
             this.redrawAllCardMarks();
         });
+
+        this.input.on('dragstart', (_pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.GameObject) => {
+            const token = this.energyTokenByBody.get(gameObject);
+            if (!token || token.getAttachedToCardId()) {
+                return;
+            }
+
+            this.activelyDraggedEnergyTokenIds.add(token.id);
+            this.energyDragStartPositionById.set(token.id, { x: token.x, y: token.y });
+            this.energyDragDistanceById.set(token.id, 0);
+            token.setDepth(1200);
+        });
+
+        this.input.on('drag', (_pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.GameObject, dragX: number, dragY: number) => {
+            const token = this.energyTokenByBody.get(gameObject);
+            if (!token || !this.activelyDraggedEnergyTokenIds.has(token.id)) {
+                return;
+            }
+
+            token.setPosition(dragX, dragY);
+
+            const dragStartPosition = this.energyDragStartPositionById.get(token.id);
+            if (dragStartPosition) {
+                const movedDistance = Phaser.Math.Distance.Between(dragStartPosition.x, dragStartPosition.y, dragX, dragY);
+                const priorMaxDistance = this.energyDragDistanceById.get(token.id) ?? 0;
+                if (movedDistance > priorMaxDistance) {
+                    this.energyDragDistanceById.set(token.id, movedDistance);
+                }
+            }
+        });
+
+        this.input.on('drop', (_pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.GameObject, dropZone: Phaser.GameObjects.Zone) => {
+            const token = this.energyTokenByBody.get(gameObject);
+            if (!token || !this.activelyDraggedEnergyTokenIds.has(token.id)) {
+                return;
+            }
+
+            this.activelyDraggedEnergyTokenIds.delete(token.id);
+            this.energyDragStartPositionById.delete(token.id);
+            this.energyDragDistanceById.delete(token.id);
+
+            const ownerEnergyZoneId = this.energyZoneIdByOwner[token.ownerId];
+            const targetZoneId = (dropZone?.getData('zoneId') as string | undefined) ?? null;
+            const characterTarget = this.findOverlappedOwnedCharacterForToken(token);
+
+            if (characterTarget) {
+                this.attachEnergyTokenToCard(token, characterTarget);
+                return;
+            }
+
+            if (targetZoneId === ownerEnergyZoneId) {
+                token.setAttachedToCardId(null);
+                this.setEnergyTokenZone(token, ownerEnergyZoneId);
+                this.layoutEnergyTokensInZone(ownerEnergyZoneId);
+                return;
+            }
+
+            this.layoutEnergyTokensInZone(token.getZoneId());
+        });
+
+        this.input.on('dragend', (_pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.GameObject, dropped: boolean) => {
+            const token = this.energyTokenByBody.get(gameObject);
+            if (!token) {
+                return;
+            }
+
+            this.activelyDraggedEnergyTokenIds.delete(token.id);
+            this.energyDragStartPositionById.delete(token.id);
+            this.energyDragDistanceById.delete(token.id);
+
+            if (!dropped) {
+                this.layoutEnergyTokensInZone(token.getZoneId());
+            }
+        });
+    }
+
+    private createEnergyHolders (): void
+    {
+        const p2Discard = this.cardHolderById['p2-discard'];
+        const p1Discard = this.cardHolderById['p1-discard'];
+
+        const holderWidth = Math.round(this.objectWidth * ENERGYHOLDER_LAYOUT.widthMultiplier);
+        const holderHeight = Math.round(this.objectHeight * ENERGYHOLDER_LAYOUT.heightMultiplier);
+        const xOffset = Math.round(this.objectWidth * ENERGYHOLDER_LAYOUT.xOffsetMultiplier);
+
+        const p2EnergyX = p2Discard.x - xOffset;
+        const p1EnergyX = p1Discard.x - xOffset;
+        const p2EnergyY = p2Discard.y;
+        const p1EnergyY = p1Discard.y;
+
+        const discardZoneId = 'energy-discard';
+        const discardX = Math.round((p1EnergyX + p2EnergyX) / 2);
+        const discardY = Math.round((p1EnergyY + p2EnergyY) / 2);
+
+        const createHolder = (config: EnergyHolderConfig) => {
+            const holder = new EnergyHolder(this, config);
+            this.energyHolders.push(holder);
+            this.energyHolderById[holder.id] = holder;
+        };
+
+        createHolder({ id: this.energyZoneIdByOwner.p2, label: 'P2 ENERGY', x: p2EnergyX, y: p2EnergyY, width: holderWidth, height: holderHeight, color: 0x4361ee });
+        createHolder({ id: discardZoneId, label: 'ENERGY DISCARD', x: discardX, y: discardY, width: holderWidth, height: holderHeight, color: 0x6c757d });
+        createHolder({ id: this.energyZoneIdByOwner.p1, label: 'P1 ENERGY', x: p1EnergyX, y: p1EnergyY, width: holderWidth, height: holderHeight, color: 0x3a0ca3 });
+    }
+
+    private createEnergyTokens (): void
+    {
+        const makeTokensForOwner = (ownerId: PlayerId, idStart: number) => {
+            const zoneId = this.energyZoneIdByOwner[ownerId];
+            const holder = this.energyHolderById[zoneId];
+            const radius = Math.max(10, Math.round(this.objectWidth * 0.14));
+
+            for (let i = 0; i < 10; i += 1) {
+                const tokenId = idStart + i;
+                const token = new EnergyToken(this, {
+                    id: tokenId,
+                    ownerId,
+                    x: holder.x,
+                    y: holder.y,
+                    radius,
+                    zoneId
+                });
+
+                this.energyTokens.push(token);
+                this.energyTokenById[tokenId] = token;
+                this.energyTokenByBody.set(token.body, token);
+                this.input.setDraggable(token.body);
+                holder.addToken(token);
+            }
+
+            this.layoutEnergyTokensInZone(zoneId);
+        };
+
+        makeTokensForOwner('p1', 1);
+        makeTokensForOwner('p2', 11);
     }
 
     private buildCardHolderConfigs (scale: number): CardHolderConfig[]
@@ -447,7 +624,6 @@ export class Game extends Scene
         const panelY = marginY + Math.round(panelHeight / 2);
         const textScale = UI_SCALE * 1.35;
         const titleSize = Math.max(14, Math.round(14 * textScale));
-        const helpSize = Math.max(11, Math.round(11 * textScale));
         const outputSize = Math.max(10, Math.round(11 * textScale));
         const inputSize = Math.max(12, Math.round(12 * textScale));
         const leftPadding = Math.round(panelWidth * 0.07);
@@ -455,6 +631,9 @@ export class Game extends Scene
         const topY = panelY - Math.round(panelHeight / 2);
         const bottomY = panelY + Math.round(panelHeight / 2);
         const outputTopY = topY + Math.round(panelHeight * 0.20);
+        const inputStripHeight = Math.max(22, Math.round(panelHeight * 0.15));
+        const inputStripTopY = bottomY - inputStripHeight - Math.round(panelHeight * 0.03);
+        const outputBottomY = inputStripTopY - Math.round(panelHeight * 0.03);
         const inputY = bottomY - Math.round(panelHeight * 0.09);
 
         this.add.rectangle(panelX, panelY, panelWidth, panelHeight, 0x0b132b, 0.92)
@@ -473,26 +652,20 @@ export class Game extends Scene
             .setTint(0xffffff)
             .setDepth(31);
 
-        this.add.bitmapText(panelX, topY + Math.round(panelHeight * 0.12), 'minogram', 'mv [cardid] [cardholderid]', helpSize)
-            .setOrigin(0.5)
-            .setTint(0x9bd1ff)
-            .setDepth(31);
-
-        this.add.bitmapText(panelX, topY + Math.round(panelHeight * 0.16), 'minogram', 'flip [cardid]', helpSize)
-            .setOrigin(0.5)
-            .setTint(0x9bd1ff)
-            .setDepth(31);
-
         this.terminalLines = [
             'Ready.',
             'Examples: mv CARD-2 p1-discard',
-            '          flip CARD-2'
+            '          mv CARD-2 p1-hand 0',
+            '          flip CARD-2',
+            '          rm 3',
+            '          boom CARD-1',
+            '          view p2'
         ];
         this.terminalInput = '';
         this.maxTerminalLines = 300;
         this.terminalScrollOffset = 0;
         this.terminalCursorVisible = true;
-        this.terminalVisibleLineCount = Math.max(4, Math.floor((inputY - outputTopY) / Math.max(1, outputSize)) - 1);
+        this.terminalVisibleLineCount = Math.max(4, Math.floor((outputBottomY - outputTopY) / Math.max(1, outputSize)) - 1);
 
         this.terminalOutputText = this.add.bitmapText(panelX - Math.round(panelWidth / 2) + leftPadding, outputTopY, 'minogram', '', outputSize)
             .setOrigin(0, 0)
@@ -500,10 +673,24 @@ export class Game extends Scene
             .setMaxWidth(contentWidth)
             .setDepth(31);
 
+        this.terminalOutputMaskGraphics = this.add.graphics();
+        this.terminalOutputMaskGraphics.fillStyle(0xffffff, 1);
+        this.terminalOutputMaskGraphics.fillRect(
+            panelX - Math.round(panelWidth / 2) + leftPadding,
+            outputTopY,
+            contentWidth,
+            Math.max(1, outputBottomY - outputTopY)
+        );
+        this.terminalOutputText.setMask(this.terminalOutputMaskGraphics.createGeometryMask());
+
+        this.add.rectangle(panelX, inputStripTopY + Math.round(inputStripHeight / 2), panelWidth - Math.round(panelWidth * 0.06), inputStripHeight, 0x0f172a, 0.95)
+            .setStrokeStyle(1, 0xffffff, 0.35)
+            .setDepth(31.2);
+
         this.terminalInputText = this.add.bitmapText(panelX - Math.round(panelWidth / 2) + leftPadding, inputY, 'minogram', '', inputSize)
             .setOrigin(0, 0)
             .setTint(0xffffff)
-            .setDepth(31);
+            .setDepth(31.3);
 
         this.refreshTerminalText();
 
@@ -725,16 +912,39 @@ export class Game extends Scene
 
         this.appendTerminalLine(`> ${command}`);
 
-        const [rawAction, rawCardId, rawHolderId] = command.split(/\s+/);
+        const [rawAction, rawArgOne, rawArgTwo, rawArgThree] = command.split(/\s+/);
         const action = rawAction.toLowerCase();
 
+        if (action === 'rm') {
+            if (!rawArgOne) {
+                this.appendTerminalLine('Usage: rm [energyid]');
+                return;
+            }
+
+            const tokenId = Number(rawArgOne);
+            if (!Number.isInteger(tokenId)) {
+                this.appendTerminalLine(`Invalid energy id: ${rawArgOne}`);
+                return;
+            }
+
+            const token = this.energyTokenById[tokenId];
+            if (!token) {
+                this.appendTerminalLine(`Unknown energy token: ${tokenId}`);
+                return;
+            }
+
+            this.moveEnergyTokenToDiscard(token);
+            this.appendTerminalLine(`ENERGY-${tokenId} -> energy-discard`);
+            return;
+        }
+
         if (action === 'flip') {
-            if (!rawCardId) {
+            if (!rawArgOne) {
                 this.appendTerminalLine('Usage: flip [cardid]');
                 return;
             }
 
-            const cardId = rawCardId.toUpperCase();
+            const cardId = rawArgOne.toUpperCase();
             const card = this.cardById[cardId];
 
             if (!card) {
@@ -748,14 +958,61 @@ export class Game extends Scene
             return;
         }
 
-        if (action !== 'mv' || !rawCardId || !rawHolderId) {
-            this.appendTerminalLine('Usage: mv [cardid] [cardholderid]');
-            this.appendTerminalLine('       flip [cardid]');
+        if (action === 'boom') {
+            if (!rawArgOne) {
+                this.appendTerminalLine('Usage: boom [cardid]');
+                return;
+            }
+
+            const cardId = rawArgOne.toUpperCase();
+            const card = this.cardById[cardId];
+
+            if (!card) {
+                this.appendTerminalLine(`Unknown card: ${cardId}`);
+                return;
+            }
+
+            if (card.getCardType() !== 'character') {
+                this.appendTerminalLine(`boom only works on character cards: ${cardId}`);
+                return;
+            }
+
+            this.playPixelViolinExplosion(card);
+            this.appendTerminalLine(`BOOM on ${cardId}`);
             return;
         }
 
-        const cardId = rawCardId.toUpperCase();
-        const holderId = rawHolderId.toLowerCase();
+        if (action === 'view') {
+            const requestedView = rawArgOne?.toLowerCase();
+
+            if (!requestedView) {
+                const nextView: PlayerId = this.activeViewPlayerId === 'p1' ? 'p2' : 'p1';
+                this.applyBoardView(nextView);
+                this.appendTerminalLine(`View -> ${nextView.toUpperCase()}`);
+                return;
+            }
+
+            if (requestedView !== 'p1' && requestedView !== 'p2') {
+                this.appendTerminalLine('Usage: view [p1|p2]');
+                return;
+            }
+
+            this.applyBoardView(requestedView);
+            this.appendTerminalLine(`View -> ${requestedView.toUpperCase()}`);
+            return;
+        }
+
+        if (action !== 'mv' || !rawArgOne || !rawArgTwo) {
+            this.appendTerminalLine('Usage: mv [cardid] [cardholderid] [index?]');
+            this.appendTerminalLine('       flip [cardid]');
+            this.appendTerminalLine('       rm [energyid]');
+            this.appendTerminalLine('       boom [cardid]');
+            this.appendTerminalLine('       view [p1|p2]');
+            return;
+        }
+
+        const cardId = rawArgOne.toUpperCase();
+        const holderId = rawArgTwo.toLowerCase();
         const card = this.cardById[cardId];
         const targetHolder = this.cardHolderById[holderId];
 
@@ -767,6 +1024,24 @@ export class Game extends Scene
         if (!targetHolder) {
             this.appendTerminalLine(`Unknown holder: ${holderId}`);
             return;
+        }
+
+        let insertIndex: number | undefined;
+        if (rawArgThree !== undefined) {
+            const parsedIndex = Number(rawArgThree);
+            if (!Number.isInteger(parsedIndex) || parsedIndex < 0) {
+                this.appendTerminalLine(`Invalid index: ${rawArgThree}`);
+                this.appendTerminalLine('Index must be a non-negative integer.');
+                return;
+            }
+
+            if (parsedIndex > targetHolder.cards.length) {
+                this.appendTerminalLine(`Index out of range: ${parsedIndex}`);
+                this.appendTerminalLine(`Valid range for ${holderId}: 0-${targetHolder.cards.length}`);
+                return;
+            }
+
+            insertIndex = parsedIndex;
         }
 
         if (card.getZoneId() === holderId) {
@@ -783,9 +1058,13 @@ export class Game extends Scene
                 this.detachChildrenIfParentInDiscard(card);
                 this.layoutAllHolders();
                 this.redrawAllCardMarks();
+                if (insertIndex !== undefined) {
+                    this.appendTerminalLine(`${cardId} -> ${holderId}[${insertIndex}]`);
+                    return;
+                }
                 this.appendTerminalLine(`${cardId} -> ${holderId}`);
             });
-        });
+        }, insertIndex);
     }
 
     private getCardFromGameObject (gameObject: Phaser.GameObjects.Rectangle): Card | undefined
@@ -803,7 +1082,9 @@ export class Game extends Scene
         }
 
         if (this.selectedCard) {
+            const previouslySelectedCard = this.selectedCard;
             this.selectedCard.setSelected(false);
+            this.scheduleAttachmentResync(previouslySelectedCard);
         }
 
         // Restore baseline holder depths before applying the temporary selection depth.
@@ -814,6 +1095,7 @@ export class Game extends Scene
         this.selectedCard.setDepth(10000);
         this.selectedCard.redrawMarks();
         this.showCardPreview(this.selectedCard);
+        this.scheduleAttachmentResync(this.selectedCard);
     }
 
     private clearCardSelection (): void
@@ -822,6 +1104,7 @@ export class Game extends Scene
             return;
         }
 
+        const deselectedCard = this.selectedCard;
         this.selectedCard.setSelected(false);
         this.selectedCard = null;
         this.hideCardPreview();
@@ -829,6 +1112,20 @@ export class Game extends Scene
         // Return all cards to their normal holder-controlled depths.
         this.layoutAllHolders();
         this.redrawAllCardMarks();
+        this.scheduleAttachmentResync(deselectedCard);
+    }
+
+    private scheduleAttachmentResync (card: Card): void
+    {
+        // Selection animation runs for ~140ms, so keep attached entities synced through the tween.
+        this.time.addEvent({
+            delay: 16,
+            repeat: 10,
+            callback: () => {
+                this.updateAttachedChildrenPositions(card);
+                this.redrawAllCardMarks();
+            }
+        });
     }
 
     private layoutAllHolders (): void
@@ -846,6 +1143,60 @@ export class Game extends Scene
         }
 
         this.layoutStadiumStack();
+        this.layoutEnergyTokensInZone(this.energyZoneIdByOwner.p1);
+        this.layoutEnergyTokensInZone(this.energyZoneIdByOwner.p2);
+        this.layoutEnergyTokensInZone('energy-discard');
+        this.applyHandVisibilityByView();
+    }
+
+    private applyBoardView (viewPlayerId: PlayerId): void
+    {
+        this.activeViewPlayerId = viewPlayerId;
+        const rotateTopBottom = viewPlayerId === 'p2';
+
+        for (const holder of this.cardHolders) {
+            const basePosition = this.baseCardHolderPositionById[holder.id];
+            if (!basePosition) {
+                continue;
+            }
+
+            const x = basePosition.x;
+            const y = rotateTopBottom ? ((GAME_CENTER_Y * 2) - basePosition.y) : basePosition.y;
+            holder.setPosition(x, y);
+        }
+
+        for (const holder of this.energyHolders) {
+            const basePosition = this.baseEnergyHolderPositionById[holder.id];
+            if (!basePosition) {
+                continue;
+            }
+
+            const x = basePosition.x;
+            const y = rotateTopBottom ? ((GAME_CENTER_Y * 2) - basePosition.y) : basePosition.y;
+            holder.setPosition(x, y);
+        }
+
+        this.layoutAllHolders();
+        this.redrawAllCardMarks();
+    }
+
+    private applyHandVisibilityByView (): void
+    {
+        const hiddenOwner: PlayerId = this.activeViewPlayerId === 'p1' ? 'p2' : 'p1';
+        const visibleHandZone = `${this.activeViewPlayerId}-hand`;
+        const hiddenHandZone = `${hiddenOwner}-hand`;
+
+        for (const card of this.cards) {
+            const zoneId = card.getZoneId();
+            if (zoneId === hiddenHandZone) {
+                card.setTurnedOver(true);
+                continue;
+            }
+
+            if (zoneId === visibleHandZone) {
+                card.setTurnedOver(false);
+            }
+        }
     }
 
     private redrawAllCardMarks (): void
@@ -947,13 +1298,181 @@ export class Game extends Scene
         for (const child of children) {
             this.updateAttachedCardPosition(child, parent);
         }
+
+        this.updateAttachedEnergyTokenPositions(parent);
+    }
+
+    private getAttachedEnergyTokens (parentCardId: string): EnergyToken[]
+    {
+        return this.energyTokens
+            .filter((token) => token.getAttachedToCardId() === parentCardId)
+            .sort((a, b) => a.id - b.id);
+    }
+
+    private updateAttachedEnergyTokenPositions (parent: Card): void
+    {
+        const attachedTokens = this.getAttachedEnergyTokens(parent.id);
+        if (attachedTokens.length === 0) {
+            return;
+        }
+
+        const parentBounds = parent.getBounds();
+        const tokenWidth = attachedTokens[0].getDisplayWidth();
+        const tokenHeight = attachedTokens[0].getDisplayHeight();
+        const horizontalStep = tokenWidth * 0.25;
+
+        const startX = parentBounds.left + (tokenWidth / 2) + 2;
+        const y = parentBounds.bottom - (tokenHeight / 2) - 2;
+
+        attachedTokens.forEach((token, index) => {
+            token.setPosition(startX + (index * horizontalStep), y);
+            token.setDepth(parent.depth + 1 + (index * 2));
+        });
+    }
+
+    private findOverlappedOwnedCharacterForToken (token: EnergyToken): Card | null
+    {
+        const tokenBounds = token.getBounds();
+        const ownerId = token.ownerId;
+
+        if (token.getZoneId() !== this.energyZoneIdByOwner[ownerId]) {
+            return null;
+        }
+
+        for (const card of this.cards) {
+            if (card.getOwnerId() !== ownerId || card.getCardType() !== 'character') {
+                continue;
+            }
+
+            const zoneId = card.getZoneId();
+            if (zoneId !== `${ownerId}-bench` && zoneId !== `${ownerId}-active`) {
+                continue;
+            }
+
+            if (Phaser.Geom.Intersects.RectangleToRectangle(tokenBounds, card.getBounds())) {
+                return card;
+            }
+        }
+
+        return null;
+    }
+
+    private attachEnergyTokenToCard (token: EnergyToken, parent: Card): void
+    {
+        token.setAttachedToCardId(parent.id);
+        this.setEnergyTokenZone(token, this.energyZoneIdByOwner[token.ownerId]);
+        this.updateAttachedEnergyTokenPositions(parent);
+    }
+
+    private layoutEnergyTokensInZone (zoneId: string): void
+    {
+        const holder = this.energyHolderById[zoneId];
+        if (!holder) {
+            return;
+        }
+
+        const zoneArea = holder.getBounds();
+
+        const tokens = holder.tokens
+            .filter((token) => !token.getAttachedToCardId())
+            .sort((a, b) => a.id - b.id);
+
+        if (tokens.length === 0) {
+            return;
+        }
+
+        const columns = zoneId === 'energy-discard' ? 4 : 5;
+        const rowGap = Math.max(2, Math.round(tokens[0].getDisplayHeight() * 0.25));
+        const colGap = Math.max(2, Math.round(tokens[0].getDisplayWidth() * 0.2));
+
+        const startX = zoneArea.left + Math.round(zoneArea.width * 0.14);
+        const startY = zoneArea.top + Math.round(zoneArea.height * 0.26);
+
+        tokens.forEach((token, index) => {
+            const row = Math.floor(index / columns);
+            const col = index % columns;
+            const x = startX + (col * (token.getDisplayWidth() + colGap));
+            const y = startY + (row * (token.getDisplayHeight() + rowGap));
+
+            token.setPosition(x, y);
+            token.setDepth(20 + (index * 2));
+        });
+    }
+
+    private moveEnergyTokenToDiscard (token: EnergyToken): void
+    {
+        const attachedToCardId = token.getAttachedToCardId();
+        if (attachedToCardId) {
+            token.setAttachedToCardId(null);
+        }
+
+        this.setEnergyTokenZone(token, 'energy-discard');
+        this.layoutEnergyTokensInZone('energy-discard');
+    }
+
+    private setEnergyTokenZone (token: EnergyToken, zoneId: string): void
+    {
+        const oldZoneId = token.getZoneId();
+        if (oldZoneId === zoneId) {
+            token.setZoneId(zoneId);
+            return;
+        }
+
+        const oldHolder = this.energyHolderById[oldZoneId];
+        if (oldHolder) {
+            oldHolder.removeToken(token);
+        }
+
+        const newHolder = this.energyHolderById[zoneId];
+        if (newHolder) {
+            newHolder.addToken(token);
+        }
+
+        token.setZoneId(zoneId);
+    }
+
+    private playPixelViolinExplosion (card: Card): void
+    {
+        const durationMs = 1000;
+        const count = 28;
+        const baseScale = Math.max(0.08, this.objectWidth / 900);
+
+        for (let i = 0; i < count; i += 1) {
+            const image = this.add.image(card.x, card.y, 'pixelviolin')
+                .setDepth(20000 + i)
+                .setScale(baseScale * Phaser.Math.FloatBetween(0.9, 1.3))
+                .setAlpha(1)
+                .setAngle(Phaser.Math.Between(0, 360));
+
+            const angle = Phaser.Math.FloatBetween(0, Math.PI * 2);
+            const distance = Phaser.Math.FloatBetween(this.objectWidth * 0.2, this.objectWidth * 1.0);
+            const targetX = card.x + (Math.cos(angle) * distance);
+            const targetY = card.y + (Math.sin(angle) * distance);
+
+            this.tweens.add({
+                targets: image,
+                x: targetX,
+                y: targetY,
+                alpha: 0,
+                angle: image.angle + Phaser.Math.Between(-180, 180),
+                duration: durationMs,
+                ease: 'Cubic.easeOut',
+                onComplete: () => {
+                    image.destroy();
+                }
+            });
+        }
     }
 
     private updateAttachedCardPosition (child: Card, parent: Card): void
     {
-        const offsetX = this.objectWidth * 0.26;
-        const offsetY = this.objectHeight * 0.2;
-        child.setPosition(parent.x + offsetX, parent.y + offsetY);
+        const parentBounds = parent.getBounds();
+        const childBounds = child.getBounds();
+        const edgePadding = 2;
+        const x = parentBounds.right - (childBounds.width / 2) - edgePadding;
+        const y = parentBounds.bottom - (childBounds.height / 2) - edgePadding;
+
+        child.setPosition(x, y);
         child.setDepth(parent.depth + 0.5);
     }
 
@@ -964,7 +1483,7 @@ export class Game extends Scene
         }
     }
 
-    private moveCardToZone (card: Card, zoneId: string, onComplete?: () => void): void
+    private moveCardToZone (card: Card, zoneId: string, onComplete?: () => void, insertIndex?: number): void
     {
         const originZoneId = card.getZoneId();
         const requiresFaceFlipBeforeMove = this.isFaceDownZone(originZoneId) !== this.isFaceDownZone(zoneId);
@@ -972,7 +1491,13 @@ export class Game extends Scene
         const completeMove = () => {
             this.detachCard(card);
             this.removeCardFromAllHolders(card);
-            this.cardHolderById[zoneId].addCard(card);
+            const targetHolder = this.cardHolderById[zoneId];
+            if (insertIndex !== undefined) {
+                targetHolder.insertCard(card, insertIndex);
+            }
+            else {
+                targetHolder.addCard(card);
+            }
             card.setZoneId(zoneId);
             if (onComplete) {
                 onComplete();
@@ -1029,6 +1554,11 @@ export class Game extends Scene
             this.removeCardFromAllHolders(child);
             child.setZoneId(ownerDiscardZone);
             this.cardHolderById[ownerDiscardZone].addCard(child);
+        }
+
+        const attachedEnergyTokens = this.getAttachedEnergyTokens(parentCardId);
+        for (const token of attachedEnergyTokens) {
+            this.moveEnergyTokenToDiscard(token);
         }
     }
 }

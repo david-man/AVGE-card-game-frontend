@@ -36,3 +36,9 @@ export const CARDHOLDER_SPACING_MULTIPLIERS = {
 
 // Horizontal inner padding used when laying out cards inside holders.
 export const CARDHOLDER_LAYOUT_SIDE_PADDING_MULTIPLIER = 0.35;
+
+export const ENERGYHOLDER_LAYOUT = {
+	widthMultiplier: 2.05,
+	heightMultiplier: 0.48,
+	xOffsetMultiplier: 2.25
+} as const;
