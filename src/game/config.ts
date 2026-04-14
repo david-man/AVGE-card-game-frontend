@@ -16,6 +16,41 @@ export const BOARD_SCALE = 0.8;
 
 export const CARD_BASE_WIDTH = 60;
 export const CARD_BASE_HEIGHT = 108;
+export const CARD_BORDER_WIDTH = 4;
+export const CARD_SELECTED_BORDER_WIDTH = 8;
+
+export const CARD_DEFAULTS = {
+	characterHp: 100,
+	characterMaxHp: 100,
+	borderColor: 0xffffff,
+	baseScale: 1
+} as const;
+
+export const CARD_VISUALS = {
+	faceDownFillColor: 0x1f2937
+} as const;
+
+export const CARD_TEXT_LAYOUT = {
+	idYOffset: 10,
+	typeYOffset: 10,
+	hpPadding: 2,
+	minIdFontSize: 10,
+	minTypeFontSize: 8,
+	minHpFontSize: 10,
+	baseIdFontSize: 15,
+	baseTypeFontSize: 11,
+	baseHpFontSize: 9
+} as const;
+
+export const CARD_ANIMATION = {
+	flipDurationMs: 110,
+	selectionDurationMs: 140
+} as const;
+
+export const CARD_SELECTION_SCALE_MULTIPLIERS = {
+	x: 1.0,
+	y: 1.08
+} as const;
 
 export const CARDHOLDER_BASE_WIDTH = {
 	hand: 640,
@@ -41,4 +76,289 @@ export const ENERGYHOLDER_LAYOUT = {
 	widthMultiplier: 2.05,
 	heightMultiplier: 0.48,
 	xOffsetMultiplier: 2.25
+} as const;
+
+export const ENERGY_TOKEN_DEPTHS = {
+	minZone: 16,
+	minAttached: 210,
+	maxBelowUi: 1000
+} as const;
+
+export const GAME_SCENE_VISUALS = {
+	backgroundColor: 0x00ff00,
+	backgroundAlpha: 0.5,
+	inputLockColor: 0x7a7a7a,
+	inputLockAlpha: 0.45,
+	inputLockDepth: 299
+} as const;
+
+export const GAME_INTERACTION = {
+	minDragDistancePx: 8,
+	minDragDistanceWidthRatio: 0.08,
+	terminalInputMaxLength: 240,
+	terminalWheelStep: 2,
+	terminalCursorBlinkDelayMs: 450
+} as const;
+
+export const GAME_DEPTHS = {
+	cardDragging: 200,
+	cardSelected: 200,
+	cardBase: 10,
+	stadiumBase: 30,
+	terminalPanel: 300,
+	terminalText: 310,
+	terminalInputStrip: 312,
+	terminalInputText: 313,
+	previewPanel: 1000,
+	previewCard: 1001,
+	previewText: 1001,
+	explosionBase: 20000,
+	attachmentDepthOffset: 0.5
+} as const;
+
+export const GAME_COMMAND_TERMINAL_LAYOUT = {
+	panelWidthBase: 240,
+	panelHeightBase: 360,
+	marginBase: 24,
+	textScaleMultiplier: 1.35,
+	titleFontSize: 14,
+	outputFontSize: 11,
+	inputFontSize: 12,
+	leftPaddingRatio: 0.07,
+	outputTopRatio: 0.2,
+	inputStripHeightRatio: 0.15,
+	inputStripMinHeight: 22,
+	inputStripTopGapRatio: 0.03,
+	outputBottomGapRatio: 0.03,
+	inputYRatio: 0.09,
+	inputStripWidthRatio: 0.94,
+	panelFillColor: 0x0b132b,
+	panelFillAlpha: 0.92,
+	panelStrokeWidth: 2,
+	panelStrokeColor: 0xffffff,
+	panelStrokeAlpha: 0.7,
+	outputTint: 0xd6e8ff,
+	inputStripFillColor: 0x0f172a,
+	inputStripFillAlpha: 0.95,
+	inputStripStrokeWidth: 1,
+	inputStripStrokeColor: 0xffffff,
+	inputStripStrokeAlpha: 0.35,
+	inputTextTint: 0xffffff,
+	maxLines: 300,
+	minVisibleLineCount: 4
+} as const;
+
+export const GAME_PREVIEW_LAYOUT = {
+	panelWidthBase: 240,
+	panelHeightBase: 300,
+	gapYBase: 20,
+	sideMarginBase: 24,
+	cardWidthMultiplier: 1.9,
+	cardHeightMultiplier: 1.9,
+	cardCenterYRatio: 0.34,
+	idYOffsetRatio: 0.16,
+	typeYOffsetRatio: 0.16,
+	hpOffsetXRatio: 0.06,
+	hpOffsetYRatio: 0.06,
+	paragraphXRatio: 0.08,
+	paragraphYRatio: 0.7,
+	paragraphWidthRatio: 0.84,
+	panelFillColor: 0x101828,
+	panelFillAlpha: 0.92,
+	panelStrokeWidth: 2,
+	panelStrokeColor: 0xffffff,
+	panelStrokeAlpha: 0.7,
+	cardFillColor: 0x1f2937,
+	cardFillAlpha: 1,
+	idFontSize: 16,
+	typeFontSize: 14,
+	hpFontSize: 11,
+	paragraphFontSize: 10,
+	typeTint: 0xcde7ff,
+	paragraphTint: 0xe2e8f0
+} as const;
+
+export const GAME_CARD_ACTION_BUTTON_LAYOUT = {
+	leftMarginBase: 24,
+	bottomMarginBase: 40,
+	buttonRadiusBase: 28,
+	buttonGapBase: 10,
+	fontSize: 12,
+	fillColor: 0x172554,
+	fillAlpha: 0.94,
+	strokeWidth: 2,
+	strokeColor: 0xffffff,
+	strokeAlpha: 0.8,
+	textTint: 0xffffff,
+	hoverScale: 1.18,
+	hoverDurationMs: 120
+} as const;
+
+export const GAME_SURRENDER_BUTTON_LAYOUT = {
+	radiusBase: 22,
+	handOffsetXBase: 14,
+	handOffsetYBase: 0,
+	confirmWindowMs: 5000,
+	fontSize: 16,
+	fillColor: 0x7f1d1d,
+	fillAlpha: 0.92,
+	strokeWidth: 2,
+	strokeColor: 0xffffff,
+	strokeAlpha: 0.75,
+	textTint: 0xffffff,
+	label: 'S',
+	depth: 316
+} as const;
+
+export const GAME_INPUT_SELECTION_OVERLAY = {
+	cardWidthRatio: 0.07,
+	cardWidthMin: 120,
+	cardHeightRatio: 1.65,
+	startYRatio: 0.26,
+	rowGapRatio: 0.045,
+	rowGapMin: 22,
+	rowSpacingRatio: 0.012,
+	rowSpacingMin: 16,
+	itemLabelYOffsetRatio: 0.18,
+	itemSubLabelYOffsetRatio: 0.14,
+	assignmentLabelYOffsetRatio: 0.48,
+	itemTextMaxWidthPadding: 12,
+	noneRowGapMultiplier: 1,
+	numbersRowGapMultiplier: 1,
+	submitRowGapMultiplier: 1,
+	numberButtonSizeRatio: 0.024,
+	numberButtonSizeMin: 34,
+	numberButtonGapRatio: 0.22,
+	numberButtonGapMin: 8,
+	submitWidthRatio: 0.12,
+	submitWidthMin: 170,
+	submitHeightRatio: 0.055,
+	submitHeightMin: 42,
+	titleFontSizeRatio: 0.22,
+	titleFontSizeMin: 18,
+	hintFontSizeRatio: 0.15,
+	hintFontSizeMin: 14,
+	itemLabelFontSizeRatio: 0.13,
+	itemLabelFontSizeMin: 11,
+	itemSubLabelFontSizeRatio: 0.11,
+	itemSubLabelFontSizeMin: 10,
+	assignmentFontSizeRatio: 0.11,
+	assignmentFontSizeMin: 10,
+	numberLabelFontSizeRatio: 0.12,
+	numberLabelFontSizeMin: 11,
+	submitLabelFontSizeRatio: 0.14,
+	submitLabelFontSizeMin: 12
+} as const;
+
+export const GAME_INPUT_OVERLAY_HEADER_LAYOUT = {
+	messageGapRatio: 0.032,
+	messageGapMin: 22,
+	titleFontSizeRatio: 0.018,
+	titleFontSizeMin: 20
+} as const;
+
+export const PLAYER_TURN_ATTRIBUTE_DEFAULTS = {
+	ENERGY_ADD_REMAINING_IN_TURN: 0,
+	KO_COUNT: 0,
+	SUPPORTER_USES_REMAINING_IN_TURN: 0,
+	SWAP_REMAINING_IN_TURN: 0,
+	ATTACKS_LEFT: 0
+} as const;
+
+export const GAME_PLAYER_STATS_HUD_LAYOUT = {
+	leftMarginBase: 12,
+	topMarginBase: 36,
+	rowGapBase: 18,
+	adminColumnGapBase: 360,
+	fontSize: 18,
+	tint: 0xffffff,
+	depth: 315
+} as const;
+
+export const PLAYER_STARTING_ENERGY_TOKEN_IDS: Record<'p1' | 'p2', number[]> = {
+	p1: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+	p2: [11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+};
+
+export const GAME_LAYOUT = {
+	holderExtraHorizontalStepBase: 18,
+	selectionResyncDelayMs: 16,
+	selectionResyncRepeats: 10,
+	cardMoveDurationMs: 260,
+	cardMoveToolScale: 0.55,
+	toolAttachmentEdgePadding: 2,
+	energyTokenAttachedHorizontalStepRatio: 0.25,
+	energyTokenAttachedPadding: 2,
+	energyTokenZoneStartXRatio: 0.14,
+	energyTokenZoneStartYRatio: 0.26,
+	energyTokenZoneRowGapRatio: 0.25,
+	energyTokenZoneColGapRatio: 0.2,
+	energyTokenZoneMinGapPx: 2,
+	energyTokenZoneColumnsDefault: 5,
+	energyTokenZoneColumnsDiscard: 4,
+	energyTokenRadiusMin: 10,
+	energyTokenRadiusWidthRatio: 0.14,
+	energyTokenCountPerPlayer: 10,
+	energyTokenP1IdStart: 1,
+	energyTokenP2IdStart: 11,
+	energyStadiumOffsetMultiplier: 1.8
+} as const;
+
+export const GAME_SHUFFLE_ANIMATION = {
+	minCardsRequired: 2,
+	scatterXMinPx: 8,
+	scatterYMinPx: 6,
+	scatterXWidthRatio: 0.2,
+	scatterYHeightRatio: 0.1,
+	spreadDurationMinMs: 90,
+	spreadDurationMoveDurationRatio: 0.28,
+	settleDurationMinMs: 120,
+	settleDurationMoveDurationRatio: 0.34,
+	cardDelayStepMs: 18
+} as const;
+
+export const GAME_EXPLOSION = {
+	durationMs: 1000,
+	count: 28,
+	minScale: 0.08,
+	scaleDivisor: 900,
+	scaleMinMultiplier: 0.9,
+	scaleMaxMultiplier: 1.3,
+	distanceMinWidthRatio: 0.2,
+	distanceMaxWidthRatio: 1.0,
+	initialRotationMin: 0,
+	initialRotationMax: 360,
+	rotationDeltaMin: -180,
+	rotationDeltaMax: 180
+} as const;
+
+export const ENTITY_VISUALS = {
+	cardHolderFillAlpha: 0.22,
+	cardHolderStrokeWidth: 3,
+	cardHolderStrokeColor: 0xffffff,
+	cardHolderStrokeAlpha: 0.9,
+	cardHolderDepth: 1,
+	cardHolderLabelBaseSize: 18,
+	cardHolderLabelMinSize: 12,
+	cardHolderLabelTint: 0xffffff,
+	cardHolderLabelDepth: 2,
+	energyHolderFillAlpha: 0.27,
+	energyHolderStrokeWidth: 3,
+	energyHolderStrokeColor: 0xffffff,
+	energyHolderStrokeAlpha: 0.9,
+	energyHolderDepth: 1,
+	energyHolderLabelBaseSize: 14,
+	energyHolderLabelMinSize: 11,
+	energyHolderLabelTint: 0xffffff,
+	energyHolderLabelDepth: 2,
+	energyHolderLabelYOffsetRatio: 0.35,
+	energyTokenFillColor: 0xffd166,
+	energyTokenFillAlpha: 1,
+	energyTokenStrokeWidth: 3,
+	energyTokenStrokeColor: 0xffffff,
+	energyTokenStrokeAlpha: 1,
+	energyTokenLabelTint: 0x1b1b1b,
+	energyTokenLabelMinSize: 10,
+	energyTokenLabelRadiusSizeMultiplier: 0.95,
+	energyTokenLabelDepthOffset: 0.5
 } as const;

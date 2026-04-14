@@ -1,5 +1,6 @@
 import { Scene } from 'phaser';
 import { PlayerId } from './Card';
+import { ENTITY_VISUALS } from '../config';
 
 type EnergyTokenOptions = {
     id: number;
@@ -31,13 +32,13 @@ export class EnergyToken
 
         const diameter = options.radius * 2;
 
-        this.body = scene.add.ellipse(options.x, options.y, diameter, diameter, 0xffd166, 1)
-            .setStrokeStyle(3, 0xffffff, 1)
+        this.body = scene.add.ellipse(options.x, options.y, diameter, diameter, ENTITY_VISUALS.energyTokenFillColor, ENTITY_VISUALS.energyTokenFillAlpha)
+            .setStrokeStyle(ENTITY_VISUALS.energyTokenStrokeWidth, ENTITY_VISUALS.energyTokenStrokeColor, ENTITY_VISUALS.energyTokenStrokeAlpha)
             .setInteractive({ draggable: true, useHandCursor: true });
 
-        this.idLabel = scene.add.bitmapText(options.x, options.y, 'minogram', String(this.id), Math.max(10, Math.round(options.radius * 0.95)))
+        this.idLabel = scene.add.bitmapText(options.x, options.y, 'minogram', String(this.id), Math.max(ENTITY_VISUALS.energyTokenLabelMinSize, Math.round(options.radius * ENTITY_VISUALS.energyTokenLabelRadiusSizeMultiplier)))
             .setOrigin(0.5)
-            .setTint(0x1b1b1b);
+            .setTint(ENTITY_VISUALS.energyTokenLabelTint);
     }
 
     getZoneId (): string
@@ -73,7 +74,7 @@ export class EnergyToken
     setDepth (depth: number): void
     {
         this.body.setDepth(depth);
-        this.idLabel.setDepth(depth + 0.5);
+        this.idLabel.setDepth(depth + ENTITY_VISUALS.energyTokenLabelDepthOffset);
     }
 
     getBounds (): Phaser.Geom.Rectangle

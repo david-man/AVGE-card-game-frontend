@@ -1,12 +1,26 @@
 import { Scene } from 'phaser';
 
-import { Card, CardHolder, CardHolderConfig, EnergyHolder, EnergyHolderConfig, EnergyToken, PlayerId } from '../entities';
+import { GameCommandProcessor } from '../commands/GameCommandProcessor';
+import { Card, CardHolder, CardHolderConfig, EnergyHolder, EnergyHolderConfig, EnergyToken, PlayerId, CardOptions, initializeCards } from '../entities';
+import { sendBackendEvent, waitForNextScannerCommand } from '../Network';
+import { BoardInteractionController } from '../ui/BoardInteractionController';
+import { CardPreviewController } from '../ui/CardPreviewController';
+import { InputOverlayController } from '../ui/InputOverlayController';
+import { PlayerStatsHudController } from '../ui/PlayerStatsHudController';
+import { SurrenderController } from '../ui/SurrenderController';
 import {
     BASE_HEIGHT,
     BASE_WIDTH,
     BOARD_SCALE,
     CARD_BASE_HEIGHT,
     CARD_BASE_WIDTH,
+    GAME_CARD_ACTION_BUTTON_LAYOUT,
+    GAME_DEPTHS,
+    GAME_EXPLOSION,
+    GAME_LAYOUT,
+    GAME_SCENE_VISUALS,
+    GAME_SHUFFLE_ANIMATION,
+    ENERGY_TOKEN_DEPTHS,
     CARDHOLDER_BASE_WIDTH,
     CARDHOLDER_HEIGHT_MULTIPLIER,
     ENERGYHOLDER_LAYOUT,
@@ -15,8 +29,17 @@ import {
     GAME_CENTER_Y,
     GAME_HEIGHT,
     GAME_WIDTH,
+    PLAYER_STARTING_ENERGY_TOKEN_IDS,
+    PLAYER_TURN_ATTRIBUTE_DEFAULTS,
     UI_SCALE
 } from '../config';
+
+type ViewMode = PlayerId | 'admin';
+type GamePhase = 'no-input' | 'phase2' | 'atk';
+type CardActionKey = 'atk1' | 'atk2' | 'active';
+type OverlayPreviewContext = 'input' | 'reveal' | null;
+type PlayerTurnAttributeKey = keyof typeof PLAYER_TURN_ATTRIBUTE_DEFAULTS;
+type PlayerTurnAttributes = Record<PlayerTurnAttributeKey, number>;
 
 export class Game extends Scene
 {
@@ -27,6 +50,7 @@ export class Game extends Scene
     cardById: Record<string, Card>;
     cardByBody: Map<Phaser.GameObjects.Rectangle, Card>;
     selectedCard: Card | null;
+    overlayPreviewContext: OverlayPreviewContext;
     activelyDraggedCardIds: Set<string>;
     dragOriginZoneByCardId: Map<string, string>;
     dragStartPositionByCardId: Map<string, { x: number; y: number }>;
@@ -44,31 +68,35 @@ export class Game extends Scene
     activelyDraggedEnergyTokenIds: Set<number>;
     energyDragStartPositionById: Map<number, { x: number; y: number }>;
     energyDragDistanceById: Map<number, number>;
+    activeSceneAnimationCount: number;
 
     energyZoneIdByOwner: Record<PlayerId, string>;
-    activeViewPlayerId: PlayerId;
+    activeViewMode: ViewMode;
+    gamePhase: GamePhase;
+    playerTurn: PlayerId;
+    playerTurnAttributesByPlayer: Record<PlayerId, PlayerTurnAttributes>;
     baseCardHolderPositionById: Record<string, { x: number; y: number }>;
     baseEnergyHolderPositionById: Record<string, { x: number; y: number }>;
 
     objectWidth: number;
     objectHeight: number;
 
-    terminalLines: string[];
-    terminalInput: string;
-    terminalOutputText: Phaser.GameObjects.BitmapText;
-    terminalInputText: Phaser.GameObjects.BitmapText;
-    maxTerminalLines: number;
-    terminalVisibleLineCount: number;
-    terminalScrollOffset: number;
-    terminalPanelBounds: Phaser.Geom.Rectangle;
-    terminalCursorVisible: boolean;
-    terminalOutputMaskGraphics: Phaser.GameObjects.Graphics;
+    commandProcessor: GameCommandProcessor;
+    boardInputEnabled: boolean;
+    inputLockOverlay: Phaser.GameObjects.Rectangle;
+    inputOverlayController: InputOverlayController;
+    boardInteractionController: BoardInteractionController;
+    cardPreviewController: CardPreviewController;
+    surrenderController: SurrenderController;
+    playerStatsHudController: PlayerStatsHudController;
+    scannerWaitLoopActive: boolean;
+    scannerCommandInProgress: boolean;
 
-    cardPreviewPanel: Phaser.GameObjects.Rectangle;
-    cardPreviewBody: Phaser.GameObjects.Rectangle;
-    cardPreviewIdText: Phaser.GameObjects.BitmapText;
-    cardPreviewTypeText: Phaser.GameObjects.BitmapText;
-    cardPreviewParagraphText: Phaser.GameObjects.BitmapText;
+    cardActionButtons: Array<{
+        key: CardActionKey;
+        body: Phaser.GameObjects.Arc;
+        label: Phaser.GameObjects.BitmapText;
+    }>;
 
     constructor ()
     {
@@ -79,19 +107,54 @@ export class Game extends Scene
     {
         this.load.setPath('assets');
         this.load.image('background', 'bg.png');
+        this.load.image('logo', 'logo.png');
+        this.load.image('minecraftfont', 'minecraftfont.png');
+        this.load.image('font2bitmap', 'font2bitmap.png');
         this.load.image('pixelviolin', 'pixelviolin.jpg');
         this.load.bitmapFont('minogram', 'minogram_6x10.png', 'minogram_6x10.xml');
+        InputOverlayController.preloadDiceAssets(this);
     }
 
     create ()
     {
         this.camera = this.cameras.main;
-        this.camera.setBackgroundColor(0x00ff00);
+        this.camera.setBackgroundColor(GAME_SCENE_VISUALS.backgroundColor);
         this.camera.roundPixels = true;
 
         this.background = this.add.image(GAME_CENTER_X, GAME_CENTER_Y, 'background');
         this.background.setDisplaySize(GAME_WIDTH, GAME_HEIGHT);
-        this.background.setAlpha(0.5);
+        this.background.setAlpha(GAME_SCENE_VISUALS.backgroundAlpha);
+
+        this.boardInputEnabled = true;
+        this.inputLockOverlay = this.add.rectangle(GAME_CENTER_X, GAME_CENTER_Y, GAME_WIDTH, GAME_HEIGHT, GAME_SCENE_VISUALS.inputLockColor, GAME_SCENE_VISUALS.inputLockAlpha)
+            .setDepth(GAME_SCENE_VISUALS.inputLockDepth)
+            .setVisible(false);
+        this.inputOverlayController = new InputOverlayController(this, this.inputLockOverlay);
+        this.boardInteractionController = new BoardInteractionController(this, this);
+        this.cardPreviewController = new CardPreviewController(this);
+        this.surrenderController = new SurrenderController(this, {
+            onArm: (seconds) => {
+                this.appendTerminalLine(`${this.getViewModeLabel(this.activeViewMode)} surrender armed for ${seconds}s. Click again to confirm.`);
+            },
+            onConfirm: () => {
+                const winningPlayerLabel = this.activeViewMode === 'p1' ? 'PLAYER-2' : 'PLAYER-1';
+                this.appendTerminalLine(`${winningPlayerLabel} won by surrender.`);
+                this.emitBackendEvent('surrender_result', {
+                    winner: winningPlayerLabel,
+                    loser: this.getViewModeLabel(this.activeViewMode)
+                });
+            },
+            onTimeout: () => {
+                this.appendTerminalLine('Surrender confirmation timed out.');
+                this.emitBackendEvent('surrender_timeout', {
+                    view_mode: this.getViewModeLabel(this.activeViewMode)
+                });
+            }
+        });
+        this.playerStatsHudController = new PlayerStatsHudController(this);
+        this.commandProcessor = new GameCommandProcessor(this);
+        this.scannerWaitLoopActive = false;
+        this.scannerCommandInProgress = false;
 
         const xRatio = GAME_WIDTH / BASE_WIDTH;
         const yRatio = GAME_HEIGHT / BASE_HEIGHT;
@@ -105,7 +168,13 @@ export class Game extends Scene
         this.cardHolderById = {};
         this.baseCardHolderPositionById = {};
         this.baseEnergyHolderPositionById = {};
-        this.activeViewPlayerId = 'p1';
+        this.activeViewMode = 'p1';
+        this.gamePhase = 'phase2';
+        this.playerTurn = 'p1';
+        this.playerTurnAttributesByPlayer = {
+            p1: this.createDefaultPlayerTurnAttributes(),
+            p2: this.createDefaultPlayerTurnAttributes()
+        };
 
         for (const config of holderConfigs) {
             const holder = new CardHolder(this, config);
@@ -120,6 +189,7 @@ export class Game extends Scene
         this.activelyDraggedEnergyTokenIds = new Set();
         this.energyDragStartPositionById = new Map();
         this.energyDragDistanceById = new Map();
+        this.activeSceneAnimationCount = 0;
         this.energyZoneIdByOwner = {
             p1: 'p1-energy',
             p2: 'p2-energy'
@@ -137,6 +207,7 @@ export class Game extends Scene
         this.cardById = {};
         this.cardByBody = new Map();
         this.selectedCard = null;
+        this.overlayPreviewContext = null;
         this.activelyDraggedCardIds = new Set();
         this.dragOriginZoneByCardId = new Map();
         this.dragStartPositionByCardId = new Map();
@@ -149,32 +220,38 @@ export class Game extends Scene
             stadium: 0x6d597a
         } as const;
 
-        const cardTemplates: Array<{ ownerId: 'p1' | 'p2'; cardType: 'character' | 'tool' | 'item' | 'stadium' }> = [
-            { ownerId: 'p1', cardType: 'character' },
-            { ownerId: 'p1', cardType: 'character' },
-            { ownerId: 'p1', cardType: 'character' },
-            { ownerId: 'p1', cardType: 'character' },
-            { ownerId: 'p1', cardType: 'character' },
-            { ownerId: 'p1', cardType: 'character' },
-            { ownerId: 'p1', cardType: 'character' },
-            { ownerId: 'p1', cardType: 'character' },
-            { ownerId: 'p1', cardType: 'character' },
-            { ownerId: 'p1', cardType: 'character' },
+        const cardTemplates: Array<{
+            ownerId: 'p1' | 'p2';
+            cardType: 'character' | 'tool' | 'item' | 'stadium';
+            hasAtk1?: boolean;
+            hasAtk2?: boolean;
+            hasActive?: boolean;
+        }> = [
+            { ownerId: 'p1', cardType: 'character', hasAtk1: true, hasAtk2: true, hasActive: true },
+            { ownerId: 'p1', cardType: 'character', hasAtk1: true, hasAtk2: true, hasActive: true },
+            { ownerId: 'p1', cardType: 'character', hasAtk1: true, hasAtk2: true, hasActive: true },
+            { ownerId: 'p1', cardType: 'character', hasAtk1: true, hasAtk2: true, hasActive: true },
+            { ownerId: 'p1', cardType: 'character', hasAtk1: true, hasAtk2: true, hasActive: true },
+            { ownerId: 'p1', cardType: 'character', hasAtk1: true, hasAtk2: true, hasActive: true },
+            { ownerId: 'p1', cardType: 'character', hasAtk1: true, hasAtk2: true, hasActive: true },
+            { ownerId: 'p1', cardType: 'character', hasAtk1: true, hasAtk2: true, hasActive: true },
+            { ownerId: 'p1', cardType: 'character', hasAtk1: true, hasAtk2: true, hasActive: true },
+            { ownerId: 'p1', cardType: 'character', hasAtk1: true, hasAtk2: true, hasActive: true },
             { ownerId: 'p1', cardType: 'tool' },
             { ownerId: 'p1', cardType: 'item' },
             { ownerId: 'p1', cardType: 'stadium' },
-            { ownerId: 'p2', cardType: 'character' },
+            { ownerId: 'p2', cardType: 'character', hasAtk1: true, hasAtk2: true, hasActive: true },
             { ownerId: 'p2', cardType: 'tool' },
             { ownerId: 'p2', cardType: 'item' },
             { ownerId: 'p2', cardType: 'stadium' }
         ];
 
-        cardTemplates.forEach((template, index) => {
+        const cardOptions: CardOptions[] = cardTemplates.map((template, index) => {
             const zoneId = `${template.ownerId}-hand`;
             const startingHolder = this.cardHolderById[zoneId];
             const cardId = `CARD-${index + 1}`;
 
-            const card = new Card(this, {
+            return {
                 id: cardId,
                 cardType: template.cardType,
                 ownerId: template.ownerId,
@@ -183,326 +260,91 @@ export class Game extends Scene
                 width: this.objectWidth,
                 height: this.objectHeight,
                 color: cardTypeColors[template.cardType],
-                zoneId
-            });
+                zoneId,
+                card_class: template.cardType,
+                has_atk_1: template.hasAtk1 ?? false,
+                has_atk_2: template.hasAtk2 ?? false,
+                has_active: template.hasActive ?? false
+            };
+        });
 
-            this.cards.push(card);
+        this.cards = initializeCards(this, cardOptions);
+
+        this.cards.forEach((card) => {
             this.cardById[card.id] = card;
             this.cardByBody.set(card.body, card);
+            const startingHolder = this.cardHolderById[card.getZoneId()];
             startingHolder.addCard(card);
             this.input.setDraggable(card.body);
 
             card.body.on('pointerdown', () => {
+                if (!this.boardInputEnabled) {
+                    return;
+                }
+
+                if (!this.canPreviewCard(card)) {
+                    return;
+                }
                 this.selectCard(card);
             });
         });
 
-        this.input.on('pointerdown', (_pointer: Phaser.Input.Pointer, currentlyOver: Phaser.GameObjects.GameObject[]) => {
-            const clickedCard = currentlyOver.some((gameObject) => gameObject instanceof Phaser.GameObjects.Rectangle && this.cardByBody.has(gameObject as Phaser.GameObjects.Rectangle));
-            if (!clickedCard) {
-                this.clearCardSelection();
-            }
-        });
-
-        this.createCommandTerminal();
         this.createCardPreviewPanel();
+        this.createCardActionButtons();
+        this.createSurrenderButton();
+        this.createPlayerStatsHud();
 
         this.layoutAllHolders();
         this.redrawAllCardMarks();
-        this.applyBoardView(this.activeViewPlayerId);
+        this.applyBoardView(this.activeViewMode);
+        this.boardInteractionController.register();
+        this.startScannerWaitLoop();
+    }
 
-        this.input.on('dragstart', (_pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.Rectangle) => {
-            const card = this.getCardFromGameObject(gameObject);
-            if (!card) {
-                return;
-            }
+    public isInteractionLockedByAnimation (): boolean
+    {
+        if (!this.boardInputEnabled) {
+            return true;
+        }
 
-            const zoneId = card.getZoneId();
-            if (zoneId.endsWith('-discard') || zoneId.endsWith('-deck')) {
-                return;
-            }
+        if (this.activeSceneAnimationCount > 0) {
+            return true;
+        }
 
-            this.activelyDraggedCardIds.add(card.id);
-            this.dragOriginZoneByCardId.set(card.id, zoneId);
-            this.dragStartPositionByCardId.set(card.id, { x: card.x, y: card.y });
-            this.dragDistanceByCardId.set(card.id, 0);
-        });
+        return this.cards.some((card) => card.isCurrentlyFlipping());
+    }
 
-        this.input.on('drag', (_pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.Rectangle, dragX: number, dragY: number) => {
-            const card = this.getCardFromGameObject(gameObject);
-            if (!card) {
-                return;
-            }
+    public setBoardInputEnabled (enabled: boolean): void
+    {
+        this.boardInputEnabled = enabled;
+        this.inputLockOverlay.setVisible(!enabled);
 
-            if (!this.activelyDraggedCardIds.has(card.id)) {
-                return;
-            }
+        if (enabled && this.inputOverlayController?.hasActiveOverlay()) {
+            this.inputOverlayController.stopActiveOverlay();
+            this.overlayPreviewContext = null;
+            this.refreshCardActionButtons();
+        }
 
-            const attachedToCardId = card.getAttachedToCardId();
-            if (attachedToCardId) {
-                const parentCard = this.cardById[attachedToCardId];
-                if (parentCard) {
-                    this.updateAttachedCardPosition(card, parentCard);
-                    this.redrawAllCardMarks();
-                }
-                return;
-            }
+        if (!enabled) {
+            this.clearCardSelection();
+            this.activelyDraggedCardIds.clear();
+            this.dragOriginZoneByCardId.clear();
+            this.dragStartPositionByCardId.clear();
+            this.dragDistanceByCardId.clear();
+            this.activelyDraggedEnergyTokenIds.clear();
+            this.energyDragStartPositionById.clear();
+            this.energyDragDistanceById.clear();
+        }
+    }
 
-            card.setPosition(dragX, dragY);
-            card.setDepth(1000);
+    private beginSceneAnimation (): void
+    {
+        this.activeSceneAnimationCount += 1;
+    }
 
-            const dragStartPosition = this.dragStartPositionByCardId.get(card.id);
-            if (dragStartPosition) {
-                const movedDistance = Phaser.Math.Distance.Between(dragStartPosition.x, dragStartPosition.y, dragX, dragY);
-                const priorMaxDistance = this.dragDistanceByCardId.get(card.id) ?? 0;
-                if (movedDistance > priorMaxDistance) {
-                    this.dragDistanceByCardId.set(card.id, movedDistance);
-                }
-            }
-
-            this.updateAttachedChildrenPositions(card);
-            this.redrawAllCardMarks();
-        });
-
-        this.input.on('drop', (_pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.Rectangle, dropZone: Phaser.GameObjects.Zone) => {
-            const card = this.getCardFromGameObject(gameObject);
-            if (!card) {
-                return;
-            }
-
-            // Ignore click/release over zones unless this card was actively dragged.
-            if (!this.activelyDraggedCardIds.has(card.id)) {
-                return;
-            }
-
-            this.activelyDraggedCardIds.delete(card.id);
-
-            const dragStartPosition = this.dragStartPositionByCardId.get(card.id);
-            const draggedDistance = this.dragDistanceByCardId.get(card.id) ?? 0;
-            const originZoneId = this.dragOriginZoneByCardId.get(card.id) ?? card.getZoneId();
-            this.dragOriginZoneByCardId.delete(card.id);
-            this.dragStartPositionByCardId.delete(card.id);
-            this.dragDistanceByCardId.delete(card.id);
-            const minDragDistance = Math.max(8, Math.round(this.objectWidth * 0.08));
-
-            if (dragStartPosition) {
-                if (draggedDistance < minDragDistance) {
-                    this.layoutAllHolders();
-                    this.redrawAllCardMarks();
-                    return;
-                }
-            }
-
-            const targetZoneId = dropZone.getData('zoneId') as string;
-            const droppingIntoDiscard = targetZoneId === 'p1-discard';
-            const overlappedCard = droppingIntoDiscard ? null : this.findOverlappedCard(card);
-            const ownerId = card.getOwnerId();
-            const ownerHandZone = `${ownerId}-hand`;
-            const ownerBenchZone = `${ownerId}-bench`;
-            const ownerActiveZone = `${ownerId}-active`;
-            const cardType = card.getCardType();
-
-            if (cardType === 'character') {
-                const validCharacterMove =
-                    (originZoneId === ownerHandZone && targetZoneId === ownerBenchZone) ||
-                    (originZoneId === ownerBenchZone && targetZoneId === ownerActiveZone) ||
-                    (originZoneId === ownerActiveZone && targetZoneId === ownerBenchZone);
-
-                if (!validCharacterMove) {
-                    this.layoutAllHolders();
-                    this.redrawAllCardMarks();
-                    return;
-                }
-
-                this.moveCardToZone(card, targetZoneId, () => {
-                    this.layoutAllHolders();
-                    this.redrawAllCardMarks();
-                });
-                return;
-            }
-
-            if (cardType === 'tool') {
-                const fromHand = originZoneId === ownerHandZone;
-                const onOwnBattleZone = targetZoneId === ownerBenchZone || targetZoneId === ownerActiveZone;
-
-                if (!fromHand || !onOwnBattleZone || !overlappedCard) {
-                    this.layoutAllHolders();
-                    this.redrawAllCardMarks();
-                    return;
-                }
-
-                if (overlappedCard.getOwnerId() !== ownerId || overlappedCard.getCardType() !== 'character') {
-                    this.layoutAllHolders();
-                    this.redrawAllCardMarks();
-                    return;
-                }
-
-                const attachedChildren = this.getAttachedChildren(overlappedCard.id);
-                const attachTarget = attachedChildren.length > 0
-                    ? attachedChildren.reduce((topCard, nextCard) => (nextCard.depth > topCard.depth ? nextCard : topCard))
-                    : overlappedCard;
-
-                this.removeCardFromAllHolders(card);
-                card.setZoneId(targetZoneId);
-                this.attachCardToCard(card, attachTarget);
-                this.layoutAllHolders();
-                this.redrawAllCardMarks();
-                return;
-            }
-
-            if (cardType === 'item') {
-                if (originZoneId !== ownerHandZone) {
-                    this.layoutAllHolders();
-                    this.redrawAllCardMarks();
-                    return;
-                }
-
-                if (targetZoneId === ownerHandZone) {
-                    this.moveCardToZone(card, ownerHandZone, () => {
-                        this.layoutAllHolders();
-                        this.redrawAllCardMarks();
-                    });
-                }
-                else {
-                    this.sendCardToOwnerDiscard(card, () => {
-                        this.layoutAllHolders();
-                        this.redrawAllCardMarks();
-                    });
-                }
-                return;
-            }
-
-            if (cardType === 'stadium') {
-                if (originZoneId !== ownerHandZone || targetZoneId !== 'stadium') {
-                    this.layoutAllHolders();
-                    this.redrawAllCardMarks();
-                    return;
-                }
-
-                this.moveCardToZone(card, 'stadium', () => {
-                    this.layoutAllHolders();
-                    this.redrawAllCardMarks();
-                });
-                return;
-            }
-
-            this.layoutAllHolders();
-            this.redrawAllCardMarks();
-        });
-
-        this.input.on('dragend', (_pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.Rectangle, dropped: boolean) => {
-            const card = this.getCardFromGameObject(gameObject);
-            if (!card) {
-                return;
-            }
-
-            const wasDragged = this.activelyDraggedCardIds.has(card.id);
-            const draggedDistance = this.dragDistanceByCardId.get(card.id) ?? 0;
-            const originZoneId = this.dragOriginZoneByCardId.get(card.id) ?? card.getZoneId();
-            const minDragDistance = Math.max(8, Math.round(this.objectWidth * 0.08));
-
-            this.activelyDraggedCardIds.delete(card.id);
-            this.dragOriginZoneByCardId.delete(card.id);
-            this.dragStartPositionByCardId.delete(card.id);
-            this.dragDistanceByCardId.delete(card.id);
-
-            if (!dropped) {
-                const ownerHandZone = `${card.getOwnerId()}-hand`;
-                const isItemDiscardFromFreeDrop =
-                    wasDragged &&
-                    draggedDistance >= minDragDistance &&
-                    card.getCardType() === 'item' &&
-                    originZoneId === ownerHandZone;
-
-                if (isItemDiscardFromFreeDrop) {
-                    this.sendCardToOwnerDiscard(card, () => {
-                        this.layoutAllHolders();
-                        this.updateAttachedChildrenPositions(card);
-                        this.redrawAllCardMarks();
-                    });
-                    return;
-                }
-
-                this.layoutAllHolders();
-                this.updateAttachedChildrenPositions(card);
-            }
-
-            this.redrawAllCardMarks();
-        });
-
-        this.input.on('dragstart', (_pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.GameObject) => {
-            const token = this.energyTokenByBody.get(gameObject);
-            if (!token || token.getAttachedToCardId()) {
-                return;
-            }
-
-            this.activelyDraggedEnergyTokenIds.add(token.id);
-            this.energyDragStartPositionById.set(token.id, { x: token.x, y: token.y });
-            this.energyDragDistanceById.set(token.id, 0);
-            token.setDepth(1200);
-        });
-
-        this.input.on('drag', (_pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.GameObject, dragX: number, dragY: number) => {
-            const token = this.energyTokenByBody.get(gameObject);
-            if (!token || !this.activelyDraggedEnergyTokenIds.has(token.id)) {
-                return;
-            }
-
-            token.setPosition(dragX, dragY);
-
-            const dragStartPosition = this.energyDragStartPositionById.get(token.id);
-            if (dragStartPosition) {
-                const movedDistance = Phaser.Math.Distance.Between(dragStartPosition.x, dragStartPosition.y, dragX, dragY);
-                const priorMaxDistance = this.energyDragDistanceById.get(token.id) ?? 0;
-                if (movedDistance > priorMaxDistance) {
-                    this.energyDragDistanceById.set(token.id, movedDistance);
-                }
-            }
-        });
-
-        this.input.on('drop', (_pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.GameObject, dropZone: Phaser.GameObjects.Zone) => {
-            const token = this.energyTokenByBody.get(gameObject);
-            if (!token || !this.activelyDraggedEnergyTokenIds.has(token.id)) {
-                return;
-            }
-
-            this.activelyDraggedEnergyTokenIds.delete(token.id);
-            this.energyDragStartPositionById.delete(token.id);
-            this.energyDragDistanceById.delete(token.id);
-
-            const ownerEnergyZoneId = this.energyZoneIdByOwner[token.ownerId];
-            const targetZoneId = (dropZone?.getData('zoneId') as string | undefined) ?? null;
-            const characterTarget = this.findOverlappedOwnedCharacterForToken(token);
-
-            if (characterTarget) {
-                this.attachEnergyTokenToCard(token, characterTarget);
-                return;
-            }
-
-            if (targetZoneId === ownerEnergyZoneId) {
-                token.setAttachedToCardId(null);
-                this.setEnergyTokenZone(token, ownerEnergyZoneId);
-                this.layoutEnergyTokensInZone(ownerEnergyZoneId);
-                return;
-            }
-
-            this.layoutEnergyTokensInZone(token.getZoneId());
-        });
-
-        this.input.on('dragend', (_pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.GameObject, dropped: boolean) => {
-            const token = this.energyTokenByBody.get(gameObject);
-            if (!token) {
-                return;
-            }
-
-            this.activelyDraggedEnergyTokenIds.delete(token.id);
-            this.energyDragStartPositionById.delete(token.id);
-            this.energyDragDistanceById.delete(token.id);
-
-            if (!dropped) {
-                this.layoutEnergyTokensInZone(token.getZoneId());
-            }
-        });
+    private endSceneAnimation (): void
+    {
+        this.activeSceneAnimationCount = Math.max(0, this.activeSceneAnimationCount - 1);
     }
 
     private createEnergyHolders (): void
@@ -536,34 +378,42 @@ export class Game extends Scene
 
     private createEnergyTokens (): void
     {
-        const makeTokensForOwner = (ownerId: PlayerId, idStart: number) => {
-            const zoneId = this.energyZoneIdByOwner[ownerId];
-            const holder = this.energyHolderById[zoneId];
-            const radius = Math.max(10, Math.round(this.objectWidth * 0.14));
+        this.initializePlayerEnergySet('p1', PLAYER_STARTING_ENERGY_TOKEN_IDS.p1);
+        this.initializePlayerEnergySet('p2', PLAYER_STARTING_ENERGY_TOKEN_IDS.p2);
+    }
 
-            for (let i = 0; i < 10; i += 1) {
-                const tokenId = idStart + i;
-                const token = new EnergyToken(this, {
-                    id: tokenId,
-                    ownerId,
-                    x: holder.x,
-                    y: holder.y,
-                    radius,
-                    zoneId
-                });
+    private initializePlayerEnergySet (ownerId: PlayerId, tokenIds: number[]): void
+    {
+        const zoneId = this.energyZoneIdByOwner[ownerId];
+        const holder = this.energyHolderById[zoneId];
+        if (!holder) {
+            return;
+        }
 
-                this.energyTokens.push(token);
-                this.energyTokenById[tokenId] = token;
-                this.energyTokenByBody.set(token.body, token);
-                this.input.setDraggable(token.body);
-                holder.addToken(token);
+        const radius = Math.max(GAME_LAYOUT.energyTokenRadiusMin, Math.round(this.objectWidth * GAME_LAYOUT.energyTokenRadiusWidthRatio));
+        for (const rawTokenId of tokenIds) {
+            const tokenId = Number(rawTokenId);
+            if (!Number.isInteger(tokenId) || tokenId < 0 || this.energyTokenById[tokenId]) {
+                continue;
             }
 
-            this.layoutEnergyTokensInZone(zoneId);
-        };
+            const token = new EnergyToken(this, {
+                id: tokenId,
+                ownerId,
+                x: holder.x,
+                y: holder.y,
+                radius,
+                zoneId
+            });
 
-        makeTokensForOwner('p1', 1);
-        makeTokensForOwner('p2', 11);
+            this.energyTokens.push(token);
+            this.energyTokenById[tokenId] = token;
+            this.energyTokenByBody.set(token.body, token);
+            this.input.setDraggable(token.body);
+            holder.addToken(token);
+        }
+
+        this.layoutEnergyTokensInZone(zoneId);
     }
 
     private buildCardHolderConfigs (scale: number): CardHolderConfig[]
@@ -594,7 +444,7 @@ export class Game extends Scene
         const bottomHandY = bottomBenchY + handYOffset;
         const leftSideX = baseCenterX - sideXOffset;
         const rightSideX = baseCenterX + sideXOffset;
-        const stadiumX = leftSideX - (spacing * 1.8);
+        const stadiumX = leftSideX - (spacing * GAME_LAYOUT.energyStadiumOffsetMultiplier);
 
         return [
             // Opponent side (top)
@@ -614,460 +464,331 @@ export class Game extends Scene
         ];
     }
 
-    private createCommandTerminal (): void
+    private createCardPreviewPanel (): void
     {
-        const panelWidth = Math.round((220 / BASE_WIDTH) * GAME_WIDTH);
-        const panelHeight = Math.round((220 / BASE_HEIGHT) * GAME_HEIGHT);
-        const marginX = Math.round((24 / BASE_WIDTH) * GAME_WIDTH);
-        const marginY = Math.round((24 / BASE_HEIGHT) * GAME_HEIGHT);
-        const panelX = GAME_WIDTH - marginX - Math.round(panelWidth / 2);
-        const panelY = marginY + Math.round(panelHeight / 2);
-        const textScale = UI_SCALE * 1.35;
-        const titleSize = Math.max(14, Math.round(14 * textScale));
-        const outputSize = Math.max(10, Math.round(11 * textScale));
-        const inputSize = Math.max(12, Math.round(12 * textScale));
-        const leftPadding = Math.round(panelWidth * 0.07);
-        const contentWidth = panelWidth - (leftPadding * 2);
-        const topY = panelY - Math.round(panelHeight / 2);
-        const bottomY = panelY + Math.round(panelHeight / 2);
-        const outputTopY = topY + Math.round(panelHeight * 0.20);
-        const inputStripHeight = Math.max(22, Math.round(panelHeight * 0.15));
-        const inputStripTopY = bottomY - inputStripHeight - Math.round(panelHeight * 0.03);
-        const outputBottomY = inputStripTopY - Math.round(panelHeight * 0.03);
-        const inputY = bottomY - Math.round(panelHeight * 0.09);
+        this.cardPreviewController.create(this.objectWidth, this.objectHeight);
+    }
 
-        this.add.rectangle(panelX, panelY, panelWidth, panelHeight, 0x0b132b, 0.92)
-            .setStrokeStyle(2, 0xffffff, 0.7)
-            .setDepth(30);
+    private createCardActionButtons (): void
+    {
+        const radius = Math.max(12, Math.round((GAME_CARD_ACTION_BUTTON_LAYOUT.buttonRadiusBase / BASE_WIDTH) * GAME_WIDTH));
+        const leftMargin = Math.round((GAME_CARD_ACTION_BUTTON_LAYOUT.leftMarginBase / BASE_WIDTH) * GAME_WIDTH);
+        const bottomMargin = Math.round((GAME_CARD_ACTION_BUTTON_LAYOUT.bottomMarginBase / BASE_HEIGHT) * GAME_HEIGHT);
+        const fontSize = Math.max(10, Math.round(GAME_CARD_ACTION_BUTTON_LAYOUT.fontSize * UI_SCALE));
 
-        this.terminalPanelBounds = new Phaser.Geom.Rectangle(
-            panelX - Math.round(panelWidth / 2),
-            panelY - Math.round(panelHeight / 2),
-            panelWidth,
-            panelHeight
-        );
-
-        this.add.bitmapText(panelX, topY + Math.round(panelHeight * 0.06), 'minogram', 'COMMAND TERMINAL', titleSize)
-            .setOrigin(0.5)
-            .setTint(0xffffff)
-            .setDepth(31);
-
-        this.terminalLines = [
-            'Ready.',
-            'Examples: mv CARD-2 p1-discard',
-            '          mv CARD-2 p1-hand 0',
-            '          flip CARD-2',
-            '          rm 3',
-            '          boom CARD-1',
-            '          view p2'
+        const defs: Array<{ key: CardActionKey; text: string }> = [
+            { key: 'atk1', text: 'ATK1' },
+            { key: 'atk2', text: 'ATK2' },
+            { key: 'active', text: 'ACTIVE' }
         ];
-        this.terminalInput = '';
-        this.maxTerminalLines = 300;
-        this.terminalScrollOffset = 0;
-        this.terminalCursorVisible = true;
-        this.terminalVisibleLineCount = Math.max(4, Math.floor((outputBottomY - outputTopY) / Math.max(1, outputSize)) - 1);
 
-        this.terminalOutputText = this.add.bitmapText(panelX - Math.round(panelWidth / 2) + leftPadding, outputTopY, 'minogram', '', outputSize)
-            .setOrigin(0, 0)
-            .setTint(0xd6e8ff)
-            .setMaxWidth(contentWidth)
-            .setDepth(31);
+        this.cardActionButtons = defs.map((def) => {
+            const x = leftMargin + radius;
+            const y = GAME_HEIGHT - bottomMargin - radius;
 
-        this.terminalOutputMaskGraphics = this.add.graphics();
-        this.terminalOutputMaskGraphics.fillStyle(0xffffff, 1);
-        this.terminalOutputMaskGraphics.fillRect(
-            panelX - Math.round(panelWidth / 2) + leftPadding,
-            outputTopY,
-            contentWidth,
-            Math.max(1, outputBottomY - outputTopY)
-        );
-        this.terminalOutputText.setMask(this.terminalOutputMaskGraphics.createGeometryMask());
+            const body = this.add.circle(
+                x,
+                y,
+                radius,
+                GAME_CARD_ACTION_BUTTON_LAYOUT.fillColor,
+                GAME_CARD_ACTION_BUTTON_LAYOUT.fillAlpha
+            )
+                .setStrokeStyle(
+                    GAME_CARD_ACTION_BUTTON_LAYOUT.strokeWidth,
+                    GAME_CARD_ACTION_BUTTON_LAYOUT.strokeColor,
+                    GAME_CARD_ACTION_BUTTON_LAYOUT.strokeAlpha
+                )
+                .setDepth(GAME_DEPTHS.terminalInputText)
+                .setInteractive({ useHandCursor: true })
+                .setVisible(false);
 
-        this.add.rectangle(panelX, inputStripTopY + Math.round(inputStripHeight / 2), panelWidth - Math.round(panelWidth * 0.06), inputStripHeight, 0x0f172a, 0.95)
-            .setStrokeStyle(1, 0xffffff, 0.35)
-            .setDepth(31.2);
+            const label = this.add.bitmapText(x, y, 'minogram', def.text, fontSize)
+                .setOrigin(0.5)
+                .setTint(GAME_CARD_ACTION_BUTTON_LAYOUT.textTint)
+                .setDepth(GAME_DEPTHS.terminalInputText + 1)
+                .setVisible(false);
 
-        this.terminalInputText = this.add.bitmapText(panelX - Math.round(panelWidth / 2) + leftPadding, inputY, 'minogram', '', inputSize)
-            .setOrigin(0, 0)
-            .setTint(0xffffff)
-            .setDepth(31.3);
+            body.on('pointerdown', () => {
+                this.handleCardActionButtonClick(def.key);
+            });
 
-        this.refreshTerminalText();
+            body.on('pointerover', () => {
+                this.tweens.killTweensOf([body, label]);
+                this.tweens.add({
+                    targets: [body, label],
+                    scaleX: GAME_CARD_ACTION_BUTTON_LAYOUT.hoverScale,
+                    scaleY: GAME_CARD_ACTION_BUTTON_LAYOUT.hoverScale,
+                    duration: GAME_CARD_ACTION_BUTTON_LAYOUT.hoverDurationMs,
+                    ease: 'Sine.easeOut'
+                });
+            });
 
-        this.time.addEvent({
-            delay: 450,
-            loop: true,
-            callback: () => {
-                this.terminalCursorVisible = !this.terminalCursorVisible;
-                this.refreshTerminalText();
-            }
-        });
+            body.on('pointerout', () => {
+                this.tweens.killTweensOf([body, label]);
+                this.tweens.add({
+                    targets: [body, label],
+                    scaleX: 1,
+                    scaleY: 1,
+                    duration: GAME_CARD_ACTION_BUTTON_LAYOUT.hoverDurationMs,
+                    ease: 'Sine.easeOut'
+                });
+            });
 
-        this.input.keyboard?.on('keydown', (event: KeyboardEvent) => {
-            if (event.key === 'ArrowUp') {
-                this.scrollTerminalBy(1);
-                return;
-            }
-
-            if (event.key === 'ArrowDown') {
-                this.scrollTerminalBy(-1);
-                return;
-            }
-
-            if (event.key === 'PageUp') {
-                this.scrollTerminalBy(this.terminalVisibleLineCount);
-                return;
-            }
-
-            if (event.key === 'PageDown') {
-                this.scrollTerminalBy(-this.terminalVisibleLineCount);
-                return;
-            }
-
-            if (event.key === 'End') {
-                this.terminalScrollOffset = 0;
-                this.refreshTerminalText();
-                return;
-            }
-
-            if (event.key === 'Backspace') {
-                this.terminalInput = this.terminalInput.slice(0, -1);
-                this.refreshTerminalText();
-                return;
-            }
-
-            if (event.key === 'Enter') {
-                this.executeTerminalCommand(this.terminalInput.trim());
-                this.terminalInput = '';
-                this.refreshTerminalText();
-                return;
-            }
-
-            if (event.key === 'Escape') {
-                this.terminalInput = '';
-                this.refreshTerminalText();
-                return;
-            }
-
-            if (event.key.length === 1 && this.terminalInput.length < 40) {
-                this.terminalInput += event.key;
-                this.refreshTerminalText();
-            }
-        });
-
-        this.input.on('wheel', (pointer: Phaser.Input.Pointer, _gameObjects: Phaser.GameObjects.GameObject[], _deltaX: number, deltaY: number) => {
-            if (!this.terminalPanelBounds.contains(pointer.worldX, pointer.worldY)) {
-                return;
-            }
-
-            const step = deltaY > 0 ? 2 : -2;
-            this.scrollTerminalBy(step);
+            return { key: def.key, body, label };
         });
     }
 
-    private createCardPreviewPanel (): void
+    private createSurrenderButton (): void
     {
-        const panelWidth = Math.round((260 / BASE_WIDTH) * GAME_WIDTH);
-        const panelHeight = Math.round((340 / BASE_HEIGHT) * GAME_HEIGHT);
-        const gapY = Math.round((20 / BASE_HEIGHT) * GAME_HEIGHT);
-        const sideMargin = Math.round((24 / BASE_WIDTH) * GAME_WIDTH);
+        this.surrenderController.create();
+        this.refreshSurrenderButton();
+    }
 
-        const terminalCenterX = this.terminalPanelBounds.centerX;
-        const previewYFromTerminal = this.terminalPanelBounds.bottom + gapY + Math.round(panelHeight / 2);
-        const clampedY = Phaser.Math.Clamp(
-            previewYFromTerminal,
-            Math.round(panelHeight / 2) + sideMargin,
-            GAME_HEIGHT - Math.round(panelHeight / 2) - sideMargin
-        );
+    private refreshSurrenderButton (): void
+    {
+        const handHolder = this.activeViewMode === 'admin' ? undefined : this.cardHolderById[`${this.activeViewMode}-hand`];
+        this.surrenderController.refresh(this.activeViewMode, handHolder);
+    }
 
-        const panelX = terminalCenterX;
-        const panelY = clampedY;
-        const topY = panelY - Math.round(panelHeight / 2);
-        const leftX = panelX - Math.round(panelWidth / 2);
+    private createPlayerStatsHud (): void
+    {
+        this.playerStatsHudController.create();
+        this.refreshPlayerStatsHud();
+    }
 
-        const previewCardWidth = Math.round(this.objectWidth * 1.9);
-        const previewCardHeight = Math.round(this.objectHeight * 1.9);
-        const previewCardCenterY = topY + Math.round(panelHeight * 0.34);
+    private createDefaultPlayerTurnAttributes (): PlayerTurnAttributes
+    {
+        return {
+            ENERGY_ADD_REMAINING_IN_TURN: PLAYER_TURN_ATTRIBUTE_DEFAULTS.ENERGY_ADD_REMAINING_IN_TURN,
+            KO_COUNT: PLAYER_TURN_ATTRIBUTE_DEFAULTS.KO_COUNT,
+            SUPPORTER_USES_REMAINING_IN_TURN: PLAYER_TURN_ATTRIBUTE_DEFAULTS.SUPPORTER_USES_REMAINING_IN_TURN,
+            SWAP_REMAINING_IN_TURN: PLAYER_TURN_ATTRIBUTE_DEFAULTS.SWAP_REMAINING_IN_TURN,
+            ATTACKS_LEFT: PLAYER_TURN_ATTRIBUTE_DEFAULTS.ATTACKS_LEFT
+        };
+    }
 
-        this.cardPreviewPanel = this.add.rectangle(panelX, panelY, panelWidth, panelHeight, 0x101828, 0.92)
-            .setStrokeStyle(2, 0xffffff, 0.7)
-            .setDepth(30)
-            .setVisible(false);
+    public formatPlayerTurnAttributeLabel (attributeKey: PlayerTurnAttributeKey): string
+    {
+        return attributeKey.toLowerCase().replace(/_/g, '-');
+    }
 
-        this.cardPreviewBody = this.add.rectangle(panelX, previewCardCenterY, previewCardWidth, previewCardHeight, 0x1f2937, 1)
-            .setStrokeStyle(4, 0xffffff, 1)
-            .setDepth(31)
-            .setVisible(false);
+    public parsePlayerTurnAttributeKey (rawAttribute: string): PlayerTurnAttributeKey | null
+    {
+        const normalized = rawAttribute.toUpperCase().replace(/[^A-Z0-9]+/g, '_');
+        if (normalized in PLAYER_TURN_ATTRIBUTE_DEFAULTS) {
+            return normalized as PlayerTurnAttributeKey;
+        }
 
-        this.cardPreviewIdText = this.add.bitmapText(panelX, previewCardCenterY - Math.round(previewCardHeight * 0.16), 'minogram', '', Math.max(14, Math.round(16 * UI_SCALE)))
-            .setOrigin(0.5)
-            .setTint(0xffffff)
-            .setDepth(32)
-            .setVisible(false);
+        return null;
+    }
 
-        this.cardPreviewTypeText = this.add.bitmapText(panelX, previewCardCenterY + Math.round(previewCardHeight * 0.16), 'minogram', '', Math.max(12, Math.round(14 * UI_SCALE)))
-            .setOrigin(0.5)
-            .setTint(0xcde7ff)
-            .setDepth(32)
-            .setVisible(false);
+    private refreshPlayerStatsHud (): void
+    {
+        this.playerStatsHudController.refresh(this.activeViewMode, this.playerTurnAttributesByPlayer);
+    }
 
-        this.cardPreviewParagraphText = this.add.bitmapText(
-            leftX + Math.round(panelWidth * 0.08),
-            topY + Math.round(panelHeight * 0.70),
-            'minogram',
-            '',
-            Math.max(9, Math.round(10 * UI_SCALE))
-        )
-            .setOrigin(0, 0)
-            .setTint(0xe2e8f0)
-            .setMaxWidth(Math.round(panelWidth * 0.84))
-            .setDepth(32)
-            .setVisible(false);
+    private handleCardActionButtonClick (actionKey: CardActionKey): void
+    {
+        const card = this.selectedCard;
+        if (!card) {
+            return;
+        }
+
+        const actionName = actionKey === 'active' ? 'activate-ability' : actionKey;
+        const message = `${card.id} ${actionName}`;
+
+        this.appendTerminalLine(message);
+        this.emitBackendEvent('card_action', {
+            action: actionName,
+            card_id: card.id,
+            card_type: card.getCardType(),
+            owner_id: card.getOwnerId(),
+            zone_id: card.getZoneId(),
+            message
+        });
+    }
+
+    private refreshCardActionButtons (): void
+    {
+        if (!this.cardActionButtons || this.cardActionButtons.length === 0) {
+            return;
+        }
+
+        if (this.overlayPreviewContext) {
+            for (const button of this.cardActionButtons) {
+                button.body.setVisible(false);
+                button.label.setVisible(false);
+                button.body.setScale(1);
+                button.label.setScale(1);
+            }
+            return;
+        }
+
+        const card = this.selectedCard;
+        const isEligibleZone = card ? /-(hand|bench|active)$/.test(card.getZoneId()) : false;
+        const isActiveSlot = Boolean(card && card.getZoneId() === `${card.getOwnerId()}-active`);
+        const showAtk1 = Boolean(card && this.gamePhase === 'atk' && card.getCardType() === 'character' && isActiveSlot && card.hasAttackOne());
+        const showAtk2 = Boolean(card && this.gamePhase === 'atk' && card.getCardType() === 'character' && isActiveSlot && card.hasAttackTwo());
+        const showActive = Boolean(card && card.getCardType() === 'character' && isEligibleZone && card.hasActiveAbility());
+
+        const radius = Math.max(12, Math.round((GAME_CARD_ACTION_BUTTON_LAYOUT.buttonRadiusBase / BASE_WIDTH) * GAME_WIDTH));
+        const leftMargin = Math.round((GAME_CARD_ACTION_BUTTON_LAYOUT.leftMarginBase / BASE_WIDTH) * GAME_WIDTH);
+        const bottomMargin = Math.round((GAME_CARD_ACTION_BUTTON_LAYOUT.bottomMarginBase / BASE_HEIGHT) * GAME_HEIGHT);
+        const gap = Math.round((GAME_CARD_ACTION_BUTTON_LAYOUT.buttonGapBase / BASE_WIDTH) * GAME_WIDTH);
+        const diameter = radius * 2;
+        const anchorLeftX = leftMargin;
+        const anchorY = GAME_HEIGHT - bottomMargin - radius;
+
+        const visibleButtons: Array<{ key: CardActionKey; body: Phaser.GameObjects.Arc; label: Phaser.GameObjects.BitmapText }> = [];
+        for (const button of this.cardActionButtons) {
+            const visible =
+                (button.key === 'atk1' && showAtk1) ||
+                (button.key === 'atk2' && showAtk2) ||
+                (button.key === 'active' && showActive);
+            button.body.setScale(1);
+            button.label.setScale(1);
+            button.body.setVisible(visible);
+            button.label.setVisible(visible);
+
+            if (visible) {
+                visibleButtons.push(button);
+            }
+        }
+
+        if (visibleButtons.length === 0) {
+            return;
+        }
+
+        const startX = anchorLeftX + radius;
+
+        visibleButtons.forEach((button, index) => {
+            const x = startX + (index * (diameter + gap));
+            button.body.setPosition(x, anchorY);
+            button.label.setPosition(x, anchorY);
+        });
     }
 
     private showCardPreview (card: Card): void
     {
-        const isFaceDown = card.isTurnedOver();
-
-        this.cardPreviewPanel.setVisible(true);
-        this.cardPreviewBody
-            .setVisible(true)
-            .setFillStyle(isFaceDown ? 0x1f2937 : card.baseColor, 1);
-
-        this.cardPreviewIdText
-            .setVisible(true)
-            .setText(card.id);
-
-        this.cardPreviewTypeText
-            .setVisible(true)
-            .setText(card.getCardType().toUpperCase());
-
-        this.cardPreviewParagraphText
-            .setVisible(true)
-            .setText(
-                `Preview panel: ${card.id} (${card.getCardType().toUpperCase()})\n` +
-                `Owner: ${card.getOwnerId().toUpperCase()}\n` +
-                `Status: ${isFaceDown ? 'TURNED OVER' : 'FACE UP'}\n\n` +
-                'This is an expanded inspection view, separate from the in-play card. It only appears while the card is selected.'
-            );
+        this.cardPreviewController.show(card);
+        this.refreshCardActionButtons();
     }
 
     private hideCardPreview (): void
     {
-        this.cardPreviewPanel.setVisible(false);
-        this.cardPreviewBody.setVisible(false);
-        this.cardPreviewIdText.setVisible(false);
-        this.cardPreviewTypeText.setVisible(false);
-        this.cardPreviewParagraphText.setVisible(false);
+        this.cardPreviewController.hide();
+        this.refreshCardActionButtons();
     }
 
     private appendTerminalLine (line: string): void
     {
-        this.terminalLines.push(line);
-        if (this.terminalScrollOffset > 0) {
-            this.terminalScrollOffset += 1;
-        }
-        if (this.terminalLines.length > this.maxTerminalLines) {
-            const removed = this.terminalLines.length - this.maxTerminalLines;
-            this.terminalLines.splice(0, removed);
-            this.terminalScrollOffset = Math.max(0, this.terminalScrollOffset - removed);
-        }
-        this.clampTerminalScrollOffset();
-        this.refreshTerminalText();
+        console.info(`[Command] ${line}`);
+        this.emitBackendEvent('terminal_log', {
+            line
+        });
     }
 
-    private refreshTerminalText (): void
+    public scrollTerminalToLatest (): void
     {
-        const totalLines = this.terminalLines.length;
-        const visibleCount = this.terminalVisibleLineCount;
-        const maxOffset = Math.max(0, totalLines - visibleCount);
-        const offset = Phaser.Math.Clamp(this.terminalScrollOffset, 0, maxOffset);
-
-        const endIndex = totalLines - offset;
-        const startIndex = Math.max(0, endIndex - visibleCount);
-        this.terminalOutputText.setText(this.terminalLines.slice(startIndex, endIndex).join('\n'));
-
-        const cursor = this.terminalCursorVisible ? '_' : ' ';
-        this.terminalInputText.setText(`> ${this.terminalInput}${cursor}`);
+        // Frontend terminal was removed; keep method for command processor compatibility.
     }
 
-    private scrollTerminalBy (delta: number): void
+    private emitBackendEvent (eventType: string, responseData: Record<string, unknown>): void
     {
-        this.terminalScrollOffset += delta;
-        this.clampTerminalScrollOffset();
-        this.refreshTerminalText();
+        void sendBackendEvent(eventType, responseData, {
+            scene: 'Game',
+            view_mode: this.activeViewMode,
+            game_phase: this.gamePhase,
+            player_turn: this.playerTurn
+        });
     }
 
-    private clampTerminalScrollOffset (): void
+    public clearOverlayPreviewIfActive (): void
     {
-        const maxOffset = Math.max(0, this.terminalLines.length - this.terminalVisibleLineCount);
-        this.terminalScrollOffset = Phaser.Math.Clamp(this.terminalScrollOffset, 0, maxOffset);
+        if (!this.overlayPreviewContext) {
+            return;
+        }
+
+        this.overlayPreviewContext = null;
+        this.hideCardPreview();
     }
 
-    private executeTerminalCommand (command: string): void
+    private startScannerWaitLoop (): void
     {
-        if (!command) {
+        if (this.scannerWaitLoopActive) {
             return;
         }
 
-        this.appendTerminalLine(`> ${command}`);
+        this.scannerWaitLoopActive = true;
+        this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+            this.scannerWaitLoopActive = false;
+        });
 
-        const [rawAction, rawArgOne, rawArgTwo, rawArgThree] = command.split(/\s+/);
-        const action = rawAction.toLowerCase();
+        void this.waitForScannerCommands();
+    }
 
-        if (action === 'rm') {
-            if (!rawArgOne) {
-                this.appendTerminalLine('Usage: rm [energyid]');
-                return;
+    private async waitForScannerCommands (): Promise<void>
+    {
+        while (this.scannerWaitLoopActive) {
+            const scannerMessage = await waitForNextScannerCommand(25);
+            if (!this.scannerWaitLoopActive) {
+                break;
             }
 
-            const tokenId = Number(rawArgOne);
-            if (!Number.isInteger(tokenId)) {
-                this.appendTerminalLine(`Invalid energy id: ${rawArgOne}`);
-                return;
+            if (!scannerMessage) {
+                continue;
             }
 
-            const token = this.energyTokenById[tokenId];
-            if (!token) {
-                this.appendTerminalLine(`Unknown energy token: ${tokenId}`);
-                return;
-            }
-
-            this.moveEnergyTokenToDiscard(token);
-            this.appendTerminalLine(`ENERGY-${tokenId} -> energy-discard`);
-            return;
-        }
-
-        if (action === 'flip') {
-            if (!rawArgOne) {
-                this.appendTerminalLine('Usage: flip [cardid]');
-                return;
-            }
-
-            const cardId = rawArgOne.toUpperCase();
-            const card = this.cardById[cardId];
-
-            if (!card) {
-                this.appendTerminalLine(`Unknown card: ${cardId}`);
-                return;
-            }
-
-            const nextStateTurnedOver = !card.isTurnedOver();
-            card.flip();
-            this.appendTerminalLine(`${cardId} ${nextStateTurnedOver ? 'turned over' : 'face up'}`);
-            return;
-        }
-
-        if (action === 'boom') {
-            if (!rawArgOne) {
-                this.appendTerminalLine('Usage: boom [cardid]');
-                return;
-            }
-
-            const cardId = rawArgOne.toUpperCase();
-            const card = this.cardById[cardId];
-
-            if (!card) {
-                this.appendTerminalLine(`Unknown card: ${cardId}`);
-                return;
-            }
-
-            if (card.getCardType() !== 'character') {
-                this.appendTerminalLine(`boom only works on character cards: ${cardId}`);
-                return;
-            }
-
-            this.playPixelViolinExplosion(card);
-            this.appendTerminalLine(`BOOM on ${cardId}`);
-            return;
-        }
-
-        if (action === 'view') {
-            const requestedView = rawArgOne?.toLowerCase();
-
-            if (!requestedView) {
-                const nextView: PlayerId = this.activeViewPlayerId === 'p1' ? 'p2' : 'p1';
-                this.applyBoardView(nextView);
-                this.appendTerminalLine(`View -> ${nextView.toUpperCase()}`);
-                return;
-            }
-
-            if (requestedView !== 'p1' && requestedView !== 'p2') {
-                this.appendTerminalLine('Usage: view [p1|p2]');
-                return;
-            }
-
-            this.applyBoardView(requestedView);
-            this.appendTerminalLine(`View -> ${requestedView.toUpperCase()}`);
-            return;
-        }
-
-        if (action !== 'mv' || !rawArgOne || !rawArgTwo) {
-            this.appendTerminalLine('Usage: mv [cardid] [cardholderid] [index?]');
-            this.appendTerminalLine('       flip [cardid]');
-            this.appendTerminalLine('       rm [energyid]');
-            this.appendTerminalLine('       boom [cardid]');
-            this.appendTerminalLine('       view [p1|p2]');
-            return;
-        }
-
-        const cardId = rawArgOne.toUpperCase();
-        const holderId = rawArgTwo.toLowerCase();
-        const card = this.cardById[cardId];
-        const targetHolder = this.cardHolderById[holderId];
-
-        if (!card) {
-            this.appendTerminalLine(`Unknown card: ${cardId}`);
-            return;
-        }
-
-        if (!targetHolder) {
-            this.appendTerminalLine(`Unknown holder: ${holderId}`);
-            return;
-        }
-
-        let insertIndex: number | undefined;
-        if (rawArgThree !== undefined) {
-            const parsedIndex = Number(rawArgThree);
-            if (!Number.isInteger(parsedIndex) || parsedIndex < 0) {
-                this.appendTerminalLine(`Invalid index: ${rawArgThree}`);
-                this.appendTerminalLine('Index must be a non-negative integer.');
-                return;
-            }
-
-            if (parsedIndex > targetHolder.cards.length) {
-                this.appendTerminalLine(`Index out of range: ${parsedIndex}`);
-                this.appendTerminalLine(`Valid range for ${holderId}: 0-${targetHolder.cards.length}`);
-                return;
-            }
-
-            insertIndex = parsedIndex;
-        }
-
-        if (card.getZoneId() === holderId) {
-            this.appendTerminalLine(`${cardId} already in ${holderId}`);
-            return;
-        }
-
-        if (card.getAttachedToCardId()) {
-            this.detachCard(card);
-        }
-
-        this.moveCardToZone(card, holderId, () => {
-            this.animateCardToZone(card, holderId, () => {
-                this.detachChildrenIfParentInDiscard(card);
-                this.layoutAllHolders();
-                this.redrawAllCardMarks();
-                if (insertIndex !== undefined) {
-                    this.appendTerminalLine(`${cardId} -> ${holderId}[${insertIndex}]`);
-                    return;
-                }
-                this.appendTerminalLine(`${cardId} -> ${holderId}`);
+            this.emitBackendEvent('scanner_command_received', {
+                source: scannerMessage.source,
+                command: scannerMessage.command,
+                received_at: scannerMessage.received_at ?? null
             });
-        }, insertIndex);
+            this.scannerCommandInProgress = true;
+            try {
+                this.commandProcessor.execute(scannerMessage.command);
+            }
+            finally {
+                this.scannerCommandInProgress = false;
+            }
+        }
     }
 
-    private getCardFromGameObject (gameObject: Phaser.GameObjects.Rectangle): Card | undefined
+    public resetDraggingCards (ownerId?: PlayerId): number
+    {
+        let resetCount = 0;
+        const draggingCardIds = Array.from(this.activelyDraggedCardIds);
+
+        for (const cardId of draggingCardIds) {
+            const card = this.cardById[cardId];
+            if (!card) {
+                this.activelyDraggedCardIds.delete(cardId);
+                this.dragOriginZoneByCardId.delete(cardId);
+                this.dragStartPositionByCardId.delete(cardId);
+                this.dragDistanceByCardId.delete(cardId);
+                continue;
+            }
+
+            if (ownerId && card.getOwnerId() !== ownerId) {
+                continue;
+            }
+
+            this.activelyDraggedCardIds.delete(cardId);
+            this.dragOriginZoneByCardId.delete(cardId);
+            this.dragStartPositionByCardId.delete(cardId);
+            this.dragDistanceByCardId.delete(cardId);
+            resetCount += 1;
+        }
+
+        if (resetCount > 0) {
+            this.layoutAllHolders();
+            this.redrawAllCardMarks();
+        }
+
+        return resetCount;
+    }
+
+    public getCardFromGameObject (gameObject: Phaser.GameObjects.Rectangle): Card | undefined
     {
         return this.cardByBody.get(gameObject);
     }
@@ -1075,7 +796,7 @@ export class Game extends Scene
     private selectCard (card: Card): void
     {
         if (this.selectedCard === card) {
-            this.selectedCard.setDepth(10000);
+            this.selectedCard.setDepth(GAME_DEPTHS.cardSelected);
             this.selectedCard.redrawMarks();
             this.showCardPreview(this.selectedCard);
             return;
@@ -1092,7 +813,7 @@ export class Game extends Scene
 
         this.selectedCard = card;
         this.selectedCard.setSelected(true);
-        this.selectedCard.setDepth(10000);
+        this.selectedCard.setDepth(GAME_DEPTHS.cardSelected);
         this.selectedCard.redrawMarks();
         this.showCardPreview(this.selectedCard);
         this.scheduleAttachmentResync(this.selectedCard);
@@ -1119,8 +840,8 @@ export class Game extends Scene
     {
         // Selection animation runs for ~140ms, so keep attached entities synced through the tween.
         this.time.addEvent({
-            delay: 16,
-            repeat: 10,
+            delay: GAME_LAYOUT.selectionResyncDelayMs,
+            repeat: GAME_LAYOUT.selectionResyncRepeats,
             callback: () => {
                 this.updateAttachedChildrenPositions(card);
                 this.redrawAllCardMarks();
@@ -1130,7 +851,7 @@ export class Game extends Scene
 
     private layoutAllHolders (): void
     {
-        const preferredHorizontalStep = this.objectWidth + Math.round((18 / BASE_WIDTH) * GAME_WIDTH);
+        const preferredHorizontalStep = this.objectWidth + Math.round((GAME_LAYOUT.holderExtraHorizontalStepBase / BASE_WIDTH) * GAME_WIDTH);
 
         for (const holder of this.cardHolders) {
             if (holder.id === 'stadium') {
@@ -1146,13 +867,14 @@ export class Game extends Scene
         this.layoutEnergyTokensInZone(this.energyZoneIdByOwner.p1);
         this.layoutEnergyTokensInZone(this.energyZoneIdByOwner.p2);
         this.layoutEnergyTokensInZone('energy-discard');
-        this.applyHandVisibilityByView();
+        this.applyCardVisibilityByView();
     }
 
-    private applyBoardView (viewPlayerId: PlayerId): void
+    private applyBoardView (viewMode: ViewMode): void
     {
-        this.activeViewPlayerId = viewPlayerId;
-        const rotateTopBottom = viewPlayerId === 'p2';
+        this.activeViewMode = viewMode;
+        this.surrenderController.disarm(false);
+        const rotateTopBottom = viewMode === 'p2';
 
         for (const holder of this.cardHolders) {
             const basePosition = this.baseCardHolderPositionById[holder.id];
@@ -1178,12 +900,21 @@ export class Game extends Scene
 
         this.layoutAllHolders();
         this.redrawAllCardMarks();
+        this.refreshSurrenderButton();
+        this.refreshPlayerStatsHud();
     }
 
-    private applyHandVisibilityByView (): void
+    private applyCardVisibilityByView (): void
     {
-        const hiddenOwner: PlayerId = this.activeViewPlayerId === 'p1' ? 'p2' : 'p1';
-        const visibleHandZone = `${this.activeViewPlayerId}-hand`;
+        if (this.activeViewMode === 'admin') {
+            for (const card of this.cards) {
+                card.setTurnedOver(false);
+            }
+            return;
+        }
+
+        const hiddenOwner: PlayerId = this.activeViewMode === 'p1' ? 'p2' : 'p1';
+        const visibleHandZone = `${this.activeViewMode}-hand`;
         const hiddenHandZone = `${hiddenOwner}-hand`;
 
         for (const card of this.cards) {
@@ -1199,6 +930,151 @@ export class Game extends Scene
         }
     }
 
+    public canActOnCard (card: Card): boolean
+    {
+        if (this.scannerCommandInProgress) {
+            return true;
+        }
+
+        if (this.activeViewMode === 'admin') {
+            return true;
+        }
+
+        if (card.isTurnedOver()) {
+            return false;
+        }
+
+        return card.getOwnerId() === this.activeViewMode;
+    }
+
+    private canPreviewCard (card: Card): boolean
+    {
+        if (this.activeViewMode === 'admin') {
+            return true;
+        }
+
+        if (card.isTurnedOver()) {
+            return false;
+        }
+
+        return true;
+    }
+
+    public canDragCardByPhase (card: Card): boolean
+    {
+        if (this.gamePhase !== 'phase2') {
+            return false;
+        }
+
+        return card.getOwnerId() === this.playerTurn;
+    }
+
+    public canActOnToken (token: EnergyToken): boolean
+    {
+        if (this.scannerCommandInProgress) {
+            return true;
+        }
+
+        if (this.activeViewMode === 'admin') {
+            return true;
+        }
+
+        return token.ownerId === this.activeViewMode;
+    }
+
+    public canDragTokenByPhase (token: EnergyToken): boolean
+    {
+        if (this.gamePhase !== 'phase2') {
+            return false;
+        }
+
+        return token.ownerId === this.playerTurn;
+    }
+
+    public parseGamePhaseArg (rawPhase: string): GamePhase | null
+    {
+        const normalized = rawPhase.toLowerCase();
+        if (normalized === 'no-input') {
+            return 'no-input';
+        }
+
+        if (normalized === 'phase2') {
+            return 'phase2';
+        }
+
+        if (normalized === 'atk') {
+            return 'atk';
+        }
+
+        return null;
+    }
+
+    public parsePlayerTurnArg (rawTurn: string): PlayerId | null
+    {
+        const normalized = rawTurn.toLowerCase();
+        if (normalized === 'p1' || normalized === 'player-1' || normalized === 'player1') {
+            return 'p1';
+        }
+
+        if (normalized === 'p2' || normalized === 'player-2' || normalized === 'player2') {
+            return 'p2';
+        }
+
+        return null;
+    }
+
+    public getPlayerTurnLabel (playerTurn: PlayerId): string
+    {
+        return playerTurn === 'p1' ? 'PLAYER-1' : 'PLAYER-2';
+    }
+
+    public setGamePhase (nextPhase: GamePhase): void
+    {
+        this.gamePhase = nextPhase;
+        this.refreshCardActionButtons();
+
+        if (nextPhase !== 'phase2') {
+            this.activelyDraggedCardIds.clear();
+            this.dragOriginZoneByCardId.clear();
+            this.dragStartPositionByCardId.clear();
+            this.dragDistanceByCardId.clear();
+            this.activelyDraggedEnergyTokenIds.clear();
+            this.energyDragStartPositionById.clear();
+            this.energyDragDistanceById.clear();
+        }
+    }
+
+    public setPlayerTurn (nextTurn: PlayerId): void
+    {
+        this.playerTurn = nextTurn;
+    }
+
+    public parseViewModeArg (rawMode: string): ViewMode | null
+    {
+        if (rawMode === 'admin') {
+            return 'admin';
+        }
+
+        if (rawMode === 'p1' || rawMode === 'player-1' || rawMode === 'player1') {
+            return 'p1';
+        }
+
+        if (rawMode === 'p2' || rawMode === 'player-2' || rawMode === 'player2') {
+            return 'p2';
+        }
+
+        return null;
+    }
+
+    private getViewModeLabel (viewMode: ViewMode): string
+    {
+        if (viewMode === 'admin') {
+            return 'ADMIN';
+        }
+
+        return viewMode === 'p1' ? 'PLAYER-1' : 'PLAYER-2';
+    }
+
     private redrawAllCardMarks (): void
     {
         for (const card of this.cards) {
@@ -1210,11 +1086,16 @@ export class Game extends Scene
         }
     }
 
-    private findOverlappedCard (card: Card): Card | null
+    public findOverlappedCard (
+        card: Card,
+        filter?: (otherCard: Card) => boolean
+    ): Card | null
     {
         const droppedBounds = card.getBounds();
         const cardId = card.id;
         const attachedToCardId = card.getAttachedToCardId();
+        let bestMatch: Card | null = null;
+        let bestOverlapArea = -1;
 
         for (const otherCard of this.cards) {
             if (otherCard === card) {
@@ -1229,40 +1110,90 @@ export class Game extends Scene
                 continue;
             }
 
-            if (Phaser.Geom.Intersects.RectangleToRectangle(droppedBounds, otherCard.getBounds())) {
-                return otherCard;
+            if (filter && !filter(otherCard)) {
+                continue;
+            }
+
+            const otherBounds = otherCard.getBounds();
+            if (!Phaser.Geom.Intersects.RectangleToRectangle(droppedBounds, otherBounds)) {
+                continue;
+            }
+
+            const overlapLeft = Math.max(droppedBounds.left, otherBounds.left);
+            const overlapRight = Math.min(droppedBounds.right, otherBounds.right);
+            const overlapTop = Math.max(droppedBounds.top, otherBounds.top);
+            const overlapBottom = Math.min(droppedBounds.bottom, otherBounds.bottom);
+            const overlapWidth = Math.max(0, overlapRight - overlapLeft);
+            const overlapHeight = Math.max(0, overlapBottom - overlapTop);
+            const overlapArea = overlapWidth * overlapHeight;
+
+            if (overlapArea > bestOverlapArea) {
+                bestOverlapArea = overlapArea;
+                bestMatch = otherCard;
             }
         }
 
-        return null;
+        return bestMatch;
     }
 
-    private animateCardToZone (
+    public animateCardToZone (
         card: Card,
         zoneId: string,
         onComplete: () => void
     ): void
     {
         const holder = this.cardHolderById[zoneId];
-        card.setDepth(1000);
+        card.setDepth(GAME_DEPTHS.cardDragging);
+        this.beginSceneAnimation();
 
         this.tweens.add({
             targets: card.body,
             x: holder.x,
             y: holder.y,
-            duration: 260,
+            duration: GAME_LAYOUT.cardMoveDurationMs,
             ease: 'Sine.easeInOut',
             onUpdate: () => {
                 this.updateAttachedChildrenPositions(card);
                 this.redrawAllCardMarks();
             },
             onComplete: () => {
+                this.endSceneAnimation();
                 onComplete();
             }
         });
     }
 
-    private attachCardToCard (child: Card, parent: Card): void
+    public animateCardBetweenPoints (
+        card: Card,
+        fromX: number,
+        fromY: number,
+        toX: number,
+        toY: number,
+        onComplete: () => void
+    ): void
+    {
+        card.setPosition(fromX, fromY);
+        card.setDepth(GAME_DEPTHS.cardDragging);
+        this.beginSceneAnimation();
+
+        this.tweens.add({
+            targets: card.body,
+            x: toX,
+            y: toY,
+            duration: GAME_LAYOUT.cardMoveDurationMs,
+            ease: 'Sine.easeInOut',
+            onUpdate: () => {
+                this.updateAttachedChildrenPositions(card);
+                this.redrawAllCardMarks();
+            },
+            onComplete: () => {
+                this.endSceneAnimation();
+                onComplete();
+            }
+        });
+    }
+
+    public attachCardToCard (child: Card, parent: Card): void
     {
         if (child === parent) {
             return;
@@ -1275,8 +1206,73 @@ export class Game extends Scene
 
         child.setAttachedToCardId(parentId);
         child.setZoneId(parentZoneId);
-        child.setScale(0.55);
+        child.setScale(GAME_LAYOUT.cardMoveToolScale);
         this.updateAttachedCardPosition(child, parent);
+    }
+
+    public animateToolAttachToCard (child: Card, parent: Card, onComplete?: () => void): void
+    {
+        if (child === parent) {
+            if (onComplete) {
+                onComplete();
+            }
+            return;
+        }
+
+        this.detachCard(child);
+        this.removeCardFromAllHolders(child);
+        child.setZoneId(parent.getZoneId());
+        child.setAttachedToCardId(parent.id);
+        child.setDepth(GAME_DEPTHS.cardDragging);
+
+        const parentBounds = parent.getBounds();
+        const edgePadding = GAME_LAYOUT.toolAttachmentEdgePadding;
+        const targetScale = GAME_LAYOUT.cardMoveToolScale;
+        const targetWidth = child.body.width * targetScale;
+        const targetHeight = child.body.height * targetScale;
+        const targetX = parentBounds.right - (targetWidth / 2) - edgePadding;
+        const targetY = parentBounds.bottom - (targetHeight / 2) - edgePadding;
+
+        const tweenState = {
+            x: child.x,
+            y: child.y,
+            scale: child.body.scaleX
+        };
+
+        this.beginSceneAnimation();
+        this.tweens.add({
+            targets: tweenState,
+            x: targetX,
+            y: targetY,
+            scale: targetScale,
+            duration: GAME_LAYOUT.cardMoveDurationMs,
+            ease: 'Sine.easeInOut',
+            onUpdate: () => {
+                child.setPosition(tweenState.x, tweenState.y);
+                child.setScale(tweenState.scale);
+                this.updateAttachedChildrenPositions(child);
+                this.redrawAllCardMarks();
+            },
+            onComplete: () => {
+                this.updateAttachedCardPosition(child, parent);
+                this.updateAttachedChildrenPositions(parent);
+                this.redrawAllCardMarks();
+                this.endSceneAnimation();
+                if (onComplete) {
+                    onComplete();
+                }
+            }
+        });
+    }
+
+    public getTopAttachmentTarget (baseCard: Card): Card
+    {
+        const attachedChildren = this.getAttachedChildren(baseCard.id);
+        if (attachedChildren.length === 0) {
+            return baseCard;
+        }
+
+        return attachedChildren.reduce((topCard, nextCard) => (nextCard.depth > topCard.depth ? nextCard : topCard));
     }
 
     private detachCard (card: Card): void
@@ -1319,18 +1315,19 @@ export class Game extends Scene
         const parentBounds = parent.getBounds();
         const tokenWidth = attachedTokens[0].getDisplayWidth();
         const tokenHeight = attachedTokens[0].getDisplayHeight();
-        const horizontalStep = tokenWidth * 0.25;
+        const horizontalStep = tokenWidth * GAME_LAYOUT.energyTokenAttachedHorizontalStepRatio;
 
-        const startX = parentBounds.left + (tokenWidth / 2) + 2;
-        const y = parentBounds.bottom - (tokenHeight / 2) - 2;
+        const startX = parentBounds.left + (tokenWidth / 2) + GAME_LAYOUT.energyTokenAttachedPadding;
+        const y = parentBounds.bottom - (tokenHeight / 2) - GAME_LAYOUT.energyTokenAttachedPadding;
 
         attachedTokens.forEach((token, index) => {
             token.setPosition(startX + (index * horizontalStep), y);
-            token.setDepth(parent.depth + 1 + (index * 2));
+            const tentativeDepth = ENERGY_TOKEN_DEPTHS.minAttached + index;
+            token.setDepth(Math.min(ENERGY_TOKEN_DEPTHS.maxBelowUi, tentativeDepth));
         });
     }
 
-    private findOverlappedOwnedCharacterForToken (token: EnergyToken): Card | null
+    public findOverlappedOwnedCharacterForToken (token: EnergyToken): Card | null
     {
         const tokenBounds = token.getBounds();
         const ownerId = token.ownerId;
@@ -1357,7 +1354,7 @@ export class Game extends Scene
         return null;
     }
 
-    private attachEnergyTokenToCard (token: EnergyToken, parent: Card): void
+    public attachEnergyTokenToCard (token: EnergyToken, parent: Card): void
     {
         token.setAttachedToCardId(parent.id);
         this.setEnergyTokenZone(token, this.energyZoneIdByOwner[token.ownerId]);
@@ -1381,25 +1378,26 @@ export class Game extends Scene
             return;
         }
 
-        const columns = zoneId === 'energy-discard' ? 4 : 5;
-        const rowGap = Math.max(2, Math.round(tokens[0].getDisplayHeight() * 0.25));
-        const colGap = Math.max(2, Math.round(tokens[0].getDisplayWidth() * 0.2));
+        const columns = zoneId === 'energy-discard' ? GAME_LAYOUT.energyTokenZoneColumnsDiscard : GAME_LAYOUT.energyTokenZoneColumnsDefault;
+        const rowGap = Math.max(GAME_LAYOUT.energyTokenZoneMinGapPx, Math.round(tokens[0].getDisplayHeight() * GAME_LAYOUT.energyTokenZoneRowGapRatio));
+        const colGap = Math.max(GAME_LAYOUT.energyTokenZoneMinGapPx, Math.round(tokens[0].getDisplayWidth() * GAME_LAYOUT.energyTokenZoneColGapRatio));
 
-        const startX = zoneArea.left + Math.round(zoneArea.width * 0.14);
-        const startY = zoneArea.top + Math.round(zoneArea.height * 0.26);
+        const startX = zoneArea.left + Math.round(zoneArea.width * GAME_LAYOUT.energyTokenZoneStartXRatio);
+        const startY = zoneArea.top + Math.round(zoneArea.height * GAME_LAYOUT.energyTokenZoneStartYRatio);
 
         tokens.forEach((token, index) => {
             const row = Math.floor(index / columns);
             const col = index % columns;
             const x = startX + (col * (token.getDisplayWidth() + colGap));
             const y = startY + (row * (token.getDisplayHeight() + rowGap));
+            const depth = ENERGY_TOKEN_DEPTHS.minZone + index;
 
             token.setPosition(x, y);
-            token.setDepth(20 + (index * 2));
+            token.setDepth(depth);
         });
     }
 
-    private moveEnergyTokenToDiscard (token: EnergyToken): void
+    public moveEnergyTokenToDiscard (token: EnergyToken): void
     {
         const attachedToCardId = token.getAttachedToCardId();
         if (attachedToCardId) {
@@ -1431,34 +1429,65 @@ export class Game extends Scene
         token.setZoneId(zoneId);
     }
 
-    private playPixelViolinExplosion (card: Card): void
+    public resolveBoomTextureKey (rawAssetName?: string): string | null
     {
-        const durationMs = 1000;
-        const count = 28;
-        const baseScale = Math.max(0.08, this.objectWidth / 900);
+        if (!rawAssetName) {
+            return 'pixelviolin';
+        }
+
+        const key = rawAssetName.toLowerCase();
+        const aliases: Record<string, string> = {
+            pixelviolin: 'pixelviolin',
+            'pixelviolin.jpg': 'pixelviolin',
+            background: 'background',
+            bg: 'background',
+            'bg.png': 'background',
+            logo: 'logo',
+            'logo.png': 'logo',
+            minecraftfont: 'minecraftfont',
+            'minecraftfont.png': 'minecraftfont',
+            font2bitmap: 'font2bitmap',
+            'font2bitmap.png': 'font2bitmap'
+        };
+
+        const resolved = aliases[key];
+        if (!resolved) {
+            return null;
+        }
+
+        return this.textures.exists(resolved) ? resolved : null;
+    }
+
+    public playPixelViolinExplosion (card: Card, textureKey: string): void
+    {
+        const durationMs = GAME_EXPLOSION.durationMs;
+        const count = GAME_EXPLOSION.count;
+        const baseScale = Math.max(GAME_EXPLOSION.minScale, this.objectWidth / GAME_EXPLOSION.scaleDivisor);
 
         for (let i = 0; i < count; i += 1) {
-            const image = this.add.image(card.x, card.y, 'pixelviolin')
-                .setDepth(20000 + i)
-                .setScale(baseScale * Phaser.Math.FloatBetween(0.9, 1.3))
+            const image = this.add.image(card.x, card.y, textureKey)
+                .setDepth(GAME_DEPTHS.explosionBase + i)
+                .setScale(baseScale * Phaser.Math.FloatBetween(GAME_EXPLOSION.scaleMinMultiplier, GAME_EXPLOSION.scaleMaxMultiplier))
                 .setAlpha(1)
-                .setAngle(Phaser.Math.Between(0, 360));
+                .setAngle(Phaser.Math.Between(GAME_EXPLOSION.initialRotationMin, GAME_EXPLOSION.initialRotationMax));
 
             const angle = Phaser.Math.FloatBetween(0, Math.PI * 2);
-            const distance = Phaser.Math.FloatBetween(this.objectWidth * 0.2, this.objectWidth * 1.0);
+            const distance = Phaser.Math.FloatBetween(this.objectWidth * GAME_EXPLOSION.distanceMinWidthRatio, this.objectWidth * GAME_EXPLOSION.distanceMaxWidthRatio);
             const targetX = card.x + (Math.cos(angle) * distance);
             const targetY = card.y + (Math.sin(angle) * distance);
 
+            this.beginSceneAnimation();
             this.tweens.add({
                 targets: image,
                 x: targetX,
                 y: targetY,
                 alpha: 0,
-                angle: image.angle + Phaser.Math.Between(-180, 180),
+                angle: image.angle + Phaser.Math.Between(GAME_EXPLOSION.rotationDeltaMin, GAME_EXPLOSION.rotationDeltaMax),
                 duration: durationMs,
                 ease: 'Cubic.easeOut',
                 onComplete: () => {
                     image.destroy();
+                    this.endSceneAnimation();
                 }
             });
         }
@@ -1468,12 +1497,73 @@ export class Game extends Scene
     {
         const parentBounds = parent.getBounds();
         const childBounds = child.getBounds();
-        const edgePadding = 2;
+        const edgePadding = GAME_LAYOUT.toolAttachmentEdgePadding;
         const x = parentBounds.right - (childBounds.width / 2) - edgePadding;
         const y = parentBounds.bottom - (childBounds.height / 2) - edgePadding;
 
         child.setPosition(x, y);
-        child.setDepth(parent.depth + 0.5);
+        child.setDepth(parent.depth + GAME_DEPTHS.attachmentDepthOffset);
+    }
+
+    public playShuffleAnimationForPile (holder: CardHolder): boolean
+    {
+        const pileCards = holder.cards.slice();
+        if (pileCards.length < GAME_SHUFFLE_ANIMATION.minCardsRequired) {
+            return false;
+        }
+
+        const scatterX = Math.max(GAME_SHUFFLE_ANIMATION.scatterXMinPx, Math.round(this.objectWidth * GAME_SHUFFLE_ANIMATION.scatterXWidthRatio));
+        const scatterY = Math.max(GAME_SHUFFLE_ANIMATION.scatterYMinPx, Math.round(this.objectHeight * GAME_SHUFFLE_ANIMATION.scatterYHeightRatio));
+        const spreadDuration = Math.max(GAME_SHUFFLE_ANIMATION.spreadDurationMinMs, Math.round(GAME_LAYOUT.cardMoveDurationMs * GAME_SHUFFLE_ANIMATION.spreadDurationMoveDurationRatio));
+        const settleDuration = Math.max(GAME_SHUFFLE_ANIMATION.settleDurationMinMs, Math.round(GAME_LAYOUT.cardMoveDurationMs * GAME_SHUFFLE_ANIMATION.settleDurationMoveDurationRatio));
+
+        this.beginSceneAnimation();
+        let pendingCards = pileCards.length;
+
+        pileCards.forEach((card, index) => {
+            const startX = card.x;
+            const startY = card.y;
+            const shuffleX = startX + Phaser.Math.Between(-scatterX, scatterX);
+            const shuffleY = startY + Phaser.Math.Between(-scatterY, scatterY);
+
+            card.setDepth(GAME_DEPTHS.cardDragging + index);
+
+            this.tweens.add({
+                targets: card.body,
+                x: shuffleX,
+                y: shuffleY,
+                duration: spreadDuration,
+                delay: index * GAME_SHUFFLE_ANIMATION.cardDelayStepMs,
+                ease: 'Sine.easeOut',
+                onUpdate: () => {
+                    card.redrawMarks();
+                    this.updateAttachedChildrenPositions(card);
+                },
+                onComplete: () => {
+                    this.tweens.add({
+                        targets: card.body,
+                        x: startX,
+                        y: startY,
+                        duration: settleDuration,
+                        ease: 'Sine.easeInOut',
+                        onUpdate: () => {
+                            card.redrawMarks();
+                            this.updateAttachedChildrenPositions(card);
+                        },
+                        onComplete: () => {
+                            pendingCards -= 1;
+                            if (pendingCards === 0) {
+                                this.layoutAllHolders();
+                                this.redrawAllCardMarks();
+                                this.endSceneAnimation();
+                            }
+                        }
+                    });
+                }
+            });
+        });
+
+        return true;
     }
 
     private removeCardFromAllHolders (card: Card): void
@@ -1514,7 +1604,7 @@ export class Game extends Scene
         completeMove();
     }
 
-    private sendCardToOwnerDiscard (card: Card, onComplete?: () => void): void
+    public sendCardToOwnerDiscard (card: Card, onComplete?: () => void): void
     {
         const discardZone = `${card.getOwnerId()}-discard`;
         this.moveCardToZone(card, discardZone, onComplete);
@@ -1534,31 +1624,8 @@ export class Game extends Scene
 
         stadiumHolder.cards.forEach((card, index) => {
             card.setPosition(stadiumHolder.x, stadiumHolder.y);
-            card.setDepth(card.getSelected() ? 10000 : (30 + index));
+            card.setDepth(card.getSelected() ? GAME_DEPTHS.cardSelected : (GAME_DEPTHS.stadiumBase + index));
         });
     }
 
-    private detachChildrenIfParentInDiscard (parent: Card): void
-    {
-        const parentZoneId = parent.getZoneId();
-        const ownerDiscardZone = `${parent.getOwnerId()}-discard`;
-        if (parentZoneId !== ownerDiscardZone) {
-            return;
-        }
-
-        const parentCardId = parent.id;
-        const children = this.getAttachedChildren(parentCardId);
-
-        for (const child of children) {
-            this.detachCard(child);
-            this.removeCardFromAllHolders(child);
-            child.setZoneId(ownerDiscardZone);
-            this.cardHolderById[ownerDiscardZone].addCard(child);
-        }
-
-        const attachedEnergyTokens = this.getAttachedEnergyTokens(parentCardId);
-        for (const token of attachedEnergyTokens) {
-            this.moveEnergyTokenToDiscard(token);
-        }
-    }
 }

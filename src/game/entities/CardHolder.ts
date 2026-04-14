@@ -1,7 +1,7 @@
 import { Scene } from 'phaser';
 
 import { Card } from './index';
-import { CARDHOLDER_LAYOUT_SIDE_PADDING_MULTIPLIER, UI_SCALE } from '../config';
+import { CARDHOLDER_LAYOUT_SIDE_PADDING_MULTIPLIER, ENTITY_VISUALS, GAME_DEPTHS, UI_SCALE } from '../config';
 
 export type CardHolderConfig = {
     id: string;
@@ -37,18 +37,18 @@ export class CardHolder
         this.height = config.height;
         this.cards = [];
 
-        this.background = scene.add.rectangle(config.x, config.y, config.width, config.height, config.color, 0.22)
-            .setStrokeStyle(3, 0xffffff, 0.9)
-            .setDepth(1);
+        this.background = scene.add.rectangle(config.x, config.y, config.width, config.height, config.color, ENTITY_VISUALS.cardHolderFillAlpha)
+            .setStrokeStyle(ENTITY_VISUALS.cardHolderStrokeWidth, ENTITY_VISUALS.cardHolderStrokeColor, ENTITY_VISUALS.cardHolderStrokeAlpha)
+            .setDepth(ENTITY_VISUALS.cardHolderDepth);
 
         this.zone = scene.add.zone(config.x, config.y, config.width, config.height)
             .setRectangleDropZone(config.width, config.height)
             .setData('zoneId', config.id);
 
-        this.labelText = scene.add.bitmapText(config.x, config.y, 'minogram', config.label, Math.max(12, Math.round(18 * UI_SCALE)))
+        this.labelText = scene.add.bitmapText(config.x, config.y, 'minogram', config.label, Math.max(ENTITY_VISUALS.cardHolderLabelMinSize, Math.round(ENTITY_VISUALS.cardHolderLabelBaseSize * UI_SCALE)))
             .setOrigin(0.5)
-            .setTint(0xffffff)
-            .setDepth(2);
+            .setTint(ENTITY_VISUALS.cardHolderLabelTint)
+            .setDepth(ENTITY_VISUALS.cardHolderLabelDepth);
     }
 
     setPosition (x: number, y: number): void
@@ -110,7 +110,7 @@ export class CardHolder
 
         this.cards.forEach((card, index) => {
             card.setPosition(startX + (index * stepBetweenCentersX), this.y);
-            card.setDepth(card.getSelected() ? 10000 : (10 + index));
+            card.setDepth(card.getSelected() ? GAME_DEPTHS.cardSelected : (GAME_DEPTHS.cardBase + index));
             onCardPositioned(card);
         });
     }

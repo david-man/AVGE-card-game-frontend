@@ -1,7 +1,7 @@
 import { Scene } from 'phaser';
 
 import { EnergyToken } from './EnergyToken';
-import { UI_SCALE } from '../config';
+import { ENTITY_VISUALS, UI_SCALE } from '../config';
 
 export type EnergyHolderConfig = {
     id: string;
@@ -37,18 +37,18 @@ export class EnergyHolder
         this.height = config.height;
         this.tokens = [];
 
-        this.background = scene.add.rectangle(config.x, config.y, config.width, config.height, config.color, 0.27)
-            .setStrokeStyle(3, 0xffffff, 0.9)
-            .setDepth(1);
+        this.background = scene.add.rectangle(config.x, config.y, config.width, config.height, config.color, ENTITY_VISUALS.energyHolderFillAlpha)
+            .setStrokeStyle(ENTITY_VISUALS.energyHolderStrokeWidth, ENTITY_VISUALS.energyHolderStrokeColor, ENTITY_VISUALS.energyHolderStrokeAlpha)
+            .setDepth(ENTITY_VISUALS.energyHolderDepth);
 
         this.zone = scene.add.zone(config.x, config.y, config.width, config.height)
             .setRectangleDropZone(config.width, config.height)
             .setData('zoneId', config.id);
 
-        this.labelText = scene.add.bitmapText(config.x, config.y - Math.round(config.height * 0.35), 'minogram', config.label, Math.max(11, Math.round(14 * UI_SCALE)))
+        this.labelText = scene.add.bitmapText(config.x, config.y - Math.round(config.height * ENTITY_VISUALS.energyHolderLabelYOffsetRatio), 'minogram', config.label, Math.max(ENTITY_VISUALS.energyHolderLabelMinSize, Math.round(ENTITY_VISUALS.energyHolderLabelBaseSize * UI_SCALE)))
             .setOrigin(0.5)
-            .setTint(0xffffff)
-            .setDepth(2);
+            .setTint(ENTITY_VISUALS.energyHolderLabelTint)
+            .setDepth(ENTITY_VISUALS.energyHolderLabelDepth);
     }
 
     setPosition (x: number, y: number): void
@@ -57,7 +57,7 @@ export class EnergyHolder
         this.y = y;
         this.background.setPosition(x, y);
         this.zone.setPosition(x, y);
-        this.labelText.setPosition(x, y - Math.round(this.height * 0.35));
+        this.labelText.setPosition(x, y - Math.round(this.height * ENTITY_VISUALS.energyHolderLabelYOffsetRatio));
     }
 
     addToken (token: EnergyToken): void

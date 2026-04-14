@@ -1,0 +1,444 @@
+import { Scene } from 'phaser';
+import { ENERGY_TOKEN_DEPTHS, GAME_DEPTHS, GAME_INTERACTION } from '../config';
+
+export class BoardInteractionController
+{
+    private readonly scene: Scene;
+    private readonly host: unknown;
+
+    constructor (scene: Scene, host: unknown)
+    {
+        this.scene = scene;
+        this.host = host;
+    }
+
+    register (): void
+    {
+        const g = this.host as any;
+
+        this.scene.input.on('pointerdown', (_pointer: Phaser.Input.Pointer, currentlyOver: Phaser.GameObjects.GameObject[]) => {
+            if (!g.boardInputEnabled) {
+                return;
+            }
+            const clickedCard = currentlyOver.some((gameObject) => gameObject instanceof Phaser.GameObjects.Rectangle && g.cardByBody.has(gameObject as Phaser.GameObjects.Rectangle));
+            if (!clickedCard) {
+                g.clearCardSelection();
+            }
+        });
+
+        this.scene.input.on('dragstart', (_pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.Rectangle) => {
+            const card = g.getCardFromGameObject(gameObject);
+            if (!card) {
+                return;
+            }
+
+            if (g.isInteractionLockedByAnimation()) {
+                return;
+            }
+
+            if (!g.canActOnCard(card)) {
+                return;
+            }
+
+            if (!g.canDragCardByPhase(card)) {
+                return;
+            }
+
+            const zoneId = card.getZoneId();
+            if (zoneId.endsWith('-discard') || zoneId.endsWith('-deck')) {
+                return;
+            }
+
+            g.activelyDraggedCardIds.add(card.id);
+            g.dragOriginZoneByCardId.set(card.id, zoneId);
+            g.dragStartPositionByCardId.set(card.id, { x: card.x, y: card.y });
+            g.dragDistanceByCardId.set(card.id, 0);
+        });
+
+        this.scene.input.on('drag', (_pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.Rectangle, dragX: number, dragY: number) => {
+            const card = g.getCardFromGameObject(gameObject);
+            if (!card) {
+                return;
+            }
+
+            if (g.isInteractionLockedByAnimation()) {
+                g.activelyDraggedCardIds.delete(card.id);
+                g.dragOriginZoneByCardId.delete(card.id);
+                g.dragStartPositionByCardId.delete(card.id);
+                g.dragDistanceByCardId.delete(card.id);
+                g.layoutAllHolders();
+                g.redrawAllCardMarks();
+                return;
+            }
+
+            if (!g.activelyDraggedCardIds.has(card.id)) {
+                return;
+            }
+
+            const attachedToCardId = card.getAttachedToCardId();
+            if (attachedToCardId) {
+                const parentCard = g.cardById[attachedToCardId];
+                if (parentCard) {
+                    g.updateAttachedCardPosition(card, parentCard);
+                    g.redrawAllCardMarks();
+                }
+                return;
+            }
+
+            card.setPosition(dragX, dragY);
+            card.setDepth(GAME_DEPTHS.cardDragging);
+
+            const dragStartPosition = g.dragStartPositionByCardId.get(card.id);
+            if (dragStartPosition) {
+                const movedDistance = Phaser.Math.Distance.Between(dragStartPosition.x, dragStartPosition.y, dragX, dragY);
+                const priorMaxDistance = g.dragDistanceByCardId.get(card.id) ?? 0;
+                if (movedDistance > priorMaxDistance) {
+                    g.dragDistanceByCardId.set(card.id, movedDistance);
+                }
+            }
+
+            g.updateAttachedChildrenPositions(card);
+            g.redrawAllCardMarks();
+        });
+
+        this.scene.input.on('drop', (_pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.Rectangle, dropZone: Phaser.GameObjects.Zone) => {
+            const card = g.getCardFromGameObject(gameObject);
+            if (!card) {
+                return;
+            }
+
+            if (g.isInteractionLockedByAnimation()) {
+                g.activelyDraggedCardIds.delete(card.id);
+                g.dragOriginZoneByCardId.delete(card.id);
+                g.dragStartPositionByCardId.delete(card.id);
+                g.dragDistanceByCardId.delete(card.id);
+                g.layoutAllHolders();
+                g.redrawAllCardMarks();
+                return;
+            }
+
+            if (!g.activelyDraggedCardIds.has(card.id)) {
+                return;
+            }
+
+            g.activelyDraggedCardIds.delete(card.id);
+
+            const dragStartPosition = g.dragStartPositionByCardId.get(card.id);
+            const draggedDistance = g.dragDistanceByCardId.get(card.id) ?? 0;
+            const originZoneId = g.dragOriginZoneByCardId.get(card.id) ?? card.getZoneId();
+            g.dragOriginZoneByCardId.delete(card.id);
+            g.dragStartPositionByCardId.delete(card.id);
+            g.dragDistanceByCardId.delete(card.id);
+            const minDragDistance = Math.max(GAME_INTERACTION.minDragDistancePx, Math.round(g.objectWidth * GAME_INTERACTION.minDragDistanceWidthRatio));
+
+            if (dragStartPosition) {
+                if (draggedDistance < minDragDistance) {
+                    g.layoutAllHolders();
+                    g.redrawAllCardMarks();
+                    return;
+                }
+            }
+
+            const targetZoneId = dropZone.getData('zoneId') as string;
+            const ownerId = card.getOwnerId();
+            const ownerHandZone = `${ownerId}-hand`;
+            const ownerBenchZone = `${ownerId}-bench`;
+            const ownerActiveZone = `${ownerId}-active`;
+            const cardType = card.getCardType();
+
+            if (cardType === 'character') {
+                const validCharacterMove =
+                    (originZoneId === ownerHandZone && targetZoneId === ownerBenchZone) ||
+                    (originZoneId === ownerBenchZone && targetZoneId === ownerActiveZone) ||
+                    (originZoneId === ownerActiveZone && targetZoneId === ownerBenchZone);
+
+                if (!validCharacterMove) {
+                    g.layoutAllHolders();
+                    g.redrawAllCardMarks();
+                    return;
+                }
+
+                g.moveCardToZone(card, targetZoneId, () => {
+                    g.emitBackendEvent('card_moved', {
+                        card_id: card.id,
+                        card_type: card.getCardType(),
+                        owner_id: card.getOwnerId(),
+                        from_zone: originZoneId,
+                        to_zone: targetZoneId,
+                        interaction: 'drag_drop'
+                    });
+                    g.layoutAllHolders();
+                    g.redrawAllCardMarks();
+                });
+                return;
+            }
+
+            if (cardType === 'tool') {
+                const fromHand = originZoneId === ownerHandZone;
+                const onOwnBattleZone = targetZoneId === ownerBenchZone || targetZoneId === ownerActiveZone;
+                const overlappedCard = g.findOverlappedCard(card, (otherCard: any) => (
+                    otherCard.getZoneId() === targetZoneId &&
+                    otherCard.getOwnerId() === ownerId &&
+                    otherCard.getCardType() === 'character'
+                ));
+
+                if (!fromHand || !onOwnBattleZone || !overlappedCard) {
+                    g.layoutAllHolders();
+                    g.redrawAllCardMarks();
+                    return;
+                }
+
+                const attachedChildren = g.getAttachedChildren(overlappedCard.id);
+                const attachTarget = attachedChildren.length > 0
+                    ? attachedChildren.reduce((topCard: any, nextCard: any) => (nextCard.depth > topCard.depth ? nextCard : topCard))
+                    : overlappedCard;
+
+                g.removeCardFromAllHolders(card);
+                card.setZoneId(targetZoneId);
+                g.attachCardToCard(card, attachTarget);
+                g.emitBackendEvent('tool_attached', {
+                    tool_card_id: card.id,
+                    owner_id: card.getOwnerId(),
+                    from_zone: originZoneId,
+                    to_zone: targetZoneId,
+                    attached_to_card_id: attachTarget.id,
+                    interaction: 'drag_drop'
+                });
+                g.layoutAllHolders();
+                g.redrawAllCardMarks();
+                return;
+            }
+
+            if (cardType === 'item') {
+                if (originZoneId !== ownerHandZone) {
+                    g.layoutAllHolders();
+                    g.redrawAllCardMarks();
+                    return;
+                }
+
+                if (targetZoneId === ownerHandZone) {
+                    g.moveCardToZone(card, ownerHandZone, () => {
+                        g.emitBackendEvent('card_moved', {
+                            card_id: card.id,
+                            card_type: card.getCardType(),
+                            owner_id: card.getOwnerId(),
+                            from_zone: originZoneId,
+                            to_zone: ownerHandZone,
+                            interaction: 'drag_drop'
+                        });
+                        g.layoutAllHolders();
+                        g.redrawAllCardMarks();
+                    });
+                }
+                else {
+                    g.sendCardToOwnerDiscard(card, () => {
+                        g.emitBackendEvent('card_moved', {
+                            card_id: card.id,
+                            card_type: card.getCardType(),
+                            owner_id: card.getOwnerId(),
+                            from_zone: originZoneId,
+                            to_zone: `${card.getOwnerId()}-discard`,
+                            interaction: 'drag_drop'
+                        });
+                        g.layoutAllHolders();
+                        g.redrawAllCardMarks();
+                    });
+                }
+                return;
+            }
+
+            if (cardType === 'stadium') {
+                if (originZoneId !== ownerHandZone || targetZoneId !== 'stadium') {
+                    g.layoutAllHolders();
+                    g.redrawAllCardMarks();
+                    return;
+                }
+
+                g.moveCardToZone(card, 'stadium', () => {
+                    g.emitBackendEvent('card_moved', {
+                        card_id: card.id,
+                        card_type: card.getCardType(),
+                        owner_id: card.getOwnerId(),
+                        from_zone: originZoneId,
+                        to_zone: 'stadium',
+                        interaction: 'drag_drop'
+                    });
+                    g.layoutAllHolders();
+                    g.redrawAllCardMarks();
+                });
+                return;
+            }
+
+            g.layoutAllHolders();
+            g.redrawAllCardMarks();
+        });
+
+        this.scene.input.on('dragend', (_pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.Rectangle, dropped: boolean) => {
+            const card = g.getCardFromGameObject(gameObject);
+            if (!card) {
+                return;
+            }
+
+            if (g.isInteractionLockedByAnimation()) {
+                g.activelyDraggedCardIds.delete(card.id);
+                g.dragOriginZoneByCardId.delete(card.id);
+                g.dragStartPositionByCardId.delete(card.id);
+                g.dragDistanceByCardId.delete(card.id);
+                g.layoutAllHolders();
+                g.redrawAllCardMarks();
+                return;
+            }
+
+            const wasDragged = g.activelyDraggedCardIds.has(card.id);
+            const draggedDistance = g.dragDistanceByCardId.get(card.id) ?? 0;
+            const originZoneId = g.dragOriginZoneByCardId.get(card.id) ?? card.getZoneId();
+            const minDragDistance = Math.max(GAME_INTERACTION.minDragDistancePx, Math.round(g.objectWidth * GAME_INTERACTION.minDragDistanceWidthRatio));
+
+            g.activelyDraggedCardIds.delete(card.id);
+            g.dragOriginZoneByCardId.delete(card.id);
+            g.dragStartPositionByCardId.delete(card.id);
+            g.dragDistanceByCardId.delete(card.id);
+
+            if (!dropped) {
+                const ownerHandZone = `${card.getOwnerId()}-hand`;
+                const isItemDiscardFromFreeDrop =
+                    wasDragged &&
+                    draggedDistance >= minDragDistance &&
+                    card.getCardType() === 'item' &&
+                    originZoneId === ownerHandZone;
+
+                if (isItemDiscardFromFreeDrop) {
+                    g.sendCardToOwnerDiscard(card, () => {
+                        g.emitBackendEvent('card_moved', {
+                            card_id: card.id,
+                            card_type: card.getCardType(),
+                            owner_id: card.getOwnerId(),
+                            from_zone: originZoneId,
+                            to_zone: `${card.getOwnerId()}-discard`,
+                            interaction: 'drag_drop'
+                        });
+                        g.layoutAllHolders();
+                        g.updateAttachedChildrenPositions(card);
+                        g.redrawAllCardMarks();
+                    });
+                    return;
+                }
+
+                g.layoutAllHolders();
+                g.updateAttachedChildrenPositions(card);
+            }
+
+            g.redrawAllCardMarks();
+        });
+
+        this.scene.input.on('dragstart', (_pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.GameObject) => {
+            const token = g.energyTokenByBody.get(gameObject);
+            if (!token || token.getAttachedToCardId()) {
+                return;
+            }
+
+            if (g.isInteractionLockedByAnimation()) {
+                return;
+            }
+
+            if (!g.canActOnToken(token)) {
+                return;
+            }
+
+            if (!g.canDragTokenByPhase(token)) {
+                return;
+            }
+
+            g.activelyDraggedEnergyTokenIds.add(token.id);
+            g.energyDragStartPositionById.set(token.id, { x: token.x, y: token.y });
+            g.energyDragDistanceById.set(token.id, 0);
+            token.setDepth(ENERGY_TOKEN_DEPTHS.maxBelowUi);
+        });
+
+        this.scene.input.on('drag', (_pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.GameObject, dragX: number, dragY: number) => {
+            const token = g.energyTokenByBody.get(gameObject);
+            if (!token || !g.activelyDraggedEnergyTokenIds.has(token.id)) {
+                return;
+            }
+
+            if (g.isInteractionLockedByAnimation()) {
+                g.activelyDraggedEnergyTokenIds.delete(token.id);
+                g.energyDragStartPositionById.delete(token.id);
+                g.energyDragDistanceById.delete(token.id);
+                g.layoutEnergyTokensInZone(token.getZoneId());
+                return;
+            }
+
+            token.setPosition(dragX, dragY);
+
+            const dragStartPosition = g.energyDragStartPositionById.get(token.id);
+            if (dragStartPosition) {
+                const movedDistance = Phaser.Math.Distance.Between(dragStartPosition.x, dragStartPosition.y, dragX, dragY);
+                const priorMaxDistance = g.energyDragDistanceById.get(token.id) ?? 0;
+                if (movedDistance > priorMaxDistance) {
+                    g.energyDragDistanceById.set(token.id, movedDistance);
+                }
+            }
+        });
+
+        this.scene.input.on('drop', (_pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.GameObject, dropZone: Phaser.GameObjects.Zone) => {
+            const token = g.energyTokenByBody.get(gameObject);
+            if (!token || !g.activelyDraggedEnergyTokenIds.has(token.id)) {
+                return;
+            }
+
+            if (g.isInteractionLockedByAnimation()) {
+                g.activelyDraggedEnergyTokenIds.delete(token.id);
+                g.energyDragStartPositionById.delete(token.id);
+                g.energyDragDistanceById.delete(token.id);
+                g.layoutEnergyTokensInZone(token.getZoneId());
+                return;
+            }
+
+            g.activelyDraggedEnergyTokenIds.delete(token.id);
+            g.energyDragStartPositionById.delete(token.id);
+            g.energyDragDistanceById.delete(token.id);
+
+            const ownerEnergyZoneId = g.energyZoneIdByOwner[token.ownerId];
+            const targetZoneId = (dropZone?.getData('zoneId') as string | undefined) ?? null;
+            const characterTarget = g.findOverlappedOwnedCharacterForToken(token);
+
+            if (characterTarget) {
+                g.attachEnergyTokenToCard(token, characterTarget);
+                return;
+            }
+
+            if (targetZoneId === ownerEnergyZoneId) {
+                token.setAttachedToCardId(null);
+                g.setEnergyTokenZone(token, ownerEnergyZoneId);
+                g.layoutEnergyTokensInZone(ownerEnergyZoneId);
+                return;
+            }
+
+            g.layoutEnergyTokensInZone(token.getZoneId());
+        });
+
+        this.scene.input.on('dragend', (_pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.GameObject, dropped: boolean) => {
+            const token = g.energyTokenByBody.get(gameObject);
+            if (!token) {
+                return;
+            }
+
+            if (g.isInteractionLockedByAnimation()) {
+                g.activelyDraggedEnergyTokenIds.delete(token.id);
+                g.energyDragStartPositionById.delete(token.id);
+                g.energyDragDistanceById.delete(token.id);
+                g.layoutEnergyTokensInZone(token.getZoneId());
+                return;
+            }
+
+            g.activelyDraggedEnergyTokenIds.delete(token.id);
+            g.energyDragStartPositionById.delete(token.id);
+            g.energyDragDistanceById.delete(token.id);
+
+            if (!dropped) {
+                g.layoutEnergyTokensInZone(token.getZoneId());
+            }
+        });
+    }
+}
