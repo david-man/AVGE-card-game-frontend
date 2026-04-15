@@ -74,7 +74,7 @@ export class PlayerStatsHudController
                 ['ATTACKS_LEFT', statsByPlayer[playerId].ATTACKS_LEFT]
             ];
 
-            const titleText = playerId === 'p1' ? 'PLAYER-1' : 'PLAYER-2';
+            const titleText = playerId === 'p1' ? 'PLAYER 1' : 'PLAYER 2';
             const rowHeight = Math.max(14, Math.round(GAME_PLAYER_STATS_HUD_LAYOUT.fontSize * UI_SCALE * 1.35));
             const titleGap = Math.max(8, Math.round(8 * UI_SCALE));
             const colGap = Math.max(20, Math.round(20 * UI_SCALE));
@@ -87,7 +87,7 @@ export class PlayerStatsHudController
                 const keyText = ui.keyTexts[index];
                 const valueText = ui.valueTexts[index];
 
-                keyText.setText(`${key.toLowerCase().replace(/_/g, '-')}:`);
+                keyText.setText(`${key.toLowerCase().replace(/_/g, ' ')}:`);
                 valueText.setText(String(value));
                 maxKeyWidth = Math.max(maxKeyWidth, keyText.width);
                 maxValueWidth = Math.max(maxValueWidth, valueText.width);

@@ -32,7 +32,10 @@ export class DiceInputOverlay
     private hintText: Phaser.GameObjects.BitmapText | null;
     private tickerEvent: Phaser.Time.TimerEvent | null;
     private isRolling: boolean;
+    private awaitingConfirm: boolean;
+    private settledValue: number | null;
     private onComplete: DiceRollCompleteCallback | null;
+    private forcedFinalValue: number | null;
 
     constructor (scene: Scene, inputLockOverlay: Phaser.GameObjects.Rectangle)
     {
@@ -43,7 +46,10 @@ export class DiceInputOverlay
         this.hintText = null;
         this.tickerEvent = null;
         this.isRolling = false;
+        this.awaitingConfirm = false;
+        this.settledValue = null;
         this.onComplete = null;
+        this.forcedFinalValue = null;
     }
 
     hasActiveOverlay (): boolean
@@ -68,13 +74,17 @@ export class DiceInputOverlay
         this.hintText = null;
 
         this.isRolling = false;
+        this.awaitingConfirm = false;
+        this.settledValue = null;
         this.onComplete = null;
+        this.forcedFinalValue = null;
     }
 
-    start (onComplete: DiceRollCompleteCallback, topMessage: string): void
+    start (onComplete: DiceRollCompleteCallback, topMessage: string, forcedValue?: number): void
     {
         this.stopActiveOverlay();
         this.onComplete = onComplete;
+        this.forcedFinalValue = forcedValue ?? null;
 
         const startValue = this.getRandomDieFaceValue();
         const overlayDepth = this.inputLockOverlay.depth + 5;
@@ -135,6 +145,16 @@ export class DiceInputOverlay
             .setDepth(overlayDepth);
 
         this.image.on('pointerdown', () => {
+            if (this.awaitingConfirm) {
+                const callback = this.onComplete;
+                const finalValue = this.settledValue;
+                this.stopActiveOverlay();
+                if (callback && finalValue !== null) {
+                    callback(finalValue);
+                }
+                return;
+            }
+
             this.startRollAnimation();
         });
     }
@@ -146,7 +166,7 @@ export class DiceInputOverlay
         }
 
         this.isRolling = true;
-        const finalValue = this.getRandomDieFaceValue();
+        const finalValue = this.forcedFinalValue ?? this.getRandomDieFaceValue();
         const totalTicks = 14;
         let tickCount = 0;
 
@@ -172,10 +192,20 @@ export class DiceInputOverlay
                         duration: 140,
                         ease: 'Sine.easeOut',
                         onComplete: () => {
-                            const callback = this.onComplete;
-                            this.stopActiveOverlay();
-                            if (callback) {
-                                callback(finalValue);
+                            this.isRolling = false;
+                            this.awaitingConfirm = true;
+                            this.settledValue = finalValue;
+                            if (this.hintText) {
+                                const confirmHint = 'CLICK AGAIN TO CONFIRM';
+                                this.hintText.setText(confirmHint);
+                                this.hintText.setFontSize(fitBitmapTextToSingleLine({
+                                    scene: this.scene,
+                                    font: 'minogram',
+                                    text: confirmHint,
+                                    preferredSize: 24,
+                                    minSize: 10,
+                                    maxWidth: Math.round(this.scene.scale.width * 0.92)
+                                }));
                             }
                         }
                     });

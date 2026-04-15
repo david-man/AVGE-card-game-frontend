@@ -11,6 +11,7 @@ import {
     GAME_WIDTH,
     UI_SCALE
 } from '../config';
+import { fitBitmapTextToSingleLine } from './overlays/bitmapTextFit';
 
 export class CardPreviewController
 {
@@ -110,11 +111,35 @@ export class CardPreviewController
             .setFillStyle(isFaceDown ? CARD_VISUALS.faceDownFillColor : card.baseColor, 1)
             .setStrokeStyle(CARD_BORDER_WIDTH, card.getBorderColor(), 1);
 
-        this.idText.setVisible(true).setText(card.id);
+        this.idText.setVisible(true).setText(card.getCardClass());
+        this.idText.setFontSize(fitBitmapTextToSingleLine({
+            scene: this.scene,
+            font: 'minogram',
+            text: this.idText.text,
+            preferredSize: this.idText.fontSize,
+            minSize: Math.max(10, Math.round(this.idText.fontSize * 0.72)),
+            maxWidth: Math.max(12, Math.round(this.body.width * 0.9))
+        }));
         this.typeText.setVisible(true).setText(card.getCardType().toUpperCase());
+        this.typeText.setFontSize(fitBitmapTextToSingleLine({
+            scene: this.scene,
+            font: 'minogram',
+            text: this.typeText.text,
+            preferredSize: this.typeText.fontSize,
+            minSize: Math.max(9, Math.round(this.typeText.fontSize * 0.72)),
+            maxWidth: Math.max(12, Math.round(this.body.width * 0.9))
+        }));
 
         if (card.getCardType() === 'character') {
             this.hpText.setVisible(true).setText(`[${card.getHp()}/${card.getMaxHp()}]`);
+            this.hpText.setFontSize(fitBitmapTextToSingleLine({
+                scene: this.scene,
+                font: 'minogram',
+                text: this.hpText.text,
+                preferredSize: this.hpText.fontSize,
+                minSize: Math.max(8, Math.round(this.hpText.fontSize * 0.75)),
+                maxWidth: Math.max(10, Math.round(this.body.width * 0.6))
+            }));
         }
         else {
             this.hpText.setVisible(false);
@@ -123,7 +148,9 @@ export class CardPreviewController
         this.paragraphText
             .setVisible(true)
             .setText(
-                `Preview panel: ${card.id} (${card.getCardType().toUpperCase()})\n` +
+                `Preview panel: ${card.getCardClass()}\n` +
+                `Unique ID: ${card.id}\n` +
+                `Type: ${card.getCardType().toUpperCase()}\n` +
                 `Owner: ${card.getOwnerId().toUpperCase()}\n` +
                 `Status: ${isFaceDown ? 'TURNED OVER' : 'FACE UP'}\n\n` +
                 'This is an expanded inspection view, separate from the in-play card. It only appears while the card is selected.'

@@ -1,19 +1,25 @@
 import { Scene } from 'phaser';
+import { io, Socket } from 'socket.io-client';
 
 import { GameCommandProcessor } from '../commands/GameCommandProcessor';
-import { Card, CardHolder, CardHolderConfig, EnergyHolder, EnergyHolderConfig, EnergyToken, PlayerId, CardOptions, initializeCards } from '../entities';
-import { sendBackendEvent, waitForNextScannerCommand } from '../Network';
+import { Card, CardHolder, CardHolderConfig, EnergyHolder, EnergyHolderConfig, EnergyToken, PlayerId } from '../entities';
+import { sendFrontendProtocolPacket, BackendEntitiesSetup, BackendProtocolPacket, FrontendProtocolPacket, parseBackendEntitiesSetup } from '../Network';
 import { BoardInteractionController } from '../ui/BoardInteractionController';
 import { CardPreviewController } from '../ui/CardPreviewController';
 import { InputOverlayController } from '../ui/InputOverlayController';
+import { PhaseHudController } from '../ui/PhaseHudController';
 import { PlayerStatsHudController } from '../ui/PlayerStatsHudController';
 import { SurrenderController } from '../ui/SurrenderController';
+import { fitBitmapTextToTwoLines } from '../ui/overlays/bitmapTextFit';
+import { fitBitmapTextToSingleLine } from '../ui/overlays/bitmapTextFit';
 import {
+    AVGECardType,
     BASE_HEIGHT,
     BASE_WIDTH,
     BOARD_SCALE,
     CARD_BASE_HEIGHT,
     CARD_BASE_WIDTH,
+    ENTITY_VISUALS,
     GAME_CARD_ACTION_BUTTON_LAYOUT,
     GAME_DEPTHS,
     GAME_EXPLOSION,
@@ -29,7 +35,6 @@ import {
     GAME_CENTER_Y,
     GAME_HEIGHT,
     GAME_WIDTH,
-    PLAYER_STARTING_ENERGY_TOKEN_IDS,
     PLAYER_TURN_ATTRIBUTE_DEFAULTS,
     UI_SCALE
 } from '../config';
@@ -40,6 +45,31 @@ type CardActionKey = 'atk1' | 'atk2' | 'active';
 type OverlayPreviewContext = 'input' | 'reveal' | null;
 type PlayerTurnAttributeKey = keyof typeof PLAYER_TURN_ATTRIBUTE_DEFAULTS;
 type PlayerTurnAttributes = Record<PlayerTurnAttributeKey, number>;
+type PlayerSetupProfile = {
+    username: string;
+    attributes: Partial<PlayerTurnAttributes>;
+};
+
+const DEFAULT_BACKEND_SOCKET_URL = 'http://127.0.0.1:5500';
+
+const getBackendSocketUrl = (): string => {
+    if (typeof window === 'undefined') {
+        return DEFAULT_BACKEND_SOCKET_URL;
+    }
+
+    const configuredUrl = (window as Window & { AVGE_BACKEND_PROTOCOL_URL?: string }).AVGE_BACKEND_PROTOCOL_URL;
+    if (typeof configuredUrl !== 'string' || configuredUrl.trim().length === 0) {
+        return DEFAULT_BACKEND_SOCKET_URL;
+    }
+
+    try {
+        const parsed = new URL(configuredUrl);
+        return parsed.origin;
+    }
+    catch {
+        return DEFAULT_BACKEND_SOCKET_URL;
+    }
+};
 
 export class Game extends Scene
 {
@@ -63,18 +93,20 @@ export class Game extends Scene
     energyHolderById: Record<string, EnergyHolder>;
 
     energyTokens: EnergyToken[];
-    energyTokenById: Record<number, EnergyToken>;
+    energyTokenById: Record<string, EnergyToken>;
     energyTokenByBody: Map<Phaser.GameObjects.GameObject, EnergyToken>;
-    activelyDraggedEnergyTokenIds: Set<number>;
-    energyDragStartPositionById: Map<number, { x: number; y: number }>;
-    energyDragDistanceById: Map<number, number>;
+    activelyDraggedEnergyTokenIds: Set<string>;
+    energyDragStartPositionById: Map<string, { x: number; y: number }>;
+    energyDragDistanceById: Map<string, number>;
     activeSceneAnimationCount: number;
 
     energyZoneIdByOwner: Record<PlayerId, string>;
     activeViewMode: ViewMode;
     gamePhase: GamePhase;
+    roundNumber: number;
     playerTurn: PlayerId;
     playerTurnAttributesByPlayer: Record<PlayerId, PlayerTurnAttributes>;
+    playerSetupProfileById: Record<PlayerId, PlayerSetupProfile>;
     baseCardHolderPositionById: Record<string, { x: number; y: number }>;
     baseEnergyHolderPositionById: Record<string, { x: number; y: number }>;
 
@@ -89,14 +121,40 @@ export class Game extends Scene
     cardPreviewController: CardPreviewController;
     surrenderController: SurrenderController;
     playerStatsHudController: PlayerStatsHudController;
-    scannerWaitLoopActive: boolean;
+    phaseHudController: PhaseHudController;
     scannerCommandInProgress: boolean;
+    commandExecutionInProgress: boolean;
+    pendingBackendEvents: Array<{
+        eventType: string;
+        responseData: Record<string, unknown>;
+        context: Record<string, unknown>;
+    }>;
+    backendEventSequence: number;
+    protocolAck: number;
+    protocolClientId: string;
+    protocolClientSlot: PlayerId | null;
+    protocolReconnectToken: string | null;
+    waitingForOpponent: boolean;
+    inputAcknowledged: boolean;
+    pendingInputCommand: string | null;
+    pendingNotifyCommand: string | null;
+    awaitingRemoteNotifyAck: boolean;
+    remoteInputLockActive: boolean;
+    protocolSocket: Socket | null;
+    protocolSocketFallbackToHttp: boolean;
+    protocolRecoveryInProgress: boolean;
+    protocolSendChain: Promise<void>;
 
     cardActionButtons: Array<{
         key: CardActionKey;
         body: Phaser.GameObjects.Arc;
         label: Phaser.GameObjects.BitmapText;
     }>;
+    phaseStateActionButton: {
+        body: Phaser.GameObjects.Rectangle;
+        label: Phaser.GameObjects.BitmapText;
+        action: 'phase2-attack' | 'atk-skip' | null;
+    } | null;
 
     constructor ()
     {
@@ -120,6 +178,7 @@ export class Game extends Scene
         this.camera = this.cameras.main;
         this.camera.setBackgroundColor(GAME_SCENE_VISUALS.backgroundColor);
         this.camera.roundPixels = true;
+        this.camera.fadeIn(220, 0, 0, 0);
 
         this.background = this.add.image(GAME_CENTER_X, GAME_CENTER_Y, 'background');
         this.background.setDisplaySize(GAME_WIDTH, GAME_HEIGHT);
@@ -137,7 +196,7 @@ export class Game extends Scene
                 this.appendTerminalLine(`${this.getViewModeLabel(this.activeViewMode)} surrender armed for ${seconds}s. Click again to confirm.`);
             },
             onConfirm: () => {
-                const winningPlayerLabel = this.activeViewMode === 'p1' ? 'PLAYER-2' : 'PLAYER-1';
+                const winningPlayerLabel = this.activeViewMode === 'p1' ? 'PLAYER 2' : 'PLAYER 1';
                 this.appendTerminalLine(`${winningPlayerLabel} won by surrender.`);
                 this.emitBackendEvent('surrender_result', {
                     winner: winningPlayerLabel,
@@ -152,9 +211,26 @@ export class Game extends Scene
             }
         });
         this.playerStatsHudController = new PlayerStatsHudController(this);
+        this.phaseHudController = new PhaseHudController(this);
         this.commandProcessor = new GameCommandProcessor(this);
-        this.scannerWaitLoopActive = false;
         this.scannerCommandInProgress = false;
+        this.commandExecutionInProgress = false;
+        this.pendingBackendEvents = [];
+        this.backendEventSequence = 0;
+        this.protocolAck = 0;
+        this.protocolClientId = this.loadOrCreateProtocolClientId();
+        this.protocolClientSlot = this.loadProtocolClientSlot();
+        this.protocolReconnectToken = this.loadProtocolReconnectToken();
+        this.waitingForOpponent = false;
+        this.inputAcknowledged = false;
+        this.pendingInputCommand = null;
+        this.pendingNotifyCommand = null;
+        this.awaitingRemoteNotifyAck = false;
+        this.remoteInputLockActive = false;
+        this.protocolSocket = null;
+        this.protocolSocketFallbackToHttp = false;
+        this.protocolRecoveryInProgress = false;
+        this.protocolSendChain = Promise.resolve();
 
         const xRatio = GAME_WIDTH / BASE_WIDTH;
         const yRatio = GAME_HEIGHT / BASE_HEIGHT;
@@ -168,12 +244,17 @@ export class Game extends Scene
         this.cardHolderById = {};
         this.baseCardHolderPositionById = {};
         this.baseEnergyHolderPositionById = {};
-        this.activeViewMode = 'p1';
+        this.activeViewMode = 'admin';
         this.gamePhase = 'phase2';
+        this.roundNumber = 0;
         this.playerTurn = 'p1';
         this.playerTurnAttributesByPlayer = {
             p1: this.createDefaultPlayerTurnAttributes(),
             p2: this.createDefaultPlayerTurnAttributes()
+        };
+        this.playerSetupProfileById = {
+            p1: { username: 'PLAYER 1', attributes: {} },
+            p2: { username: 'PLAYER 2', attributes: {} }
         };
 
         for (const config of holderConfigs) {
@@ -201,7 +282,6 @@ export class Game extends Scene
         for (const holder of this.energyHolders) {
             this.baseEnergyHolderPositionById[holder.id] = { x: holder.x, y: holder.y };
         }
-        this.createEnergyTokens();
 
         this.cards = [];
         this.cardById = {};
@@ -213,100 +293,23 @@ export class Game extends Scene
         this.dragStartPositionByCardId = new Map();
         this.dragDistanceByCardId = new Map();
 
-        const cardTypeColors = {
-            character: 0xe76f51,
-            tool: 0x457b9d,
-            item: 0x2a9d8f,
-            stadium: 0x6d597a
-        } as const;
-
-        const cardTemplates: Array<{
-            ownerId: 'p1' | 'p2';
-            cardType: 'character' | 'tool' | 'item' | 'stadium';
-            hasAtk1?: boolean;
-            hasAtk2?: boolean;
-            hasActive?: boolean;
-        }> = [
-            { ownerId: 'p1', cardType: 'character', hasAtk1: true, hasAtk2: true, hasActive: true },
-            { ownerId: 'p1', cardType: 'character', hasAtk1: true, hasAtk2: true, hasActive: true },
-            { ownerId: 'p1', cardType: 'character', hasAtk1: true, hasAtk2: true, hasActive: true },
-            { ownerId: 'p1', cardType: 'character', hasAtk1: true, hasAtk2: true, hasActive: true },
-            { ownerId: 'p1', cardType: 'character', hasAtk1: true, hasAtk2: true, hasActive: true },
-            { ownerId: 'p1', cardType: 'character', hasAtk1: true, hasAtk2: true, hasActive: true },
-            { ownerId: 'p1', cardType: 'character', hasAtk1: true, hasAtk2: true, hasActive: true },
-            { ownerId: 'p1', cardType: 'character', hasAtk1: true, hasAtk2: true, hasActive: true },
-            { ownerId: 'p1', cardType: 'character', hasAtk1: true, hasAtk2: true, hasActive: true },
-            { ownerId: 'p1', cardType: 'character', hasAtk1: true, hasAtk2: true, hasActive: true },
-            { ownerId: 'p1', cardType: 'tool' },
-            { ownerId: 'p1', cardType: 'item' },
-            { ownerId: 'p1', cardType: 'stadium' },
-            { ownerId: 'p2', cardType: 'character', hasAtk1: true, hasAtk2: true, hasActive: true },
-            { ownerId: 'p2', cardType: 'tool' },
-            { ownerId: 'p2', cardType: 'item' },
-            { ownerId: 'p2', cardType: 'stadium' }
-        ];
-
-        const cardOptions: CardOptions[] = cardTemplates.map((template, index) => {
-            const zoneId = `${template.ownerId}-hand`;
-            const startingHolder = this.cardHolderById[zoneId];
-            const cardId = `CARD-${index + 1}`;
-
-            return {
-                id: cardId,
-                cardType: template.cardType,
-                ownerId: template.ownerId,
-                x: startingHolder.x,
-                y: startingHolder.y,
-                width: this.objectWidth,
-                height: this.objectHeight,
-                color: cardTypeColors[template.cardType],
-                zoneId,
-                card_class: template.cardType,
-                has_atk_1: template.hasAtk1 ?? false,
-                has_atk_2: template.hasAtk2 ?? false,
-                has_active: template.hasActive ?? false
-            };
-        });
-
-        this.cards = initializeCards(this, cardOptions);
-
-        this.cards.forEach((card) => {
-            this.cardById[card.id] = card;
-            this.cardByBody.set(card.body, card);
-            const startingHolder = this.cardHolderById[card.getZoneId()];
-            startingHolder.addCard(card);
-            this.input.setDraggable(card.body);
-
-            card.body.on('pointerdown', () => {
-                if (!this.boardInputEnabled) {
-                    return;
-                }
-
-                if (!this.canPreviewCard(card)) {
-                    return;
-                }
-                this.selectCard(card);
-            });
-        });
-
         this.createCardPreviewPanel();
         this.createCardActionButtons();
+        this.phaseStateActionButton = null;
         this.createSurrenderButton();
         this.createPlayerStatsHud();
+        this.createPhaseHud();
 
-        this.layoutAllHolders();
-        this.redrawAllCardMarks();
+        void this.initializeProtocolSession();
+
         this.applyBoardView(this.activeViewMode);
         this.boardInteractionController.register();
-        this.startScannerWaitLoop();
     }
 
     public isInteractionLockedByAnimation (): boolean
     {
-        if (!this.boardInputEnabled) {
-            return true;
-        }
-
+        // This lock is only for in-flight animation/replay visuals.
+        // Input gating is controlled separately via boardInputEnabled.
         if (this.activeSceneAnimationCount > 0) {
             return true;
         }
@@ -314,10 +317,23 @@ export class Game extends Scene
         return this.cards.some((card) => card.isCurrentlyFlipping());
     }
 
-    public setBoardInputEnabled (enabled: boolean): void
+    public setBoardInputEnabled (enabled: boolean, showLockOverlayWhenDisabled = true): void
     {
         this.boardInputEnabled = enabled;
-        this.inputLockOverlay.setVisible(!enabled);
+
+        if (!enabled) {
+            const overlayAlpha = showLockOverlayWhenDisabled
+                ? GAME_SCENE_VISUALS.inputLockAlpha
+                : 0;
+            this.inputLockOverlay
+                .setFillStyle(GAME_SCENE_VISUALS.inputLockColor, overlayAlpha)
+                .setVisible(true);
+        }
+        else {
+            this.inputLockOverlay
+                .setFillStyle(GAME_SCENE_VISUALS.inputLockColor, GAME_SCENE_VISUALS.inputLockAlpha)
+                .setVisible(false);
+        }
 
         if (enabled && this.inputOverlayController?.hasActiveOverlay()) {
             this.inputOverlayController.stopActiveOverlay();
@@ -334,17 +350,64 @@ export class Game extends Scene
             this.activelyDraggedEnergyTokenIds.clear();
             this.energyDragStartPositionById.clear();
             this.energyDragDistanceById.clear();
+            return;
+        }
+
+        if (!this.isInteractionLockedByAnimation()) {
+            this.flushPendingBackendEvents();
         }
     }
 
     private beginSceneAnimation (): void
     {
         this.activeSceneAnimationCount += 1;
+        console.info('[ACK_TRACE][Game] animation_begin', {
+            activeAnimations: this.activeSceneAnimationCount,
+            pendingEvents: this.pendingBackendEvents.length
+        });
     }
 
     private endSceneAnimation (): void
     {
         this.activeSceneAnimationCount = Math.max(0, this.activeSceneAnimationCount - 1);
+        console.info('[ACK_TRACE][Game] animation_end', {
+            activeAnimations: this.activeSceneAnimationCount,
+            pendingEvents: this.pendingBackendEvents.length
+        });
+        if (this.activeSceneAnimationCount === 0) {
+            this.flushPendingBackendEvents();
+        }
+    }
+
+    private flushPendingBackendEvents (): void
+    {
+        if (this.pendingBackendEvents.length === 0) {
+            return;
+        }
+
+        const pending = this.pendingBackendEvents.splice(0, this.pendingBackendEvents.length);
+        console.info('[ACK_TRACE][Game] flush_pending_events', {
+            flushedCount: pending.length,
+            activeAnimations: this.activeSceneAnimationCount,
+            commandExecutionInProgress: this.commandExecutionInProgress
+        });
+        for (const item of pending) {
+            const isAck = item.eventType === 'terminal_log' && String(item.responseData.line ?? '').trim().toLowerCase() === 'ack backend_update_processed';
+            console.info('[ACK_TRACE][Game] flush_send_event', {
+                eventType: item.eventType,
+                isAck,
+                command: isAck ? item.responseData.command ?? null : null
+            });
+            this.dispatchFrontendEvent(item.eventType, item.responseData, item.context);
+        }
+    }
+
+    public setCommandExecutionInProgress (inProgress: boolean): void
+    {
+        this.commandExecutionInProgress = inProgress;
+        if (!inProgress && !this.isInteractionLockedByAnimation()) {
+            this.flushPendingBackendEvents();
+        }
     }
 
     private createEnergyHolders (): void
@@ -376,44 +439,501 @@ export class Game extends Scene
         createHolder({ id: this.energyZoneIdByOwner.p1, label: 'P1 ENERGY', x: p1EnergyX, y: p1EnergyY, width: holderWidth, height: holderHeight, color: 0x3a0ca3 });
     }
 
-    private createEnergyTokens (): void
+    private async initializeProtocolSession (): Promise<void>
     {
-        this.initializePlayerEnergySet('p1', PLAYER_STARTING_ENERGY_TOKEN_IDS.p1);
-        this.initializePlayerEnergySet('p2', PLAYER_STARTING_ENERGY_TOKEN_IDS.p2);
+        this.setInputAcknowledged(false);
+        if (!this.initializeProtocolSocket()) {
+            this.enqueueProtocolPacket('register_client', {
+                requested_slot: this.protocolClientSlot,
+                reconnect_token: this.protocolReconnectToken,
+            });
+        }
     }
 
-    private initializePlayerEnergySet (ownerId: PlayerId, tokenIds: number[]): void
+    private initializeProtocolSocket (): boolean
     {
-        const zoneId = this.energyZoneIdByOwner[ownerId];
-        const holder = this.energyHolderById[zoneId];
-        if (!holder) {
+        if (this.protocolSocketFallbackToHttp) {
+            return false;
+        }
+
+        if (this.protocolSocket !== null) {
+            return true;
+        }
+
+        const socket = io(getBackendSocketUrl(), {
+            transports: ['websocket'],
+            reconnection: false,
+        });
+
+        this.protocolSocket = socket;
+
+        socket.on('connect', () => {
+            this.enqueueProtocolPacket('register_client', {
+                requested_slot: this.protocolClientSlot,
+                reconnect_token: this.protocolReconnectToken,
+            });
+        });
+
+        socket.on('connect_error', (error: unknown) => {
+            console.warn('[Protocol] socket connect failed, falling back to HTTP /protocol', error);
+            this.activateHttpProtocolFallback();
+        });
+
+        socket.on('registration_ok', (payload: unknown) => {
+            const data = typeof payload === 'object' && payload !== null
+                ? payload as {
+                    slot?: unknown;
+                    reconnect_token?: unknown;
+                    both_players_connected?: unknown;
+                }
+                : {};
+
+            if (data.slot === 'p1' || data.slot === 'p2') {
+                this.protocolClientSlot = data.slot;
+            }
+
+            if (typeof data.reconnect_token === 'string' && data.reconnect_token.trim().length > 0) {
+                this.protocolReconnectToken = data.reconnect_token.trim();
+            }
+
+            this.waitingForOpponent = data.both_players_connected !== true;
+            if (this.waitingForOpponent) {
+                this.appendTerminalLine('Waiting for opponent to connect...');
+            }
+
+            this.persistProtocolClientSession();
+        });
+
+        socket.on('registration_error', (payload: unknown) => {
+            console.warn('[Protocol] registration_error', payload);
+            this.setInputAcknowledged(true);
+        });
+
+        socket.on('protocol_packets', (payload: unknown) => {
+            const data = typeof payload === 'object' && payload !== null
+                ? payload as { packets?: unknown }
+                : {};
+
+            const packets = Array.isArray(data.packets)
+                ? data.packets as BackendProtocolPacket[]
+                : [];
+
+            if (packets.length === 0) {
+                this.setInputAcknowledged(true);
+            }
+
+            this.processBackendProtocolPackets(packets);
+        });
+
+        socket.on('protocol_error', (payload: unknown) => {
+            console.warn('[Protocol] protocol_error', payload);
+        });
+
+        return true;
+    }
+
+    private activateHttpProtocolFallback (): void
+    {
+        if (this.protocolSocketFallbackToHttp) {
             return;
         }
 
-        const radius = Math.max(GAME_LAYOUT.energyTokenRadiusMin, Math.round(this.objectWidth * GAME_LAYOUT.energyTokenRadiusWidthRatio));
-        for (const rawTokenId of tokenIds) {
-            const tokenId = Number(rawTokenId);
-            if (!Number.isInteger(tokenId) || tokenId < 0 || this.energyTokenById[tokenId]) {
+        this.protocolSocketFallbackToHttp = true;
+        if (this.protocolSocket !== null) {
+            this.protocolSocket.removeAllListeners();
+            this.protocolSocket.disconnect();
+            this.protocolSocket = null;
+        }
+
+        this.enqueueProtocolPacket('register_client', {
+            requested_slot: this.protocolClientSlot,
+            reconnect_token: this.protocolReconnectToken,
+        });
+    }
+
+    private loadOrCreateProtocolClientId (): string
+    {
+        const fallback = `client-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+        if (typeof window === 'undefined') {
+            return fallback;
+        }
+
+        const key = 'avge_protocol_client_id';
+        const existing = window.sessionStorage.getItem(key);
+        if (typeof existing === 'string' && existing.trim().length > 0) {
+            return existing.trim();
+        }
+
+        const generated =
+            typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+                ? crypto.randomUUID()
+                : fallback;
+        window.sessionStorage.setItem(key, generated);
+        return generated;
+    }
+
+    private loadProtocolClientSlot (): PlayerId | null
+    {
+        if (typeof window === 'undefined') {
+            return null;
+        }
+        const raw = window.sessionStorage.getItem('avge_protocol_client_slot');
+        return raw === 'p1' || raw === 'p2' ? raw : null;
+    }
+
+    private loadProtocolReconnectToken (): string | null
+    {
+        if (typeof window === 'undefined') {
+            return null;
+        }
+        const raw = window.sessionStorage.getItem('avge_protocol_reconnect_token');
+        return typeof raw === 'string' && raw.trim().length > 0 ? raw.trim() : null;
+    }
+
+    private persistProtocolClientSession (): void
+    {
+        if (typeof window === 'undefined') {
+            return;
+        }
+
+        if (this.protocolClientSlot) {
+            window.sessionStorage.setItem('avge_protocol_client_slot', this.protocolClientSlot);
+        }
+        else {
+            window.sessionStorage.removeItem('avge_protocol_client_slot');
+        }
+
+        if (this.protocolReconnectToken) {
+            window.sessionStorage.setItem('avge_protocol_reconnect_token', this.protocolReconnectToken);
+        }
+        else {
+            window.sessionStorage.removeItem('avge_protocol_reconnect_token');
+        }
+    }
+
+    private setInputAcknowledged (acknowledged: boolean): void
+    {
+        if (acknowledged && (this.awaitingRemoteNotifyAck || this.remoteInputLockActive)) {
+            acknowledged = false;
+        }
+
+        this.inputAcknowledged = acknowledged;
+        if (!acknowledged) {
+            const shouldShowLockOverlay =
+                this.awaitingRemoteNotifyAck
+                || this.pendingNotifyCommand !== null
+                || this.inputOverlayController?.hasActiveOverlay() === true;
+            this.setBoardInputEnabled(false, shouldShowLockOverlay);
+            return;
+        }
+
+        if (!this.inputOverlayController.hasActiveOverlay()) {
+            this.setBoardInputEnabled(true);
+        }
+    }
+
+    private enqueueProtocolPacket (
+        packetType: FrontendProtocolPacket['PacketType'],
+        body: Record<string, unknown>
+    ): void
+    {
+        if (this.protocolSocket !== null && this.protocolSocket.connected) {
+            if (packetType === 'register_client') {
+                this.protocolSocket.emit('register_client_or_play', {
+                    slot: this.protocolClientSlot,
+                    reconnect_token: this.protocolReconnectToken,
+                });
+                return;
+            }
+
+            const payload = {
+                ACK: this.protocolAck,
+                Body: body,
+            };
+
+            this.protocolSocket.emit(packetType, payload);
+            return;
+        }
+
+        this.protocolSendChain = this.protocolSendChain
+            .then(async () => {
+                const response = await sendFrontendProtocolPacket({
+                    ACK: this.protocolAck,
+                    PacketType: packetType,
+                    Body: body,
+                    client_id: this.protocolClientId,
+                    client_slot: this.protocolClientSlot ?? undefined,
+                    reconnect_token: this.protocolReconnectToken ?? undefined,
+                });
+
+                if (response.clientSlot) {
+                    this.protocolClientSlot = response.clientSlot;
+                }
+                if (response.reconnectToken) {
+                    this.protocolReconnectToken = response.reconnectToken;
+                }
+                this.persistProtocolClientSession();
+
+                if (packetType === 'register_client') {
+                    const wasWaiting = this.waitingForOpponent;
+                    this.waitingForOpponent = Boolean(response.waitingForOpponent);
+                    if (this.waitingForOpponent && !wasWaiting) {
+                        this.appendTerminalLine('Waiting for opponent to connect...');
+                    }
+                }
+
+                this.processBackendProtocolPackets(response.packets);
+
+                if (response.packets.length === 0) {
+                    this.setInputAcknowledged(true);
+                }
+            })
+            .catch((error) => {
+                console.warn('[Protocol] Failed to send packet', { packetType, body, error });
+            });
+    }
+
+    private processBackendProtocolPackets (packets: BackendProtocolPacket[]): void
+    {
+        for (const packet of packets) {
+            if (packet.PacketType !== 'environment' && packet.SEQ !== this.protocolAck) {
+                this.handleProtocolMismatch(packet);
+                return;
+            }
+
+            this.protocolAck = packet.SEQ + 1;
+
+            if (packet.PacketType === 'environment') {
+                this.waitingForOpponent = false;
+                const setup = parseBackendEntitiesSetup(packet.Body);
+                if (!setup) {
+                    this.handleProtocolMismatch(packet);
+                    return;
+                }
+
+                if (this.cards.length > 0 || this.energyTokens.length > 0) {
+                    this.resetBoardEntitiesForAuthoritativeEnvironment();
+                }
+                this.applyBackendEntitySetup(setup);
+                if (this.pendingNotifyCommand || this.pendingInputCommand) {
+                    this.setInputAcknowledged(false);
+                }
+                else {
+                    this.setInputAcknowledged(true);
+                }
+                this.enqueueProtocolPacket('ready', {});
                 continue;
             }
 
-            const token = new EnergyToken(this, {
-                id: tokenId,
-                ownerId,
-                x: holder.x,
-                y: holder.y,
-                radius,
-                zoneId
-            });
+            const command = packet.Body.command;
+            if (typeof command !== 'string' || command.trim().length === 0) {
+                continue;
+            }
 
-            this.energyTokens.push(token);
-            this.energyTokenById[tokenId] = token;
-            this.energyTokenByBody.set(token.body, token);
-            this.input.setDraggable(token.body);
-            holder.addToken(token);
+            let replayError: string | null = null;
+            this.scannerCommandInProgress = true;
+            this.setInputAcknowledged(false);
+            try {
+                this.commandProcessor.execute(command);
+            }
+            catch (error) {
+                replayError = error instanceof Error ? (error.stack ?? error.message) : String(error);
+                console.error('[Protocol] command execution failed', {
+                    command,
+                    error: replayError
+                });
+            }
+            finally {
+                this.scannerCommandInProgress = false;
+            }
+
+            if (command.startsWith('input ')) {
+                this.pendingInputCommand = command;
+                this.setInputAcknowledged(true);
+                continue;
+            }
+
+            if (command.startsWith('notify ')) {
+                this.awaitingRemoteNotifyAck = true;
+                if (this.inputOverlayController.hasActiveOverlay()) {
+                    // Hold command completion ACK for notify until the notify
+                    // overlay is dismissed and emits its notify frontend event.
+                    this.pendingNotifyCommand = command;
+                    this.setInputAcknowledged(false);
+                }
+                else {
+                    this.setInputAcknowledged(false);
+                    // Failsafe: if notify overlay did not become active, ACK
+                    // immediately to prevent protocol deadlock.
+                    this.emitBackendEvent('terminal_log', {
+                        line: 'ACK backend_update_processed',
+                        command,
+                        apply_error: replayError,
+                    });
+                }
+                continue;
+            }
+
+            if (command === 'unlock-input') {
+                this.awaitingRemoteNotifyAck = false;
+                this.setInputAcknowledged(true);
+                this.emitBackendEvent('terminal_log', {
+                    line: 'ACK backend_update_processed',
+                    command,
+                    apply_error: replayError,
+                });
+                continue;
+            }
+
+            this.emitBackendEvent('terminal_log', {
+                line: 'ACK backend_update_processed',
+                command,
+                apply_error: replayError,
+            });
+        }
+    }
+
+    private handleProtocolMismatch (packet: BackendProtocolPacket): void
+    {
+        if (this.protocolRecoveryInProgress) {
+            return;
         }
 
-        this.layoutEnergyTokensInZone(zoneId);
+        this.protocolRecoveryInProgress = true;
+        this.setInputAcknowledged(false);
+        console.warn('[Protocol] mismatch detected, restarting scene for resync', {
+            expectedAck: this.protocolAck,
+            packetSeq: packet.SEQ,
+            packetType: packet.PacketType,
+        });
+        this.scene.restart();
+    }
+
+    private resetBoardEntitiesForAuthoritativeEnvironment (): void
+    {
+        this.clearCardSelection();
+        if (this.pendingNotifyCommand === null && this.inputOverlayController.hasActiveOverlay()) {
+            this.inputOverlayController.stopActiveOverlay();
+        }
+
+        for (const card of this.cards) {
+            card.destroy();
+        }
+        for (const token of this.energyTokens) {
+            token.destroy();
+        }
+
+        this.cards = [];
+        this.cardById = {};
+        this.cardByBody = new Map();
+        this.energyTokens = [];
+        this.energyTokenById = {};
+        this.energyTokenByBody = new Map();
+
+        for (const holder of this.cardHolders) {
+            holder.cards.length = 0;
+        }
+
+        for (const holder of this.energyHolders) {
+            holder.tokens.length = 0;
+            holder.hidePileCountDisplays();
+        }
+
+        this.activelyDraggedCardIds.clear();
+        this.dragOriginZoneByCardId.clear();
+        this.dragStartPositionByCardId.clear();
+        this.dragDistanceByCardId.clear();
+        this.activelyDraggedEnergyTokenIds.clear();
+        this.energyDragStartPositionById.clear();
+        this.energyDragDistanceById.clear();
+        this.pendingInputCommand = null;
+        this.protocolRecoveryInProgress = false;
+    }
+
+    private applyBackendEntitySetup (setup: BackendEntitiesSetup): void
+    {
+        this.roundNumber = setup.roundNumber;
+
+        if (setup.playerTurn === 'p1' || setup.playerTurn === 'p2') {
+            this.playerTurn = setup.playerTurn;
+        }
+
+        if (setup.gamePhase === 'no-input' || setup.gamePhase === 'phase2' || setup.gamePhase === 'atk') {
+            this.gamePhase = setup.gamePhase;
+        }
+
+        this.applyBackendPlayerSetup(setup);
+
+        const cardTypeColors: Record<'character' | 'tool' | 'item' | 'stadium' | 'supporter', number> = {
+            character: 0xe76f51,
+            tool: 0x457b9d,
+            item: 0x2a9d8f,
+            stadium: 0x6d597a,
+            supporter: 0xb45309
+        };
+
+        const sortedCards = setup.cards.slice().sort((a, b) => {
+            const aAttached = a.attachedToCardId ? 1 : 0;
+            const bAttached = b.attachedToCardId ? 1 : 0;
+            return aAttached - bAttached;
+        });
+
+        for (const cardDef of sortedCards) {
+            const result = this.createCardFromCommand({
+                id: cardDef.id,
+                ownerId: cardDef.ownerId,
+                cardType: cardDef.cardType,
+                holderId: cardDef.holderId,
+                color: cardTypeColors[cardDef.cardType],
+                AVGECardType: cardDef.AVGECardType,
+                AVGECardClass: cardDef.AVGECardClass,
+                hasAtk1: cardDef.hasAtk1,
+                hasActive: cardDef.hasActive,
+                hasAtk2: cardDef.hasAtk2,
+                hp: cardDef.hp,
+                maxHp: cardDef.maxHp,
+                statusEffect: cardDef.statusEffect,
+                width: this.objectWidth,
+                height: this.objectHeight,
+                flipped: false,
+                attachedToCardId: cardDef.attachedToCardId
+            });
+
+            if (!result.ok) {
+                this.appendTerminalLine(`setup card skipped (${cardDef.id}): ${result.error}`);
+            }
+        }
+
+        const sortedEnergy = setup.energyTokens.slice().sort((a, b) => {
+            const aAttached = a.attachedToCardId ? 1 : 0;
+            const bAttached = b.attachedToCardId ? 1 : 0;
+            return aAttached - bAttached;
+        });
+
+        for (const tokenDef of sortedEnergy) {
+            const result = this.createEnergyTokenFromCommand({
+                id: tokenDef.id,
+                ownerId: tokenDef.ownerId,
+                holderId: tokenDef.holderId,
+                radius: this.getDefaultEnergyTokenRadius(),
+                attachedToCardId: tokenDef.attachedToCardId
+            });
+
+            if (!result.ok) {
+                this.appendTerminalLine(`setup energy skipped (${tokenDef.id}): ${result.error}`);
+            }
+        }
+
+        const assignedView =
+            setup.playerView === 'admin' || setup.playerView === 'p1' || setup.playerView === 'p2'
+                ? setup.playerView
+                : this.activeViewMode;
+        this.applyBoardView(assignedView);
+    }
+
+    public getDefaultEnergyTokenRadius (): number
+    {
+        return Math.max(GAME_LAYOUT.energyTokenRadiusMin, Math.round(this.objectWidth * GAME_LAYOUT.energyTokenRadiusWidthRatio));
     }
 
     private buildCardHolderConfigs (scale: number): CardHolderConfig[]
@@ -556,6 +1076,66 @@ export class Game extends Scene
         this.refreshPlayerStatsHud();
     }
 
+    private createPhaseHud (): void
+    {
+        this.phaseHudController.create();
+        this.createPhaseStateActionButton();
+        this.refreshPhaseHud();
+    }
+
+    private createPhaseStateActionButton (): void
+    {
+        const fontSize = Math.max(10, Math.round(16 * UI_SCALE));
+        const body = this.add.rectangle(0, 0, 10, 10, 0x0b132b, 0.9)
+            .setOrigin(1, 0)
+            .setStrokeStyle(2, 0xffffff, 0.5)
+            .setDepth(314)
+            .setVisible(false)
+            .setInteractive({ useHandCursor: true });
+
+        const label = this.add.bitmapText(0, 0, 'minogram', '-> attack', fontSize)
+            .setOrigin(1, 0)
+            .setTint(0xffffff)
+            .setDepth(315)
+            .setVisible(false);
+
+        body.on('pointerdown', () => {
+            this.handlePhaseStateActionButtonClick();
+        });
+
+        this.phaseStateActionButton = {
+            body,
+            label,
+            action: null
+        };
+    }
+
+    private handlePhaseStateActionButtonClick (): void
+    {
+        if (!this.phaseStateActionButton || !this.phaseStateActionButton.action) {
+            return;
+        }
+
+        this.appendTerminalLine(`Phase action clicked: ${this.phaseStateActionButton.action}`);
+
+        if (this.phaseStateActionButton.action === 'phase2-attack') {
+            this.emitBackendEvent('phase2_attack_button_clicked', {
+                view_mode: this.getViewModeLabel(this.activeViewMode),
+                player_turn: this.getPlayerTurnLabel(this.playerTurn),
+                game_phase: this.gamePhase
+            });
+            return;
+        }
+
+        if (this.phaseStateActionButton.action === 'atk-skip') {
+            this.emitBackendEvent('atk_skip_button_clicked', {
+                view_mode: this.getViewModeLabel(this.activeViewMode),
+                player_turn: this.getPlayerTurnLabel(this.playerTurn),
+                game_phase: this.gamePhase
+            });
+        }
+    }
+
     private createDefaultPlayerTurnAttributes (): PlayerTurnAttributes
     {
         return {
@@ -569,7 +1149,7 @@ export class Game extends Scene
 
     public formatPlayerTurnAttributeLabel (attributeKey: PlayerTurnAttributeKey): string
     {
-        return attributeKey.toLowerCase().replace(/_/g, '-');
+        return attributeKey.toLowerCase().replace(/_/g, ' ');
     }
 
     public parsePlayerTurnAttributeKey (rawAttribute: string): PlayerTurnAttributeKey | null
@@ -585,6 +1165,142 @@ export class Game extends Scene
     private refreshPlayerStatsHud (): void
     {
         this.playerStatsHudController.refresh(this.activeViewMode, this.playerTurnAttributesByPlayer);
+    }
+
+    private refreshPhaseHud (): void
+    {
+        this.phaseHudController.refresh(this.activeViewMode, this.gamePhase, this.getPlayerUsername(this.playerTurn), this.roundNumber);
+        this.refreshPhaseStateActionButton();
+    }
+
+    private refreshPhaseStateActionButton (): void
+    {
+        const button = this.phaseStateActionButton;
+        if (!button) {
+            return;
+        }
+
+        const panelBounds = this.phaseHudController.getPanelBounds();
+        if (!panelBounds) {
+            button.body.setVisible(false);
+            button.label.setVisible(false);
+            button.action = null;
+            return;
+        }
+
+        const isCurrentTurnView = this.activeViewMode === 'admin' || this.activeViewMode === this.playerTurn;
+        if (!isCurrentTurnView) {
+            button.body.setVisible(false);
+            button.label.setVisible(false);
+            button.action = null;
+            return;
+        }
+
+        let buttonText = '';
+        let nextAction: 'phase2-attack' | 'atk-skip' | null = null;
+        if (this.gamePhase === 'phase2') {
+            buttonText = '-> attack';
+            nextAction = 'phase2-attack';
+        }
+        else if (this.gamePhase === 'atk') {
+            buttonText = '->skip';
+            nextAction = 'atk-skip';
+        }
+
+        if (!nextAction) {
+            button.body.setVisible(false);
+            button.label.setVisible(false);
+            button.action = null;
+            return;
+        }
+
+        const xPadding = Math.max(10, Math.round(10 * UI_SCALE));
+        const yPadding = Math.max(8, Math.round(8 * UI_SCALE));
+        const minWidth = Math.max(120, Math.round(120 * UI_SCALE));
+        const maxWidth = Math.max(minWidth, Math.round(panelBounds.width));
+        const textPreferred = Math.max(10, Math.round(16 * UI_SCALE));
+        const textMin = Math.max(9, Math.round(textPreferred * 0.72));
+        const maxTextWidth = Math.max(24, maxWidth - (xPadding * 2));
+        const fittedSize = fitBitmapTextToSingleLine({
+            scene: this,
+            font: 'minogram',
+            text: buttonText,
+            preferredSize: textPreferred,
+            minSize: textMin,
+            maxWidth: maxTextWidth
+        });
+
+        button.label.setFontSize(fittedSize);
+        button.label.setText(buttonText);
+
+        const width = Math.max(minWidth, Math.min(maxWidth, button.label.width + (xPadding * 2)));
+        const height = Math.max(28, Math.round(button.label.height + (yPadding * 2)));
+        const x = panelBounds.right;
+        const y = panelBounds.bottom + Math.max(8, Math.round(8 * UI_SCALE));
+
+        button.body
+            .setPosition(x, y)
+            .setSize(width, height)
+            .setVisible(true);
+
+        // Keep interactive hit area in sync with dynamic button sizing.
+        button.body.setInteractive(new Phaser.Geom.Rectangle(0, 0, width, height), Phaser.Geom.Rectangle.Contains);
+
+        button.label
+            .setPosition(x - xPadding, y + yPadding)
+            .setVisible(true);
+
+        button.action = nextAction;
+    }
+
+    private applyBackendPlayerSetup (setup: BackendEntitiesSetup): void
+    {
+        const players = setup.players;
+        if (!players) {
+            return;
+        }
+
+        const applyPlayer = (playerId: PlayerId): void => {
+            const payload = players[playerId];
+            if (!payload) {
+                return;
+            }
+
+            if (typeof payload.username === 'string' && payload.username.trim().length > 0) {
+                this.playerSetupProfileById[playerId].username = payload.username.trim();
+            }
+
+            if (payload.attributes && typeof payload.attributes === 'object') {
+                const defaults = this.createDefaultPlayerTurnAttributes();
+                const merged: PlayerTurnAttributes = {
+                    ...defaults,
+                    ...this.playerTurnAttributesByPlayer[playerId]
+                };
+
+                const keys = Object.keys(defaults) as PlayerTurnAttributeKey[];
+                for (const key of keys) {
+                    const rawValue = payload.attributes[key];
+                    if (typeof rawValue !== 'number' || Number.isNaN(rawValue)) {
+                        continue;
+                    }
+                    merged[key] = rawValue;
+                }
+
+                this.playerTurnAttributesByPlayer[playerId] = merged;
+                this.playerSetupProfileById[playerId].attributes = {
+                    ...this.playerSetupProfileById[playerId].attributes,
+                    ...payload.attributes
+                };
+            }
+        };
+
+        applyPlayer('p1');
+        applyPlayer('p2');
+    }
+
+    private getPlayerUsername (playerId: PlayerId): string
+    {
+        return this.playerSetupProfileById[playerId]?.username ?? this.getPlayerTurnLabel(playerId);
     }
 
     private handleCardActionButtonClick (actionKey: CardActionKey): void
@@ -627,9 +1343,10 @@ export class Game extends Scene
         const card = this.selectedCard;
         const isEligibleZone = card ? /-(hand|bench|active)$/.test(card.getZoneId()) : false;
         const isActiveSlot = Boolean(card && card.getZoneId() === `${card.getOwnerId()}-active`);
+        const canUseSelectedCardActions = Boolean(card && (this.activeViewMode === 'admin' || card.getOwnerId() === this.activeViewMode));
         const showAtk1 = Boolean(card && this.gamePhase === 'atk' && card.getCardType() === 'character' && isActiveSlot && card.hasAttackOne());
         const showAtk2 = Boolean(card && this.gamePhase === 'atk' && card.getCardType() === 'character' && isActiveSlot && card.hasAttackTwo());
-        const showActive = Boolean(card && card.getCardType() === 'character' && isEligibleZone && card.hasActiveAbility());
+        const showActive = Boolean(card && canUseSelectedCardActions && card.getCardType() === 'character' && isEligibleZone && card.hasActiveAbility());
 
         const radius = Math.max(12, Math.round((GAME_CARD_ACTION_BUTTON_LAYOUT.buttonRadiusBase / BASE_WIDTH) * GAME_WIDTH));
         const leftMargin = Math.round((GAME_CARD_ACTION_BUTTON_LAYOUT.leftMarginBase / BASE_WIDTH) * GAME_WIDTH);
@@ -683,6 +1400,13 @@ export class Game extends Scene
     private appendTerminalLine (line: string): void
     {
         console.info(`[Command] ${line}`);
+
+        // While replaying backend scanner commands, avoid echoing every corrected
+        // local line back to backend. A single ACK is emitted per processed update.
+        if (this.scannerCommandInProgress) {
+            return;
+        }
+
         this.emitBackendEvent('terminal_log', {
             line
         });
@@ -695,11 +1419,129 @@ export class Game extends Scene
 
     private emitBackendEvent (eventType: string, responseData: Record<string, unknown>): void
     {
-        void sendBackendEvent(eventType, responseData, {
+        const phaseNavigationEvent = eventType === 'phase2_attack_button_clicked' || eventType === 'atk_skip_button_clicked';
+        const immediateInputEvent = eventType === 'input_result' || eventType === 'input_state_change' || eventType === 'notify';
+        const isAckEvent = eventType === 'terminal_log' && String(responseData.line ?? '').trim().toLowerCase() === 'ack backend_update_processed';
+        const eventSequence = this.backendEventSequence + 1;
+        this.backendEventSequence = eventSequence;
+
+        // Avoid echo loops: when a scanner command from backend mutates frontend state,
+        // do not send those resulting events back to backend.
+        if (this.scannerCommandInProgress && eventType !== 'terminal_log') {
+            if (isAckEvent) {
+                console.info('[ACK_TRACE][Game] scanner_replay_ack_allowed', {
+                    seq: eventSequence,
+                    command: responseData.command ?? null
+                });
+            }
+            return;
+        }
+
+        const context = {
             scene: 'Game',
             view_mode: this.activeViewMode,
             game_phase: this.gamePhase,
             player_turn: this.playerTurn
+        };
+
+        if (eventType === 'terminal_log' && this.commandExecutionInProgress) {
+            if (isAckEvent) {
+                console.info('[ACK_TRACE][Game] queue_ack_command_in_progress', {
+                    seq: eventSequence,
+                    command: responseData.command ?? null,
+                    activeAnimations: this.activeSceneAnimationCount,
+                    pendingBefore: this.pendingBackendEvents.length
+                });
+            }
+            this.pendingBackendEvents.push({
+                eventType,
+                responseData,
+                context
+            });
+            return;
+        }
+
+        if (!phaseNavigationEvent && !immediateInputEvent && this.isInteractionLockedByAnimation()) {
+            if (isAckEvent) {
+                console.info('[ACK_TRACE][Game] queue_ack_animation_locked', {
+                    seq: eventSequence,
+                    command: responseData.command ?? null,
+                    activeAnimations: this.activeSceneAnimationCount,
+                    pendingBefore: this.pendingBackendEvents.length
+                });
+            }
+            this.pendingBackendEvents.push({
+                eventType,
+                responseData,
+                context
+            });
+            return;
+        }
+
+        this.dispatchFrontendEvent(eventType, responseData, context);
+    }
+
+    private dispatchFrontendEvent (
+        eventType: string,
+        responseData: Record<string, unknown>,
+        context: Record<string, unknown>
+    ): void
+    {
+        const isAckEvent = eventType === 'terminal_log' && String(responseData.line ?? '').trim().toLowerCase() === 'ack backend_update_processed';
+        if (eventType === 'terminal_log' && !isAckEvent) {
+            return;
+        }
+
+        if (eventType === 'input_result' && this.pendingInputCommand) {
+            this.setInputAcknowledged(false);
+            this.enqueueProtocolPacket('update_frontend', {
+                command: this.pendingInputCommand,
+                input_response: responseData,
+                context,
+            });
+            this.pendingInputCommand = null;
+            return;
+        }
+
+        if (eventType === 'notify') {
+            const notifyCommand =
+                this.pendingNotifyCommand
+                ?? (typeof responseData.command === 'string' && responseData.command.trim().length > 0 ? responseData.command : null);
+
+            if (!notifyCommand) {
+                return;
+            }
+
+            this.setInputAcknowledged(false);
+            this.enqueueProtocolPacket('update_frontend', {
+                command: notifyCommand,
+                notify_response: responseData,
+                context,
+            });
+            this.pendingNotifyCommand = null;
+            return;
+        }
+
+        if (isAckEvent) {
+            this.enqueueProtocolPacket('update_frontend', {
+                command: responseData.command,
+                apply_error: responseData.apply_error ?? null,
+                context,
+            });
+            return;
+        }
+
+        if (this.pendingNotifyCommand) {
+            // Hold non-notify frontend events while waiting for notify
+            // dismissal ACK to avoid starving notify response delivery.
+            return;
+        }
+
+        this.setInputAcknowledged(false);
+        this.enqueueProtocolPacket('frontend_event', {
+            event_type: eventType,
+            response_data: responseData,
+            context,
         });
     }
 
@@ -711,47 +1553,6 @@ export class Game extends Scene
 
         this.overlayPreviewContext = null;
         this.hideCardPreview();
-    }
-
-    private startScannerWaitLoop (): void
-    {
-        if (this.scannerWaitLoopActive) {
-            return;
-        }
-
-        this.scannerWaitLoopActive = true;
-        this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-            this.scannerWaitLoopActive = false;
-        });
-
-        void this.waitForScannerCommands();
-    }
-
-    private async waitForScannerCommands (): Promise<void>
-    {
-        while (this.scannerWaitLoopActive) {
-            const scannerMessage = await waitForNextScannerCommand(25);
-            if (!this.scannerWaitLoopActive) {
-                break;
-            }
-
-            if (!scannerMessage) {
-                continue;
-            }
-
-            this.emitBackendEvent('scanner_command_received', {
-                source: scannerMessage.source,
-                command: scannerMessage.command,
-                received_at: scannerMessage.received_at ?? null
-            });
-            this.scannerCommandInProgress = true;
-            try {
-                this.commandProcessor.execute(scannerMessage.command);
-            }
-            finally {
-                this.scannerCommandInProgress = false;
-            }
-        }
     }
 
     public resetDraggingCards (ownerId?: PlayerId): number
@@ -882,7 +1683,7 @@ export class Game extends Scene
                 continue;
             }
 
-            const x = basePosition.x;
+            const x = rotateTopBottom ? ((GAME_CENTER_X * 2) - basePosition.x) : basePosition.x;
             const y = rotateTopBottom ? ((GAME_CENTER_Y * 2) - basePosition.y) : basePosition.y;
             holder.setPosition(x, y);
         }
@@ -893,15 +1694,34 @@ export class Game extends Scene
                 continue;
             }
 
-            const x = basePosition.x;
+            const x = rotateTopBottom ? ((GAME_CENTER_X * 2) - basePosition.x) : basePosition.x;
             const y = rotateTopBottom ? ((GAME_CENTER_Y * 2) - basePosition.y) : basePosition.y;
             holder.setPosition(x, y);
         }
 
         this.layoutAllHolders();
         this.redrawAllCardMarks();
+        this.updateZoneLabelsForView();
         this.refreshSurrenderButton();
         this.refreshPlayerStatsHud();
+        this.refreshPhaseHud();
+    }
+
+    public isZoneVisibleToView (zoneId: string, ownerId: PlayerId, viewMode: ViewMode = this.activeViewMode): boolean
+    {
+        if (viewMode === 'admin') {
+            return true;
+        }
+
+        const isOwnerView = ownerId === viewMode;
+        const isHand = zoneId === `${ownerId}-hand`;
+        const isBench = zoneId === `${ownerId}-bench`;
+        const isActive = zoneId === `${ownerId}-active`;
+        const isStadium = zoneId === 'stadium';
+
+        return isStadium ||
+            (isOwnerView && (isHand || isBench || isActive)) ||
+            (!isOwnerView && (isBench || isActive));
     }
 
     private applyCardVisibilityByView (): void
@@ -913,20 +1733,20 @@ export class Game extends Scene
             return;
         }
 
-        const hiddenOwner: PlayerId = this.activeViewMode === 'p1' ? 'p2' : 'p1';
-        const visibleHandZone = `${this.activeViewMode}-hand`;
-        const hiddenHandZone = `${hiddenOwner}-hand`;
-
         for (const card of this.cards) {
             const zoneId = card.getZoneId();
-            if (zoneId === hiddenHandZone) {
-                card.setTurnedOver(true);
-                continue;
-            }
+            const cardOwner = card.getOwnerId();
+            const isOwnerView = cardOwner === this.activeViewMode;
+            const isHand = zoneId === `${cardOwner}-hand`;
+            const isBench = zoneId === `${cardOwner}-bench`;
+            const isActive = zoneId === `${cardOwner}-active`;
+            const isStadium = zoneId === 'stadium';
 
-            if (zoneId === visibleHandZone) {
-                card.setTurnedOver(false);
-            }
+            const visible = isStadium ||
+                (isOwnerView && (isHand || isBench || isActive)) ||
+                (!isOwnerView && (isBench || isActive));
+
+            card.setTurnedOver(!visible);
         }
     }
 
@@ -963,6 +1783,10 @@ export class Game extends Scene
     public canDragCardByPhase (card: Card): boolean
     {
         if (this.gamePhase !== 'phase2') {
+            return false;
+        }
+
+        if (card.getZoneId().endsWith('-active')) {
             return false;
         }
 
@@ -1025,13 +1849,14 @@ export class Game extends Scene
 
     public getPlayerTurnLabel (playerTurn: PlayerId): string
     {
-        return playerTurn === 'p1' ? 'PLAYER-1' : 'PLAYER-2';
+        return playerTurn === 'p1' ? 'PLAYER 1' : 'PLAYER 2';
     }
 
     public setGamePhase (nextPhase: GamePhase): void
     {
         this.gamePhase = nextPhase;
         this.refreshCardActionButtons();
+        this.refreshPhaseHud();
 
         if (nextPhase !== 'phase2') {
             this.activelyDraggedCardIds.clear();
@@ -1047,6 +1872,7 @@ export class Game extends Scene
     public setPlayerTurn (nextTurn: PlayerId): void
     {
         this.playerTurn = nextTurn;
+        this.refreshPhaseHud();
     }
 
     public parseViewModeArg (rawMode: string): ViewMode | null
@@ -1066,13 +1892,266 @@ export class Game extends Scene
         return null;
     }
 
+    public parseCardTypeArg (rawType: string): 'character' | 'tool' | 'item' | 'stadium' | 'supporter' | null
+    {
+        const normalized = rawType.toLowerCase();
+        if (normalized === 'character' || normalized === 'tool' || normalized === 'item' || normalized === 'stadium' || normalized === 'supporter') {
+            return normalized;
+        }
+
+        return null;
+    }
+
+    public createEnergyTokenFromCommand (options: {
+        id: string;
+        ownerId: PlayerId;
+        holderId: string;
+        radius: number;
+        attachedToCardId: string | null;
+    }): { ok: boolean; error?: string; token?: EnergyToken }
+    {
+        if (this.energyTokenById[options.id]) {
+            return { ok: false, error: `Energy token already exists: ${options.id}` };
+        }
+
+        const holder = this.energyHolderById[options.holderId];
+        if (!holder) {
+            return { ok: false, error: `Unknown energy holder: ${options.holderId}` };
+        }
+
+        const parent = options.attachedToCardId ? this.cardById[options.attachedToCardId] : null;
+        if (options.attachedToCardId && !parent) {
+            return { ok: false, error: `Unknown card: ${options.attachedToCardId}` };
+        }
+
+        if (parent && parent.getOwnerId() !== options.ownerId) {
+            return { ok: false, error: 'create_energy requires token owner and attached card owner to match.' };
+        }
+
+        if (parent && parent.getCardType() !== 'character') {
+            return { ok: false, error: `Energy can only attach to character cards: ${parent.id}` };
+        }
+
+        if (parent && options.holderId !== this.energyZoneIdByOwner[options.ownerId]) {
+            return { ok: false, error: `Attached energy must be created in ${this.energyZoneIdByOwner[options.ownerId]}.` };
+        }
+
+        const token = new EnergyToken(this, {
+            id: options.id,
+            ownerId: options.ownerId,
+            x: holder.x,
+            y: holder.y,
+            radius: options.radius,
+            zoneId: options.holderId
+        });
+
+        this.energyTokens.push(token);
+        this.energyTokenById[options.id] = token;
+        this.energyTokenByBody.set(token.body, token);
+        this.input.setDraggable(token.body);
+        holder.addToken(token);
+
+        if (parent) {
+            this.attachEnergyTokenToCard(token, parent);
+        }
+
+        this.layoutEnergyTokensInZone(options.holderId);
+        return { ok: true, token };
+    }
+
+    public createCardFromCommand (options: {
+        id: string;
+        ownerId: PlayerId;
+        cardType: 'character' | 'tool' | 'item' | 'stadium' | 'supporter';
+        holderId: string;
+        color: number;
+        AVGECardType: AVGECardType;
+        AVGECardClass: string;
+        hasAtk1: boolean;
+        hasActive: boolean;
+        hasAtk2: boolean;
+        hp: number;
+        maxHp: number;
+        statusEffect: Record<string, number>;
+        width: number;
+        height: number;
+        flipped: boolean;
+        attachedToCardId: string | null;
+    }): { ok: boolean; error?: string; card?: Card }
+    {
+        if (this.cardById[options.id]) {
+            return { ok: false, error: `Card already exists: ${options.id}` };
+        }
+
+        const holder = this.cardHolderById[options.holderId];
+        if (!holder) {
+            return { ok: false, error: `Unknown card holder: ${options.holderId}` };
+        }
+
+        if (options.cardType !== 'tool' && options.attachedToCardId) {
+            return { ok: false, error: 'Only tool cards can be created attached to another card.' };
+        }
+
+        const parentCard = options.attachedToCardId ? this.cardById[options.attachedToCardId] : null;
+        if (options.attachedToCardId && !parentCard) {
+            return { ok: false, error: `Unknown attached card: ${options.attachedToCardId}` };
+        }
+
+        if (parentCard && parentCard.getCardType() !== 'character' && parentCard.getCardType() !== 'tool') {
+            return { ok: false, error: `Tool attachment target must be character or tool: ${parentCard.id}` };
+        }
+
+        if (parentCard && parentCard.getOwnerId() !== options.ownerId) {
+            return { ok: false, error: 'Attached tool owner must match target card owner.' };
+        }
+
+        const card = new Card(this, {
+            id: options.id,
+            cardType: options.cardType,
+            ownerId: options.ownerId,
+            x: holder.x,
+            y: holder.y,
+            width: options.width,
+            height: options.height,
+            color: options.color,
+            AVGECardType: options.AVGECardType,
+            AVGECardClass: options.AVGECardClass,
+            statusEffect: options.statusEffect,
+            zoneId: options.holderId,
+            has_atk_1: options.hasAtk1,
+            has_active: options.hasActive,
+            has_atk_2: options.hasAtk2
+        });
+
+        this.cards.push(card);
+        this.cardById[card.id] = card;
+        this.cardByBody.set(card.body, card);
+        holder.addCard(card);
+        this.input.setDraggable(card.body);
+
+        card.body.on('pointerdown', () => {
+            if (!this.boardInputEnabled) {
+                return;
+            }
+
+            if (!this.canPreviewCard(card)) {
+                return;
+            }
+
+            this.selectCard(card);
+        });
+
+        if (options.cardType === 'character') {
+            card.setHpValues(options.hp, options.maxHp);
+        }
+
+        if (options.flipped) {
+            card.setTurnedOver(true);
+        }
+
+        if (parentCard) {
+            this.removeCardFromAllHolders(card);
+            card.setZoneId(parentCard.getZoneId());
+            this.attachCardToCard(card, parentCard);
+        }
+
+        this.layoutAllHolders();
+        this.redrawAllCardMarks();
+
+        return { ok: true, card };
+    }
+
     private getViewModeLabel (viewMode: ViewMode): string
     {
         if (viewMode === 'admin') {
             return 'ADMIN';
         }
 
-        return viewMode === 'p1' ? 'PLAYER-1' : 'PLAYER-2';
+        return this.getPlayerUsername(viewMode);
+    }
+
+    private updateZoneLabelsForView (): void
+    {
+        const parseOwnedZone = (zoneId: string): { ownerId: PlayerId; pileName: string } | null => {
+            const match = /^(p1|p2)-([a-z]+)$/.exec(zoneId);
+            if (!match) {
+                return null;
+            }
+            const ownerId = match[1] as PlayerId;
+            const pileName = match[2];
+            return { ownerId, pileName };
+        };
+
+        const resolvePerspectiveLabel = (ownerId: PlayerId, pileName: string): string => {
+            if (this.activeViewMode === 'admin') {
+                return `${ownerId} ${pileName}`.toUpperCase();
+            }
+
+            const perspective = ownerId === this.activeViewMode ? 'your' : 'opponent';
+            return `${perspective} ${pileName}`.toUpperCase();
+        };
+
+        const setCardHolderLabel = (holder: CardHolder, label: string): void => {
+            const preferredSize = Math.max(ENTITY_VISUALS.cardHolderLabelMinSize, Math.round(ENTITY_VISUALS.cardHolderLabelBaseSize * UI_SCALE));
+            const fitted = fitBitmapTextToTwoLines({
+                scene: this,
+                font: 'minogram',
+                text: label,
+                preferredSize,
+                minSize: Math.max(ENTITY_VISUALS.cardHolderLabelMinSize, Math.round(preferredSize * 0.72)),
+                maxWidth: Math.max(10, Math.round(holder.width * 0.9))
+            });
+            holder.labelText
+                .setCenterAlign()
+                .setText(fitted.text)
+                .setFontSize(fitted.fontSize);
+        };
+
+        const setEnergyHolderLabel = (holder: EnergyHolder, label: string): void => {
+            const preferredSize = Math.max(ENTITY_VISUALS.energyHolderLabelMinSize, Math.round(ENTITY_VISUALS.energyHolderLabelBaseSize * UI_SCALE));
+            const fitted = fitBitmapTextToTwoLines({
+                scene: this,
+                font: 'minogram',
+                text: label,
+                preferredSize,
+                minSize: Math.max(ENTITY_VISUALS.energyHolderLabelMinSize, Math.round(preferredSize * 0.72)),
+                maxWidth: Math.max(10, Math.round(holder.width * 0.9))
+            });
+            holder.labelText
+                .setCenterAlign()
+                .setText(fitted.text)
+                .setFontSize(fitted.fontSize);
+        };
+
+        for (const holder of this.cardHolders) {
+            if (holder.id === 'stadium') {
+                setCardHolderLabel(holder, 'STADIUM');
+                continue;
+            }
+
+            const ownedZone = parseOwnedZone(holder.id);
+            if (!ownedZone) {
+                setCardHolderLabel(holder, holder.id.replace(/-/g, ' ').toUpperCase());
+                continue;
+            }
+
+            setCardHolderLabel(holder, resolvePerspectiveLabel(ownedZone.ownerId, ownedZone.pileName));
+        }
+
+        for (const holder of this.energyHolders) {
+            if (holder.id === 'energy-discard') {
+                setEnergyHolderLabel(holder, 'ENERGY DISCARD');
+                continue;
+            }
+
+            const ownedZone = parseOwnedZone(holder.id);
+            if (!ownedZone) {
+                setEnergyHolderLabel(holder, holder.id.replace(/-/g, ' ').toUpperCase());
+                continue;
+            }
+
+            setEnergyHolderLabel(holder, resolvePerspectiveLabel(ownedZone.ownerId, ownedZone.pileName));
+        }
     }
 
     private redrawAllCardMarks (): void
@@ -1302,7 +2381,21 @@ export class Game extends Scene
     {
         return this.energyTokens
             .filter((token) => token.getAttachedToCardId() === parentCardId)
-            .sort((a, b) => a.id - b.id);
+            .sort((a, b) => this.compareEnergyTokenIds(a.id, b.id));
+    }
+
+    private compareEnergyTokenIds (a: string, b: string): number
+    {
+        const aNumeric = Number(a);
+        const bNumeric = Number(b);
+        const aIsNumeric = Number.isFinite(aNumeric);
+        const bIsNumeric = Number.isFinite(bNumeric);
+
+        if (aIsNumeric && bIsNumeric) {
+            return aNumeric - bNumeric;
+        }
+
+        return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
     }
 
     private updateAttachedEnergyTokenPositions (parent: Card): void
@@ -1357,7 +2450,9 @@ export class Game extends Scene
     public attachEnergyTokenToCard (token: EnergyToken, parent: Card): void
     {
         token.setAttachedToCardId(parent.id);
-        this.setEnergyTokenZone(token, this.energyZoneIdByOwner[token.ownerId]);
+        const ownerZoneId = this.energyZoneIdByOwner[token.ownerId];
+        this.setEnergyTokenZone(token, ownerZoneId);
+        this.layoutEnergyTokensInZone(ownerZoneId);
         this.updateAttachedEnergyTokenPositions(parent);
     }
 
@@ -1372,29 +2467,58 @@ export class Game extends Scene
 
         const tokens = holder.tokens
             .filter((token) => !token.getAttachedToCardId())
-            .sort((a, b) => a.id - b.id);
+            .sort((a, b) => this.compareEnergyTokenIds(a.id, b.id));
+
+        const pileCount = Math.max(1, GAME_LAYOUT.energyTokenZonePileCount);
 
         if (tokens.length === 0) {
+            holder.hidePileCountDisplays();
             return;
         }
 
-        const columns = zoneId === 'energy-discard' ? GAME_LAYOUT.energyTokenZoneColumnsDiscard : GAME_LAYOUT.energyTokenZoneColumnsDefault;
-        const rowGap = Math.max(GAME_LAYOUT.energyTokenZoneMinGapPx, Math.round(tokens[0].getDisplayHeight() * GAME_LAYOUT.energyTokenZoneRowGapRatio));
-        const colGap = Math.max(GAME_LAYOUT.energyTokenZoneMinGapPx, Math.round(tokens[0].getDisplayWidth() * GAME_LAYOUT.energyTokenZoneColGapRatio));
+        const tokenHeight = tokens[0].getDisplayHeight();
+        const sidePadding = Math.round(zoneArea.width * GAME_LAYOUT.energyTokenZonePileSidePaddingRatio);
+        const minX = zoneArea.left + sidePadding;
+        const maxX = zoneArea.right - sidePadding;
+        const defaultY = zoneArea.top + Math.round(zoneArea.height * GAME_LAYOUT.energyTokenZonePileYRatio);
+        const clampedY = Phaser.Math.Clamp(
+            defaultY,
+            zoneArea.top + Math.round(tokenHeight / 2),
+            zoneArea.bottom - Math.round(tokenHeight / 2)
+        );
 
-        const startX = zoneArea.left + Math.round(zoneArea.width * GAME_LAYOUT.energyTokenZoneStartXRatio);
-        const startY = zoneArea.top + Math.round(zoneArea.height * GAME_LAYOUT.energyTokenZoneStartYRatio);
+        const pileCenters: number[] = [];
+        if (pileCount === 1 || maxX <= minX) {
+            pileCenters.push(zoneArea.centerX);
+        }
+        else {
+            const step = (maxX - minX) / (pileCount - 1);
+            for (let pileIndex = 0; pileIndex < pileCount; pileIndex += 1) {
+                pileCenters.push(minX + (pileIndex * step));
+            }
+        }
 
+        const piles: EnergyToken[][] = Array.from({ length: pileCount }, () => []);
         tokens.forEach((token, index) => {
-            const row = Math.floor(index / columns);
-            const col = index % columns;
-            const x = startX + (col * (token.getDisplayWidth() + colGap));
-            const y = startY + (row * (token.getDisplayHeight() + rowGap));
-            const depth = ENERGY_TOKEN_DEPTHS.minZone + index;
-
-            token.setPosition(x, y);
-            token.setDepth(depth);
+            const pileIndex = index % pileCount;
+            piles[pileIndex].push(token);
         });
+
+        const countLabelY = clampedY - Math.round(tokenHeight * GAME_LAYOUT.energyTokenZonePileCountLabelYOffsetRatio);
+
+        let depthCursor = ENERGY_TOKEN_DEPTHS.minZone;
+        for (let pileIndex = 0; pileIndex < pileCount; pileIndex += 1) {
+            const x = Phaser.Math.Clamp(pileCenters[pileIndex] ?? zoneArea.centerX, zoneArea.left, zoneArea.right);
+            const pileTokens = piles[pileIndex];
+
+            holder.setPileCountDisplay(pileIndex, x, countLabelY, pileTokens.length);
+
+            for (const token of pileTokens) {
+                token.setPosition(x, clampedY);
+                token.setDepth(depthCursor);
+                depthCursor += 1;
+            }
+        }
     }
 
     public moveEnergyTokenToDiscard (token: EnergyToken): void
@@ -1406,6 +2530,110 @@ export class Game extends Scene
 
         this.setEnergyTokenZone(token, 'energy-discard');
         this.layoutEnergyTokensInZone('energy-discard');
+    }
+
+    public animateEnergyTokenToZone (token: EnergyToken, zoneId: string, onComplete?: () => void): void
+    {
+        const destinationHolder = this.energyHolderById[zoneId];
+        if (!destinationHolder) {
+            if (onComplete) {
+                onComplete();
+            }
+            return;
+        }
+
+        const previousZoneId = token.getZoneId();
+        const previousAttachedToCardId = token.getAttachedToCardId();
+        if (previousAttachedToCardId) {
+            token.setAttachedToCardId(null);
+        }
+
+        token.setDepth(ENERGY_TOKEN_DEPTHS.maxBelowUi);
+        this.beginSceneAnimation();
+        this.tweens.add({
+            targets: token.body,
+            x: destinationHolder.x,
+            y: destinationHolder.y,
+            duration: Math.round(GAME_LAYOUT.cardMoveDurationMs * 0.8),
+            ease: 'Sine.easeInOut',
+            onComplete: () => {
+                this.setEnergyTokenZone(token, zoneId);
+                this.layoutEnergyTokensInZone(previousZoneId);
+                this.layoutEnergyTokensInZone(zoneId);
+
+                if (previousAttachedToCardId) {
+                    const previousParent = this.cardById[previousAttachedToCardId];
+                    if (previousParent) {
+                        this.updateAttachedEnergyTokenPositions(previousParent);
+                    }
+                }
+
+                this.endSceneAnimation();
+                if (onComplete) {
+                    onComplete();
+                }
+            }
+        });
+    }
+
+    public animateAttachEnergyTokenToCard (token: EnergyToken, parent: Card, onComplete?: () => void): void
+    {
+        const ownerZoneId = this.energyZoneIdByOwner[token.ownerId];
+        const previousZoneId = token.getZoneId();
+        const previousAttachedToCardId = token.getAttachedToCardId();
+
+        const existingAttached = this
+            .getAttachedEnergyTokens(parent.id)
+            .filter((candidate) => candidate !== token);
+        const tokenWidth = token.getDisplayWidth();
+        const tokenHeight = token.getDisplayHeight();
+        const parentBounds = parent.getBounds();
+        const horizontalStep = tokenWidth * GAME_LAYOUT.energyTokenAttachedHorizontalStepRatio;
+        const startX = parentBounds.left + (tokenWidth / 2) + GAME_LAYOUT.energyTokenAttachedPadding;
+        const targetX = startX + (existingAttached.length * horizontalStep);
+        const targetY = parentBounds.bottom - (tokenHeight / 2) - GAME_LAYOUT.energyTokenAttachedPadding;
+
+        token.setDepth(ENERGY_TOKEN_DEPTHS.maxBelowUi);
+        this.beginSceneAnimation();
+        this.tweens.add({
+            targets: token.body,
+            x: targetX,
+            y: targetY,
+            duration: Math.round(GAME_LAYOUT.cardMoveDurationMs * 0.8),
+            ease: 'Sine.easeInOut',
+            onComplete: () => {
+                token.setAttachedToCardId(parent.id);
+                this.setEnergyTokenZone(token, ownerZoneId);
+                this.layoutEnergyTokensInZone(previousZoneId);
+                this.layoutEnergyTokensInZone(ownerZoneId);
+                this.updateAttachedEnergyTokenPositions(parent);
+
+                if (previousAttachedToCardId && previousAttachedToCardId !== parent.id) {
+                    const previousParent = this.cardById[previousAttachedToCardId];
+                    if (previousParent) {
+                        this.updateAttachedEnergyTokenPositions(previousParent);
+                    }
+                }
+
+                this.endSceneAnimation();
+                if (onComplete) {
+                    onComplete();
+                }
+            }
+        });
+    }
+
+    public moveEnergyTokenToOwnerEnergy (token: EnergyToken): void
+    {
+        const attachedToCardId = token.getAttachedToCardId();
+        if (attachedToCardId) {
+            token.setAttachedToCardId(null);
+        }
+
+        const ownerEnergyZoneId = this.energyZoneIdByOwner[token.ownerId];
+        this.setEnergyTokenZone(token, ownerEnergyZoneId);
+        this.layoutEnergyTokensInZone('energy-discard');
+        this.layoutEnergyTokensInZone(ownerEnergyZoneId);
     }
 
     private setEnergyTokenZone (token: EnergyToken, zoneId: string): void
@@ -1576,7 +2804,9 @@ export class Game extends Scene
     private moveCardToZone (card: Card, zoneId: string, onComplete?: () => void, insertIndex?: number): void
     {
         const originZoneId = card.getZoneId();
-        const requiresFaceFlipBeforeMove = this.isFaceDownZone(originZoneId) !== this.isFaceDownZone(zoneId);
+        const wasVisible = this.isZoneVisibleToView(originZoneId, card.getOwnerId());
+        const willBeVisible = this.isZoneVisibleToView(zoneId, card.getOwnerId());
+        const requiresFaceFlipBeforeMove = wasVisible && !willBeVisible;
 
         const completeMove = () => {
             this.detachCard(card);
@@ -1608,11 +2838,6 @@ export class Game extends Scene
     {
         const discardZone = `${card.getOwnerId()}-discard`;
         this.moveCardToZone(card, discardZone, onComplete);
-    }
-
-    private isFaceDownZone (zoneId: string): boolean
-    {
-        return zoneId.endsWith('-discard') || zoneId.endsWith('-deck');
     }
 
     private layoutStadiumStack (): void

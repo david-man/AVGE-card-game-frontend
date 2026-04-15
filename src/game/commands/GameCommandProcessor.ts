@@ -1,3 +1,5 @@
+import { AVGE_CARD_TYPES, AVGE_CARD_TYPE_BORDER_COLORS, AVGECardType } from '../config';
+
 export class GameCommandProcessor
 {
     private readonly host: unknown;
@@ -14,14 +16,97 @@ export class GameCommandProcessor
             return;
         }
 
+        if (typeof g.setCommandExecutionInProgress === 'function') {
+            g.setCommandExecutionInProgress(true);
+        }
+
+        try {
+
         g.appendTerminalLine(`> ${command}`);
+        const isBackendReplayCommand = Boolean(g.scannerCommandInProgress);
 
         const commandParts = command.split(/\s+/);
         const [rawAction, rawArgOne, rawArgTwo, rawArgThree] = commandParts;
         const action = rawAction.toLowerCase();
 
+        const parseBooleanArg = (rawValue: string): boolean | null => {
+            const normalized = rawValue.toLowerCase();
+            if (normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'on') {
+                return true;
+            }
+            if (normalized === 'false' || normalized === '0' || normalized === 'no' || normalized === 'off') {
+                return false;
+            }
+            return null;
+        };
+
+        const normalizeStatusKey = (rawStatus: string): 'Arranger' | 'Goon' | 'Maid' | null => {
+            const normalized = rawStatus.trim().toLowerCase();
+            if (normalized === 'arranger' || normalized === 'arr' || normalized === 'a') {
+                return 'Arranger';
+            }
+            if (normalized === 'goon' || normalized === 'g') {
+                return 'Goon';
+            }
+            if (normalized === 'maid' || normalized === 'm') {
+                return 'Maid';
+            }
+            return null;
+        };
+
+        const resolveCardById = (rawId: string): any => {
+            const direct = g.cardById[rawId] ?? g.cardById[rawId.toUpperCase()] ?? g.cardById[rawId.toLowerCase()];
+            if (direct) {
+                return direct;
+            }
+
+            const target = rawId.toLowerCase();
+            const matchedKey = Object.keys(g.cardById).find((key) => key.toLowerCase() === target);
+            return matchedKey ? g.cardById[matchedKey] : undefined;
+        };
+
+        const resolveEnergyTokenById = (rawId: string): any => {
+            const direct = g.energyTokenById[rawId] ?? g.energyTokenById[rawId.toUpperCase()] ?? g.energyTokenById[rawId.toLowerCase()];
+            if (direct) {
+                return direct;
+            }
+
+            const target = rawId.toLowerCase();
+            const matchedKey = Object.keys(g.energyTokenById).find((key) => key.toLowerCase() === target);
+            return matchedKey ? g.energyTokenById[matchedKey] : undefined;
+        };
+
+        const emitCommandEvent = (eventType: string, responseData: Record<string, unknown>): void => {
+            // Replay commands coming from backend must not be re-emitted back to
+            // backend, otherwise each client echoes the same event and creates
+            // a command feedback loop.
+            const isResponseEvent = eventType === 'notify' || eventType === 'input_result' || eventType === 'input_state_change';
+            if (isBackendReplayCommand && !isResponseEvent) {
+                return;
+            }
+            g.emitBackendEvent(eventType, responseData);
+        };
+
+        const normalizeInputMode = (rawMode: string): string => {
+            return rawMode.trim().toLowerCase().replace(/\s+/g, '-').replace(/_/g, '-');
+        };
+
         if (action === 'help' || action === '?') {
             this.printHelp(g);
+            return;
+        }
+
+        if (action === 'unlock-input' || action === 'unlock_input') {
+            g.remoteInputLockActive = false;
+            g.setBoardInputEnabled(true);
+            g.appendTerminalLine('Input unlocked after notify ACK.');
+            return;
+        }
+
+        if (action === 'lock-input' || action === 'lock_input') {
+            g.remoteInputLockActive = true;
+            g.setBoardInputEnabled(false, false);
+            g.appendTerminalLine('Input locked while remote client processes animation.');
             return;
         }
 
@@ -31,13 +116,9 @@ export class GameCommandProcessor
                 return;
             }
 
-            const tokenId = Number(rawArgOne);
-            if (!Number.isInteger(tokenId)) {
-                g.appendTerminalLine(`Invalid energy id: ${rawArgOne}`);
-                return;
-            }
+            const tokenId = rawArgOne;
 
-            const token = g.energyTokenById[tokenId];
+            const token = resolveEnergyTokenById(tokenId);
             if (!token) {
                 g.appendTerminalLine(`Unknown energy token: ${tokenId}`);
                 return;
@@ -48,8 +129,292 @@ export class GameCommandProcessor
                 return;
             }
 
-            g.moveEnergyTokenToDiscard(token);
+            const fromZoneId = token.getZoneId();
+            const fromAttachedToCardId = token.getAttachedToCardId();
+            g.animateEnergyTokenToZone(token, 'energy-discard');
             g.appendTerminalLine(`ENERGY-${tokenId} -> energy-discard`);
+            emitCommandEvent('energy_moved', {
+                energy_id: token.id,
+                owner_id: token.ownerId,
+                from_zone_id: fromZoneId,
+                to_zone_id: 'energy-discard',
+                from_attached_to_card_id: fromAttachedToCardId,
+                to_attached_to_card_id: null,
+                reason: 'rm',
+                interaction: 'command'
+            });
+            return;
+        }
+
+        if (action === 'create-energy' || action === 'create_energy') {
+            if (commandParts.length !== 5) {
+                g.appendTerminalLine('Usage: create_energy [energyid] [player-1|player-2] [energyholderid] [attached_card_id|none]');
+                return;
+            }
+
+            const tokenId = commandParts[1];
+
+            const ownerId = g.parsePlayerTurnArg(commandParts[2]);
+            if (!ownerId) {
+                g.appendTerminalLine('Usage: create_energy [energyid] [player-1|player-2] [energyholderid] [attached_card_id|none]');
+                return;
+            }
+
+            const holderId = commandParts[3].toLowerCase();
+            if (!g.energyHolderById[holderId]) {
+                g.appendTerminalLine(`Unknown energy holder: ${holderId}`);
+                return;
+            }
+
+            const attachedArg = commandParts[4];
+            const attachedToCardId = attachedArg.toLowerCase() === 'none' ? null : attachedArg.toUpperCase();
+
+            const result = g.createEnergyTokenFromCommand({
+                id: tokenId,
+                ownerId,
+                holderId,
+                radius: g.getDefaultEnergyTokenRadius(),
+                attachedToCardId
+            });
+
+            if (!result.ok) {
+                g.appendTerminalLine(result.error ?? 'create_energy failed');
+                return;
+            }
+
+            g.appendTerminalLine(`ENERGY-${tokenId} created in ${holderId}`);
+            emitCommandEvent('energy_created', {
+                energy_id: tokenId,
+                owner_id: ownerId,
+                holder_id: holderId,
+                attached_to_card_id: attachedToCardId
+            });
+            return;
+        }
+
+        if (action === 'create-card' || action === 'create_card') {
+            if (commandParts.length !== 12) {
+                g.appendTerminalLine('Usage: create_card [cardid] [player-1|player-2] [character|tool|item|stadium|supporter] [cardholderid] [card_class] [has_atk_1] [has_active] [has_atk_2] [hp] [maxhp] [attached_card_id|none]');
+                return;
+            }
+
+            const cardId = commandParts[1].toUpperCase();
+            const ownerId = g.parsePlayerTurnArg(commandParts[2]);
+            if (!ownerId) {
+                g.appendTerminalLine('Usage: create_card [cardid] [player-1|player-2] [character|tool|item|stadium|supporter] [cardholderid] [card_class] [has_atk_1] [has_active] [has_atk_2] [hp] [maxhp] [attached_card_id|none]');
+                return;
+            }
+
+            const cardType = g.parseCardTypeArg(commandParts[3]);
+            if (!cardType) {
+                g.appendTerminalLine(`Invalid card type: ${commandParts[3]}`);
+                return;
+            }
+
+            const holderId = commandParts[4].toLowerCase();
+            if (!g.cardHolderById[holderId]) {
+                g.appendTerminalLine(`Unknown card holder: ${holderId}`);
+                return;
+            }
+
+            const cardClass = commandParts[5];
+            const hasAtk1 = parseBooleanArg(commandParts[6]);
+            const hasActive = parseBooleanArg(commandParts[7]);
+            const hasAtk2 = parseBooleanArg(commandParts[8]);
+            if (hasAtk1 === null || hasActive === null || hasAtk2 === null) {
+                g.appendTerminalLine('has_atk_1, has_active, and has_atk_2 must be true/false, 1/0, yes/no, or on/off.');
+                return;
+            }
+
+            const hp = Number(commandParts[9]);
+            const maxHp = Number(commandParts[10]);
+            const attachedArg = commandParts[11];
+            const attachedToCardId = attachedArg.toLowerCase() === 'none' ? null : attachedArg.toUpperCase();
+
+            if (!Number.isFinite(hp) || !Number.isFinite(maxHp)) {
+                g.appendTerminalLine('hp and maxhp must be numeric values.');
+                return;
+            }
+
+            const cardTypeColors: Record<string, number> = {
+                character: 0xe76f51,
+                tool: 0x457b9d,
+                item: 0x2a9d8f,
+                stadium: 0x6d597a,
+                supporter: 0xb45309,
+            };
+
+            const result = g.createCardFromCommand({
+                id: cardId,
+                ownerId,
+                cardType,
+                holderId,
+                color: cardTypeColors[cardType],
+                AVGECardType: 'NONE',
+                AVGECardClass: cardClass,
+                hasAtk1,
+                hasActive,
+                hasAtk2,
+                hp,
+                maxHp,
+                statusEffect: {
+                    Arranger: 0,
+                    Goon: 0,
+                    Maid: 0
+                },
+                width: g.objectWidth,
+                height: g.objectHeight,
+                flipped: false,
+                attachedToCardId
+            });
+
+            if (!result.ok) {
+                g.appendTerminalLine(result.error ?? 'create_card failed');
+                return;
+            }
+
+            g.appendTerminalLine(`${cardId} created in ${holderId}`);
+            emitCommandEvent('card_created', {
+                card_id: cardId,
+                owner_id: ownerId,
+                card_type: cardType,
+                holder_id: holderId,
+                card_class: cardClass,
+                has_atk_1: hasAtk1,
+                has_active: hasActive,
+                has_atk_2: hasAtk2,
+                hp,
+                maxhp: maxHp,
+                attached_to_card_id: attachedToCardId
+            });
+            return;
+        }
+
+        if (action === 'set_status' || action === 'set-status') {
+            if (!rawArgOne || !rawArgTwo || !rawArgThree) {
+                g.appendTerminalLine('Usage: set_status [card_id] [status_effect] [count]');
+                g.appendTerminalLine('status_effect: arranger|goon|maid');
+                return;
+            }
+
+            const card = resolveCardById(rawArgOne);
+            if (!card) {
+                g.appendTerminalLine(`Unknown card: ${rawArgOne}`);
+                return;
+            }
+
+            if (card.getCardType() !== 'character') {
+                g.appendTerminalLine(`set_status only works on character cards: ${card.id}`);
+                return;
+            }
+
+            const statusKey = normalizeStatusKey(rawArgTwo);
+            if (!statusKey) {
+                g.appendTerminalLine(`Unknown status_effect: ${rawArgTwo}`);
+                g.appendTerminalLine('status_effect: arranger|goon|maid');
+                return;
+            }
+
+            const count = Number(rawArgThree);
+            if (!Number.isInteger(count) || count < 0) {
+                g.appendTerminalLine(`Invalid count: ${rawArgThree}`);
+                g.appendTerminalLine('count must be a non-negative integer.');
+                return;
+            }
+
+            card.setStatusCount(statusKey, count);
+            g.redrawAllCardMarks();
+            g.appendTerminalLine(`${card.id} status ${statusKey} -> ${count}`);
+            emitCommandEvent('card_status_changed', {
+                card_id: card.id,
+                status_effect: statusKey,
+                count
+            });
+            return;
+        }
+
+        if (action === 'mv-energy' || action === 'mvenergy' || action === 'add-energy' || action === 'addenergy') {
+            if (!rawArgOne || !rawArgTwo) {
+                g.appendTerminalLine('Usage: mv-energy [energyid] [target_card_id|p1-energy|p2-energy|energy-discard]');
+                return;
+            }
+
+            const tokenId = rawArgOne;
+
+            const token = resolveEnergyTokenById(tokenId);
+            if (!token) {
+                g.appendTerminalLine(`Unknown energy token: ${tokenId}`);
+                return;
+            }
+
+            if (!g.canActOnToken(token)) {
+                g.appendTerminalLine(`Not allowed in ${g.getViewModeLabel(g.activeViewMode)} view: ENERGY-${tokenId}`);
+                return;
+            }
+
+            const fromZoneId = token.getZoneId();
+            const fromAttachedToCardId = token.getAttachedToCardId();
+
+            const targetHolderId = rawArgTwo.toLowerCase();
+            const targetHolder = g.energyHolderById[targetHolderId];
+            if (targetHolder) {
+                g.animateEnergyTokenToZone(token, targetHolderId);
+                g.appendTerminalLine(`ENERGY-${tokenId} -> ${targetHolderId}`);
+                emitCommandEvent('energy_moved', {
+                    energy_id: token.id,
+                    owner_id: token.ownerId,
+                    from_zone_id: fromZoneId,
+                    to_zone_id: targetHolderId,
+                    from_attached_to_card_id: fromAttachedToCardId,
+                    to_attached_to_card_id: null,
+                    reason: 'mv-energy',
+                    interaction: 'command'
+                });
+                return;
+            }
+
+            const targetCard = resolveCardById(rawArgTwo);
+            const targetCardId = targetCard ? targetCard.id : rawArgTwo;
+            if (!targetCard) {
+                g.appendTerminalLine(`Unknown target: ${rawArgTwo}`);
+                return;
+            }
+
+            if (!g.canActOnCard(targetCard)) {
+                g.appendTerminalLine(`Not allowed in ${g.getViewModeLabel(g.activeViewMode)} view: ${targetCardId}`);
+                return;
+            }
+
+            if (targetCard.getCardType() !== 'character') {
+                g.appendTerminalLine(`mv-energy target must be a character: ${targetCardId}`);
+                return;
+            }
+
+            if (targetCard.getOwnerId() !== token.ownerId) {
+                g.appendTerminalLine('mv-energy requires token and target card to share an owner.');
+                return;
+            }
+
+            const targetZoneId = targetCard.getZoneId();
+            const ownerBenchZone = `${token.ownerId}-bench`;
+            const ownerActiveZone = `${token.ownerId}-active`;
+            if (targetZoneId !== ownerBenchZone && targetZoneId !== ownerActiveZone) {
+                g.appendTerminalLine(`mv-energy target must be in ${ownerBenchZone} or ${ownerActiveZone}.`);
+                return;
+            }
+
+            g.animateAttachEnergyTokenToCard(token, targetCard);
+            g.appendTerminalLine(`ENERGY-${tokenId} -> ${targetCardId}`);
+            emitCommandEvent('energy_moved', {
+                energy_id: token.id,
+                owner_id: token.ownerId,
+                from_zone_id: fromZoneId,
+                to_zone_id: targetZoneId,
+                from_attached_to_card_id: fromAttachedToCardId,
+                to_attached_to_card_id: targetCard.id,
+                reason: 'mv-energy',
+                interaction: 'command'
+            });
             return;
         }
 
@@ -129,8 +494,8 @@ export class GameCommandProcessor
                 return;
             }
 
-            const cardId = rawArgOne.toUpperCase();
-            const card = g.cardById[cardId];
+            const card = resolveCardById(rawArgOne);
+            const cardId = card ? card.id : rawArgOne;
 
             if (!card) {
                 g.appendTerminalLine(`Unknown card: ${cardId}`);
@@ -159,10 +524,10 @@ export class GameCommandProcessor
                 return;
             }
 
-            const cardId = rawArgOne.toUpperCase();
+            const cardId = rawArgOne;
             const hp = Number(rawArgTwo);
             const maxHp = Number(rawArgThree);
-            const card = g.cardById[cardId];
+            const card = resolveCardById(cardId);
 
             if (!card) {
                 g.appendTerminalLine(`Unknown card: ${cardId}`);
@@ -190,14 +555,57 @@ export class GameCommandProcessor
             return;
         }
 
+        if (action === 'maxhp' || action === 'max-hp') {
+            if (!rawArgOne || !rawArgTwo) {
+                g.appendTerminalLine('Usage: maxhp [cardid] [maxhp]');
+                g.appendTerminalLine('   or: max-hp [cardid] [maxhp]');
+                return;
+            }
+
+            const cardId = rawArgOne;
+            const maxHp = Number(rawArgTwo);
+            const card = resolveCardById(cardId);
+
+            if (!card) {
+                g.appendTerminalLine(`Unknown card: ${cardId}`);
+                return;
+            }
+
+            if (!g.canActOnCard(card)) {
+                g.appendTerminalLine(`Not allowed in ${g.getViewModeLabel(g.activeViewMode)} view: ${cardId}`);
+                return;
+            }
+
+            if (card.getCardType() !== 'character') {
+                g.appendTerminalLine(`maxhp only works on character cards: ${cardId}`);
+                return;
+            }
+
+            if (!Number.isFinite(maxHp) || maxHp < 0) {
+                g.appendTerminalLine('maxhp must be a non-negative number.');
+                return;
+            }
+
+            const clampedHp = Math.min(card.getHp(), maxHp);
+            card.setHpValues(clampedHp, maxHp);
+            g.redrawAllCardMarks();
+            g.appendTerminalLine(`${cardId} HP -> [${clampedHp}/${maxHp}]`);
+            emitCommandEvent('card_maxhp_changed', {
+                card_id: card.id,
+                hp: clampedHp,
+                maxhp: maxHp
+            });
+            return;
+        }
+
         if (action === 'border') {
             if (!rawArgOne || !rawArgTwo) {
                 g.appendTerminalLine('Usage: border [cardid] [hex]');
                 return;
             }
 
-            const cardId = rawArgOne.toUpperCase();
-            const card = g.cardById[cardId];
+            const card = resolveCardById(rawArgOne);
+            const cardId = card ? card.id : rawArgOne;
             if (!card) {
                 g.appendTerminalLine(`Unknown card: ${cardId}`);
                 return;
@@ -222,6 +630,43 @@ export class GameCommandProcessor
             return;
         }
 
+        if (action === 'changetype' || action === 'change-type') {
+            if (!rawArgOne || !rawArgTwo) {
+                g.appendTerminalLine('Usage: changetype [cardid] [NONE|WW|PERC|PIANO|STRING|GUITAR|CHOIR|BRASS]');
+                g.appendTerminalLine('   or: change-type [cardid] [NONE|WW|PERC|PIANO|STRING|GUITAR|CHOIR|BRASS]');
+                return;
+            }
+
+            const card = resolveCardById(rawArgOne);
+            const cardId = card ? card.id : rawArgOne;
+            if (!card) {
+                g.appendTerminalLine(`Unknown card: ${cardId}`);
+                return;
+            }
+
+            if (!g.canActOnCard(card)) {
+                g.appendTerminalLine(`Not allowed in ${g.getViewModeLabel(g.activeViewMode)} view: ${cardId}`);
+                return;
+            }
+
+            const rawType = rawArgTwo.trim().toUpperCase();
+            const normalizedType = rawType === 'ALL' ? 'NONE' : rawType;
+
+            if (!(AVGE_CARD_TYPES as readonly string[]).includes(normalizedType)) {
+                g.appendTerminalLine(`Invalid AVGE card type: ${rawArgTwo}`);
+                g.appendTerminalLine('Allowed: NONE, WW, PERC, PIANO, STRING, GUITAR, CHOIR, BRASS');
+                return;
+            }
+
+            const nextType = normalizedType as AVGECardType;
+            const color = AVGE_CARD_TYPE_BORDER_COLORS[nextType];
+            card.body.setData('AVGECardType', nextType);
+            card.setBorderColor(color);
+            g.redrawAllCardMarks();
+            g.appendTerminalLine(`${cardId} type -> ${nextType} (#${color.toString(16).padStart(6, '0').toUpperCase()})`);
+            return;
+        }
+
         if (action === 'input') {
             if (!rawArgOne || !rawArgTwo) {
                 g.appendTerminalLine('Usage: input [type] [msg] [..args]');
@@ -230,11 +675,12 @@ export class GameCommandProcessor
                 return;
             }
 
-            const mode = rawArgOne.toLowerCase();
+            const mode = normalizeInputMode(rawArgOne);
             const parsedTargetView = g.parseViewModeArg(rawArgTwo.toLowerCase());
             const targetView = parsedTargetView && parsedTargetView !== 'admin' ? parsedTargetView : null;
             const topMessage = targetView ? (rawArgThree ?? '') : rawArgTwo;
             const argsStartIndex = targetView ? 4 : 3;
+            const canShowTargetedInputInCurrentView = !targetView || g.activeViewMode === 'admin' || g.activeViewMode === targetView;
 
             if (!topMessage) {
                 g.appendTerminalLine('Usage: input [type] [msg] [..args]');
@@ -243,11 +689,11 @@ export class GameCommandProcessor
                 return;
             }
 
-            if (targetView && g.activeViewMode !== 'admin' && g.activeViewMode !== targetView) {
+            if (!canShowTargetedInputInCurrentView) {
                 g.clearOverlayPreviewIfActive();
-                g.setBoardInputEnabled(false);
+                g.setBoardInputEnabled(false, false);
                 g.appendTerminalLine(`Input OFF (target: ${g.getViewModeLabel(targetView)}, current: ${g.getViewModeLabel(g.activeViewMode)})`);
-                g.emitBackendEvent('input_state_change', {
+                emitCommandEvent('input_state_change', {
                     input_type: 'off',
                     requested_input_type: mode,
                     target_view: g.getViewModeLabel(targetView),
@@ -291,13 +737,20 @@ export class GameCommandProcessor
                     return null;
                 };
 
-                const cleanArg = (raw: string): string => raw.trim().replace(/^\[/, '').replace(/\]$/, '').replace(/,$/, '').trim();
+                const selectionTail = commandParts.slice(argsStartIndex).join(' ').trim();
+                const selectionArgsMatch = selectionTail.match(/^\[([^\]]*)\]\s*,?\s*\[([^\]]*)\]\s*,?\s*([^,\s]+)\s*,?\s*([^,\s]+)\s*,?\s*([^,\s]+)$/);
+                if (!selectionArgsMatch) {
+                    failSelection(
+                        'Usage: input selection [msg] [display1,display2], [highlight1,highlight2], [num-cards], [allow-repeat] [allow-none]'
+                    );
+                    return;
+                }
 
-                const displayListToken = cleanArg(commandParts[argsStartIndex] ?? '');
-                const highlightListToken = cleanArg(commandParts[argsStartIndex + 1] ?? '');
-                const numCardsToken = cleanArg(commandParts[argsStartIndex + 2] ?? '');
-                const allowRepeatToken = cleanArg((commandParts[argsStartIndex + 3] ?? '').toLowerCase());
-                const allowNoneToken = cleanArg((commandParts[argsStartIndex + 4] ?? '').toLowerCase());
+                const displayListToken = selectionArgsMatch[1].trim();
+                const highlightListToken = selectionArgsMatch[2].trim();
+                const numCardsToken = selectionArgsMatch[3].trim();
+                const allowRepeatToken = selectionArgsMatch[4].trim().toLowerCase();
+                const allowNoneToken = selectionArgsMatch[5].trim().toLowerCase();
                 const allowRepeat = parseBool(allowRepeatToken);
                 const allowNone = parseBool(allowNoneToken);
 
@@ -318,7 +771,7 @@ export class GameCommandProcessor
 
                 const displayItemsRaw = displayListToken
                     .split(',')
-                    .map((item) => item.trim())
+                    .map((item) => item.trim().replace(/^\[+/, '').replace(/\]+$/, '').replace(/,$/, '').trim())
                     .filter((item) => item.length > 0);
 
                 if (displayItemsRaw.length === 0) {
@@ -328,7 +781,7 @@ export class GameCommandProcessor
 
                 const highlightItemsRaw = highlightListToken
                     .split(',')
-                    .map((item) => item.trim())
+                    .map((item) => item.trim().replace(/^\[+/, '').replace(/\]+$/, '').replace(/,$/, '').trim())
                     .filter((item) => item.length > 0);
 
                 if (highlightItemsRaw.length === 0 && !allowNone && numberOfSelections > 0) {
@@ -337,13 +790,19 @@ export class GameCommandProcessor
                 }
 
                 const toCanonicalId = (itemId: string): string => {
-                    const card = g.cardById[itemId.toUpperCase()];
+                    const card = resolveCardById(itemId);
                     return card ? card.id : itemId;
                 };
 
-                const displayCanonicalByKey = new Map<string, { id: string; isCard: boolean; cardColor?: number; cardTypeLabel?: string }>();
+                const displayCanonicalByKey = new Map<string, {
+                    id: string;
+                    isCard: boolean;
+                    cardColor?: number;
+                    cardClassLabel?: string;
+                    cardTypeLabel?: string;
+                }>();
                 for (const itemId of displayItemsRaw) {
-                    const card = g.cardById[itemId.toUpperCase()];
+                    const card = resolveCardById(itemId);
                     const canonicalId = card ? card.id : itemId;
                     const key = canonicalId.toLowerCase();
                     if (displayCanonicalByKey.has(key)) {
@@ -354,6 +813,7 @@ export class GameCommandProcessor
                         id: canonicalId,
                         isCard: Boolean(card),
                         cardColor: card?.baseColor,
+                        cardClassLabel: card?.getCardClass(),
                         cardTypeLabel: card?.getCardType().toUpperCase()
                     });
                 }
@@ -383,6 +843,7 @@ export class GameCommandProcessor
                         isCard: item.isCard,
                         selectable: highlightKeySet.has(key),
                         cardColor: item.cardColor,
+                        cardClassLabel: item.cardClassLabel,
                         cardTypeLabel: item.cardTypeLabel
                     };
                 });
@@ -400,19 +861,24 @@ export class GameCommandProcessor
                     topMessage,
                     (orderedSelections: string[]) => {
                         g.appendTerminalLine(`Selection -> ${orderedSelections.join(',')}`);
-                        g.emitBackendEvent('input_result', {
+                        emitCommandEvent('input_result', {
                             input_type: 'selection',
+                            inputType: 'selection',
                             message: topMessage,
                             number_of_selections: numberOfSelections,
+                            numberOfSelections: numberOfSelections,
                             allow_repeat: allowRepeat,
+                            allowRepeat,
                             allow_none: allowNone,
-                            ordered_selections: orderedSelections
+                            allowNone,
+                            ordered_selections: orderedSelections,
+                            orderedSelections
                         });
                         g.clearOverlayPreviewIfActive();
                         g.setBoardInputEnabled(true);
                     },
                     (cardId: string) => {
-                        const card = g.cardById[cardId.toUpperCase()];
+                        const card = resolveCardById(cardId);
                         if (card) {
                             g.overlayPreviewContext = 'input';
                             g.showCardPreview(card);
@@ -425,7 +891,7 @@ export class GameCommandProcessor
                 return;
             }
 
-            if (mode === 'kei-watanabe-drumkidworkshop' || mode === 'kei_watanabe_drumkidworkshop') {
+            if (mode === 'kei-watanabe-drumkidworkshop') {
                 const listRaw = commandParts.slice(argsStartIndex).join(' ').trim();
                 if (!listRaw) {
                     g.appendTerminalLine('Usage: input kei-watanabe-drumkidworkshop [msg] [card1,card2,...]');
@@ -437,10 +903,10 @@ export class GameCommandProcessor
                     return;
                 }
 
-                const cleanedList = listRaw.replace(/^\[/, '').replace(/\]$/, '');
+                const cleanedList = listRaw.replace(/\[/g, '').replace(/\]/g, '');
                 const rawIds = cleanedList
                     .split(',')
-                    .map((entry) => entry.trim())
+                    .map((entry) => entry.trim().replace(/^\[+/, '').replace(/\]+$/, ''))
                     .filter((entry) => entry.length > 0);
 
                 if (rawIds.length === 0) {
@@ -448,11 +914,11 @@ export class GameCommandProcessor
                     return;
                 }
 
-                const overlayItems: Array<{ id: string; cardColor: number; cardTypeLabel: string; hasAtk1: boolean; hasAtk2: boolean }> = [];
+                const overlayItems: Array<{ id: string; cardClassLabel: string; cardColor: number; cardTypeLabel: string; hasAtk1: boolean; hasAtk2: boolean }> = [];
                 const seen = new Set<string>();
 
                 for (const rawId of rawIds) {
-                    const card = g.cardById[rawId.toUpperCase()];
+                    const card = resolveCardById(rawId);
                     if (!card) {
                         g.appendTerminalLine(`Unknown card: ${rawId}`);
                         return;
@@ -481,6 +947,7 @@ export class GameCommandProcessor
 
                     overlayItems.push({
                         id: card.id,
+                        cardClassLabel: card.getCardClass(),
                         cardColor: card.baseColor,
                         cardTypeLabel: card.getCardType().toUpperCase(),
                         hasAtk1: card.hasAttackOne(),
@@ -503,10 +970,12 @@ export class GameCommandProcessor
                     topMessage,
                     (result: { cardId: string; attack: 'atk1' | 'atk2' }) => {
                         g.appendTerminalLine(`KEI-WATANABE-DRUMKIDWORKSHOP -> ${result.cardId} ${result.attack.toUpperCase()}`);
-                        g.emitBackendEvent('input_result', {
+                        emitCommandEvent('input_result', {
                             input_type: 'kei_watanabe_drumkidworkshop',
+                            inputType: 'kei_watanabe_drumkidworkshop',
                             message: topMessage,
                             card_id: result.cardId,
+                            cardId: result.cardId,
                             attack: result.attack,
                             attack_label: result.attack.toUpperCase()
                         });
@@ -514,7 +983,7 @@ export class GameCommandProcessor
                         g.setBoardInputEnabled(true);
                     },
                     (cardId: string) => {
-                        const card = g.cardById[cardId.toUpperCase()];
+                        const card = resolveCardById(cardId);
                         if (card) {
                             g.overlayPreviewContext = 'input';
                             g.showCardPreview(card);
@@ -527,7 +996,7 @@ export class GameCommandProcessor
                 return;
             }
 
-            if (mode === 'numerical-entry' || mode === 'numerical_entry') {
+            if (mode === 'numerical-entry') {
                 if (g.inputOverlayController.hasActiveOverlay()) {
                     g.appendTerminalLine('Input overlay already active.');
                     return;
@@ -537,8 +1006,9 @@ export class GameCommandProcessor
                 g.appendTerminalLine('Input NUMERICAL-ENTRY started. Type a number.');
                 g.inputOverlayController.startNumericalEntryOverlay(topMessage, (value: number) => {
                     g.appendTerminalLine(`NUMERICAL-ENTRY -> ${value}`);
-                    g.emitBackendEvent('input_result', {
+                    emitCommandEvent('input_result', {
                         input_type: 'numerical-entry',
+                        inputType: 'numerical-entry',
                         message: topMessage,
                         value
                     });
@@ -551,59 +1021,138 @@ export class GameCommandProcessor
             }
 
             if (mode === 'd6') {
+                const forcedValueToken = (commandParts[argsStartIndex] ?? '').trim();
+                const forcedValue = Number(forcedValueToken);
+                if (!Number.isInteger(forcedValue) || forcedValue < 1 || forcedValue > 6) {
+                    g.appendTerminalLine('Usage: input d6 [msg] [1-6]');
+                    g.appendTerminalLine('   or: input d6 [player-1|player-2] [msg] [1-6]');
+                    return;
+                }
+
                 if (g.inputOverlayController.hasActiveOverlay()) {
                     g.appendTerminalLine('Input overlay already active.');
                     return;
                 }
 
                 g.setBoardInputEnabled(false);
-                g.appendTerminalLine('Input D6 started. Click die to roll.');
+                g.appendTerminalLine(`Input D6 started. Click die to reveal ${forcedValue}.`);
                 g.inputOverlayController.startDiceRollOverlay(topMessage, (result: number) => {
                     g.appendTerminalLine(`D6 -> ${result}`);
-                    g.emitBackendEvent('input_result', {
+                    emitCommandEvent('input_result', {
                         input_type: 'd6',
+                        inputType: 'd6',
                         message: topMessage,
-                        result
+                        result,
+                        result_value: result,
+                        resultValue: result
                     });
                     g.clearOverlayPreviewIfActive();
                     g.setBoardInputEnabled(true);
-                });
+                }, forcedValue);
                 return;
             }
 
             if (mode === 'coin') {
+                const forcedValueToken = (commandParts[argsStartIndex] ?? '').trim();
+                if (forcedValueToken !== '0' && forcedValueToken !== '1') {
+                    g.appendTerminalLine('Usage: input coin [msg] [0|1]');
+                    g.appendTerminalLine('   or: input coin [player-1|player-2] [msg] [0|1]');
+                    return;
+                }
+
+                const forcedResult = forcedValueToken === '1' ? 'heads' : 'tails';
+
                 if (g.inputOverlayController.hasActiveOverlay()) {
                     g.appendTerminalLine('Input overlay already active.');
                     return;
                 }
 
                 g.setBoardInputEnabled(false);
-                g.appendTerminalLine('Input COIN started. Click coin to flip.');
+                g.appendTerminalLine(`Input COIN started. Click coin to reveal ${forcedValueToken}.`);
                 g.inputOverlayController.startCoinFlipOverlay(topMessage, (result: 'heads' | 'tails') => {
+                    const resultValue = result === 'heads' ? 1 : 0;
                     g.appendTerminalLine(`COIN -> ${result.toUpperCase()}`);
-                    g.emitBackendEvent('input_result', {
-                        input_type: 'coin',
-                        message: topMessage,
-                        result,
-                        result_label: result.toUpperCase()
-                    });
+
+                    // Always exit coin input view immediately after selection,
+                    // even if backend processing of input_result is delayed.
+                    g.inputOverlayController.stopActiveOverlay();
                     g.clearOverlayPreviewIfActive();
                     g.setBoardInputEnabled(true);
-                });
+
+                    emitCommandEvent('input_result', {
+                        input_type: 'coin',
+                        inputType: 'coin',
+                        message: topMessage,
+                        result,
+                        result_value: resultValue,
+                        resultValue,
+                        result_label: result.toUpperCase()
+                    });
+                }, forcedResult);
+                return;
+            }
+
+            if (mode === 'binary') {
+                if (g.inputOverlayController.hasActiveOverlay()) {
+                    g.appendTerminalLine('Input overlay already active.');
+                    return;
+                }
+
+                const binaryItems = [
+                    { id: 'NO', isCard: false, selectable: true },
+                    { id: 'YES', isCard: false, selectable: true }
+                ];
+
+                g.setBoardInputEnabled(false);
+                g.overlayPreviewContext = 'input';
+                g.refreshCardActionButtons();
+                g.appendTerminalLine('Input BINARY started. Choose 0 or 1.');
+                g.inputOverlayController.startSelectionOverlay(
+                    binaryItems,
+                    1,
+                    false,
+                    false,
+                    topMessage,
+                    (orderedSelections: string[]) => {
+                        const picked = (orderedSelections[0] ?? 'NO').trim().toUpperCase();
+                        const resultValue = picked === 'YES' ? 1 : 0;
+                        const resultBool = resultValue === 1;
+
+                        g.appendTerminalLine(`BINARY -> ${picked}`);
+                        emitCommandEvent('input_result', {
+                            input_type: 'binary',
+                            inputType: 'binary',
+                            message: topMessage,
+                            result: resultBool,
+                            result_value: resultValue,
+                            resultValue,
+                            result_label: resultValue === 1 ? 'TRUE' : 'FALSE'
+                        });
+                        g.clearOverlayPreviewIfActive();
+                        g.setBoardInputEnabled(true);
+                    },
+                    () => {
+                        g.hideCardPreview();
+                    },
+                    () => {
+                        g.hideCardPreview();
+                    }
+                );
                 return;
             }
 
             if (mode !== 'on' && mode !== 'off') {
                 g.appendTerminalLine('Usage: input [type] [msg] [..args]');
                 g.appendTerminalLine('   or: input [type] [player-1|player-2] [msg] [..args]');
-                g.appendTerminalLine('Types: on, off, d6, coin, selection, kei_watanabe_drumkidworkshop, numerical-entry');
+                g.appendTerminalLine('Types: on, off, d6, coin, binary, selection, kei_watanabe_drumkidworkshop, numerical-entry');
                 return;
             }
 
-            g.setBoardInputEnabled(mode === 'on');
+            g.setBoardInputEnabled(mode === 'on', mode !== 'off');
             g.appendTerminalLine(`Input ${mode.toUpperCase()} -> ${topMessage}`);
-            g.emitBackendEvent('input_state_change', {
+            emitCommandEvent('input_state_change', {
                 input_type: mode,
+                inputType: mode,
                 message: topMessage,
                 enabled: mode === 'on',
                 target_view: targetView ? g.getViewModeLabel(targetView) : null
@@ -617,15 +1166,57 @@ export class GameCommandProcessor
                 return;
             }
 
-            const targetView = g.parseViewModeArg(rawArgOne.toLowerCase());
-            if (!targetView || targetView === 'admin') {
-                g.appendTerminalLine('Usage: notify [player-1|player-2] [msg]');
+            const normalizedNotifyTarget = rawArgOne.toLowerCase();
+            const notifyBoth = normalizedNotifyTarget === 'both' || normalizedNotifyTarget === 'all';
+            const targetView = notifyBoth
+                ? (g.activeViewMode === 'admin' ? null : g.activeViewMode)
+                : g.parseViewModeArg(normalizedNotifyTarget);
+            if ((!targetView || targetView === 'admin') && !notifyBoth) {
+                g.appendTerminalLine('Usage: notify [player-1|player-2|both] [msg]');
                 return;
             }
 
             const message = commandParts.slice(2).join(' ').trim();
             if (!message) {
-                g.appendTerminalLine('Usage: notify [player-1|player-2] [msg]');
+                g.appendTerminalLine('Usage: notify [player-1|player-2|both] [msg]');
+                return;
+            }
+
+            if (g.inputOverlayController.hasActiveOverlay()) {
+                // Notify is high-priority feedback; replace any active overlay
+                // so notify dismissal can always complete and ACK can be sent.
+                g.inputOverlayController.stopActiveOverlay();
+            }
+
+            if (!notifyBoth && g.activeViewMode !== 'admin' && g.activeViewMode !== targetView) {
+                g.appendTerminalLine(`Notify skipped in ${g.getViewModeLabel(g.activeViewMode)} view (target: ${g.getViewModeLabel(targetView)}).`);
+                return;
+            }
+
+            g.setBoardInputEnabled(false);
+            const notifyTargetLabel = notifyBoth ? 'BOTH PLAYERS' : g.getViewModeLabel(targetView);
+            g.appendTerminalLine(`Notify -> ${notifyTargetLabel}`);
+            g.inputOverlayController.startNotifyOverlay(notifyTargetLabel, message, () => {
+                g.appendTerminalLine('Notify dismissed.');
+                emitCommandEvent('notify', {
+                    command: g.pendingNotifyCommand ?? command,
+                    target_view: notifyTargetLabel,
+                    message,
+                    dismissed: true
+                });
+            });
+            return;
+        }
+
+        if (action === 'winner') {
+            if (!rawArgOne) {
+                g.appendTerminalLine('Usage: winner [player-1|player-2]');
+                return;
+            }
+
+            const winnerView = g.parseViewModeArg(rawArgOne.toLowerCase());
+            if (!winnerView || winnerView === 'admin') {
+                g.appendTerminalLine('Usage: winner [player-1|player-2]');
                 return;
             }
 
@@ -634,21 +1225,22 @@ export class GameCommandProcessor
                 return;
             }
 
-            if (g.activeViewMode !== 'admin' && g.activeViewMode !== targetView) {
-                g.appendTerminalLine(`Notify skipped in ${g.getViewModeLabel(g.activeViewMode)} view (target: ${g.getViewModeLabel(targetView)}).`);
-                return;
-            }
+            const winnerLabel = g.getViewModeLabel(winnerView);
+            const panelColor =
+                g.activeViewMode === 'admin'
+                    ? 0x4b5563
+                    : (g.activeViewMode === winnerView ? 0x166534 : 0x991b1b);
 
             g.setBoardInputEnabled(false);
-            g.appendTerminalLine(`Notify -> ${g.getViewModeLabel(targetView)}`);
-            g.inputOverlayController.startNotifyOverlay(g.getViewModeLabel(targetView), message, () => {
-                g.appendTerminalLine('Notify dismissed.');
-                g.emitBackendEvent('notify', {
-                    target_view: g.getViewModeLabel(targetView),
-                    message,
-                    dismissed: true
+            g.appendTerminalLine(`WINNER -> ${winnerLabel}`);
+            g.inputOverlayController.startWinnerOverlay(winnerLabel, panelColor, () => {
+                emitCommandEvent('winner', {
+                    winner_view: winnerLabel,
+                    current_view: g.getViewModeLabel(g.activeViewMode),
+                    panel_color: panelColor,
+                    redirected_to: 'MainMenu'
                 });
-                g.setBoardInputEnabled(true);
+                g.scene.start('MainMenu');
             });
             return;
         }
@@ -688,10 +1280,11 @@ export class GameCommandProcessor
                 .filter((entry) => entry.length > 0)
                 .map((entry) => {
                     const normalized = entry.toUpperCase();
-                    const card = g.cardById[normalized];
+                    const card = resolveCardById(normalized);
                     if (card) {
                         return {
                             id: card.id,
+                            cardClassLabel: card.getCardClass(),
                             cardColor: card.baseColor,
                             cardTypeLabel: card.getCardType().toUpperCase(),
                             isKnownCard: true
@@ -700,6 +1293,7 @@ export class GameCommandProcessor
 
                     return {
                         id: normalized,
+                        cardClassLabel: 'UNKNOWN',
                         cardColor: 0x334155,
                         cardTypeLabel: 'CARD',
                         isKnownCard: false
@@ -716,7 +1310,7 @@ export class GameCommandProcessor
                 () => {
                     g.overlayPreviewContext = null;
                     g.appendTerminalLine('Reveal dismissed.');
-                    g.emitBackendEvent('reveal', {
+                    emitCommandEvent('reveal', {
                         target_view: g.getViewModeLabel(targetView),
                         cards: revealCards,
                         dismissed: true
@@ -724,7 +1318,7 @@ export class GameCommandProcessor
                     g.setBoardInputEnabled(true);
                 },
                 (cardId: string) => {
-                    const card = g.cardById[cardId.toUpperCase()];
+                    const card = resolveCardById(cardId);
                     if (card) {
                         g.overlayPreviewContext = 'reveal';
                         g.showCardPreview(card);
@@ -743,8 +1337,8 @@ export class GameCommandProcessor
                 return;
             }
 
-            const cardId = rawArgOne.toUpperCase();
-            const card = g.cardById[cardId];
+            const card = resolveCardById(rawArgOne);
+            const cardId = card ? card.id : rawArgOne;
 
             if (!card) {
                 g.appendTerminalLine(`Unknown card: ${cardId}`);
@@ -796,82 +1390,6 @@ export class GameCommandProcessor
             return;
         }
 
-        if (action === 'attachtool' || action === 'attach-tool') {
-            if (!rawArgOne || !rawArgTwo) {
-                g.appendTerminalLine('Usage: attach-tool [tool card id] [target character id]');
-                return;
-            }
-
-            const toolCardId = rawArgOne.toUpperCase();
-            const targetCardId = rawArgTwo.toUpperCase();
-            const toolCard = g.cardById[toolCardId];
-            const targetCard = g.cardById[targetCardId];
-
-            if (!toolCard) {
-                g.appendTerminalLine(`Unknown card: ${toolCardId}`);
-                return;
-            }
-
-            if (!targetCard) {
-                g.appendTerminalLine(`Unknown card: ${targetCardId}`);
-                return;
-            }
-
-            if (!g.canActOnCard(toolCard)) {
-                g.appendTerminalLine(`Not allowed in ${g.getViewModeLabel(g.activeViewMode)} view: ${toolCardId}`);
-                return;
-            }
-
-            if (!g.canActOnCard(targetCard)) {
-                g.appendTerminalLine(`Not allowed in ${g.getViewModeLabel(g.activeViewMode)} view: ${targetCardId}`);
-                return;
-            }
-
-            if (toolCard.getCardType() !== 'tool') {
-                g.appendTerminalLine(`attach-tool requires a tool card: ${toolCardId}`);
-                return;
-            }
-
-            if (targetCard.getCardType() !== 'character') {
-                g.appendTerminalLine(`attach-tool target must be a character: ${targetCardId}`);
-                return;
-            }
-
-            if (toolCard.getOwnerId() !== targetCard.getOwnerId()) {
-                g.appendTerminalLine('attach-tool requires both cards to share an owner.');
-                return;
-            }
-
-            const ownerId = toolCard.getOwnerId();
-            const ownerHandZone = `${ownerId}-hand`;
-            const ownerBenchZone = `${ownerId}-bench`;
-            const ownerActiveZone = `${ownerId}-active`;
-            const targetZoneId = targetCard.getZoneId();
-
-            if (toolCard.getZoneId() !== ownerHandZone) {
-                g.appendTerminalLine(`attach-tool only works from hand (${ownerHandZone}).`);
-                return;
-            }
-
-            if (targetZoneId !== ownerBenchZone && targetZoneId !== ownerActiveZone) {
-                g.appendTerminalLine(`attach-tool target must be in ${ownerBenchZone} or ${ownerActiveZone}.`);
-                return;
-            }
-
-            const attachTarget = g.getTopAttachmentTarget(targetCard);
-            g.animateToolAttachToCard(toolCard, attachTarget, () => {
-                g.layoutAllHolders();
-                g.redrawAllCardMarks();
-                g.appendTerminalLine(`${toolCardId} attached to ${targetCardId}`);
-                g.emitBackendEvent('attach_tool', {
-                    tool_card_id: toolCardId,
-                    target_card_id: targetCardId,
-                    owner_id: toolCard.getOwnerId()
-                });
-            });
-            return;
-        }
-
         if (action === 'shuffle-animation') {
             if (g.isInteractionLockedByAnimation()) {
                 g.appendTerminalLine('Cannot shuffle while another animation is running.');
@@ -898,7 +1416,7 @@ export class GameCommandProcessor
             }
 
             g.appendTerminalLine(`Shuffle animation started on ${animatedPileCount} pile(s).`);
-            g.emitBackendEvent('shuffle_animation', {
+            emitCommandEvent('shuffle_animation', {
                 animated_pile_count: animatedPileCount,
                 pile_ids: pileIds
             });
@@ -916,7 +1434,7 @@ export class GameCommandProcessor
             parts.push(`drag reset: ${resetDragCount}`);
             parts.push(`selection cleared: ${hadSelection ? 'yes' : 'no'}`);
             g.appendTerminalLine(parts.join(' | '));
-            g.emitBackendEvent('unselect_all', {
+            emitCommandEvent('unselect_all', {
                 scope: scopeLabel,
                 drag_reset_count: resetDragCount,
                 selection_cleared: hadSelection
@@ -929,23 +1447,114 @@ export class GameCommandProcessor
             return;
         }
 
-        const cardId = rawArgOne.toUpperCase();
+        const requestedCardId = rawArgOne;
         const holderId = rawArgTwo.toLowerCase();
-        const card = g.cardById[cardId];
+        const card = resolveCardById(requestedCardId);
         const targetHolder = g.cardHolderById[holderId];
+        const targetCard = resolveCardById(rawArgTwo);
 
         if (!card) {
-            g.appendTerminalLine(`Unknown card: ${cardId}`);
+            g.appendTerminalLine(`Unknown card: ${requestedCardId}`);
             return;
         }
+
+        const cardId = card.id;
 
         if (!g.canActOnCard(card)) {
             g.appendTerminalLine(`Not allowed in ${g.getViewModeLabel(g.activeViewMode)} view: ${cardId}`);
             return;
         }
 
-        if (!targetHolder) {
-            g.appendTerminalLine(`Unknown holder: ${holderId}`);
+        if (!targetHolder && !targetCard) {
+            g.appendTerminalLine(`Unknown holder/card: ${rawArgTwo}`);
+            return;
+        }
+
+        if (targetCard && !targetHolder) {
+            const targetCardId = targetCard.id;
+
+            if (!g.canActOnCard(targetCard)) {
+                g.appendTerminalLine(`Not allowed in ${g.getViewModeLabel(g.activeViewMode)} view: ${targetCardId}`);
+                return;
+            }
+
+            if (rawArgThree !== undefined) {
+                g.appendTerminalLine('Usage: mv [tool card id] [target character id]');
+                return;
+            }
+
+            if (card.getCardType() !== 'tool') {
+                g.appendTerminalLine(`mv card->card requires a tool source card: ${cardId}`);
+                return;
+            }
+
+            if (targetCard.getCardType() !== 'character') {
+                g.appendTerminalLine(`mv card->card target must be a character: ${targetCardId}`);
+                return;
+            }
+
+            if (card.getOwnerId() !== targetCard.getOwnerId()) {
+                g.appendTerminalLine('mv card->card requires both cards to share an owner.');
+                return;
+            }
+
+            const ownerId = card.getOwnerId();
+            const ownerHandZone = `${ownerId}-hand`;
+            const ownerBenchZone = `${ownerId}-bench`;
+            const ownerActiveZone = `${ownerId}-active`;
+            const targetZoneId = targetCard.getZoneId();
+
+            const isAlreadyAttachedUnderTarget = (): boolean => {
+                let parentId = card.getAttachedToCardId();
+                const visited = new Set<string>();
+
+                while (parentId) {
+                    if (parentId === targetCardId) {
+                        return true;
+                    }
+
+                    if (visited.has(parentId)) {
+                        break;
+                    }
+                    visited.add(parentId);
+
+                    const parentCard = g.cardById[parentId];
+                    if (!parentCard) {
+                        break;
+                    }
+
+                    parentId = parentCard.getAttachedToCardId();
+                }
+
+                return false;
+            };
+
+            if (isAlreadyAttachedUnderTarget()) {
+                g.appendTerminalLine(`${cardId} -> ${targetCardId}`);
+                return;
+            }
+
+            if (card.getZoneId() !== ownerHandZone) {
+                g.appendTerminalLine(`mv tool->card only works from hand (${ownerHandZone}).`);
+                return;
+            }
+
+            if (targetZoneId !== ownerBenchZone && targetZoneId !== ownerActiveZone) {
+                g.appendTerminalLine(`mv tool->card target must be in ${ownerBenchZone} or ${ownerActiveZone}.`);
+                return;
+            }
+
+            const attachTarget = g.getTopAttachmentTarget(targetCard);
+            g.animateToolAttachToCard(card, attachTarget, () => {
+                g.layoutAllHolders();
+                g.redrawAllCardMarks();
+                g.appendTerminalLine(`${cardId} -> ${targetCardId}`);
+                emitCommandEvent('attach_tool', {
+                    tool_card_id: cardId,
+                    target_card_id: targetCardId,
+                    owner_id: card.getOwnerId()
+                });
+            });
             return;
         }
 
@@ -976,9 +1585,15 @@ export class GameCommandProcessor
             g.detachCard(card);
         }
 
-        const fromZoneId = card.getZoneId();
         const fromX = card.x;
         const fromY = card.y;
+
+        // Backend replayed moves can occur across turn/view transitions; clear
+        // any stale selection highlight before applying authoritative movement.
+        if (isBackendReplayCommand && typeof g.clearCardSelection === 'function') {
+            g.clearCardSelection();
+        }
+
         g.moveCardToZone(card, holderId, () => {
             g.layoutAllHolders();
             g.redrawAllCardMarks();
@@ -988,40 +1603,38 @@ export class GameCommandProcessor
             g.animateCardBetweenPoints(card, fromX, fromY, toX, toY, () => {
                 g.layoutAllHolders();
                 g.redrawAllCardMarks();
-                if (typeof g.selectCard === 'function') {
+                if (typeof g.updateAttachedChildrenPositions === 'function') {
+                    g.updateAttachedChildrenPositions(card);
+                }
+                // Do not force selection/highlight during backend replay updates.
+                if (!isBackendReplayCommand && typeof g.selectCard === 'function') {
                     g.selectCard(card);
                 }
                 if (insertIndex !== undefined) {
                     g.appendTerminalLine(`${cardId} -> ${holderId}[${insertIndex}]`);
-                    g.emitBackendEvent('card_moved', {
-                        card_id: cardId,
-                        from_zone_id: fromZoneId,
-                        to_zone_id: holderId,
-                        insert_index: insertIndex
-                    });
                     return;
                 }
                 g.appendTerminalLine(`${cardId} -> ${holderId}`);
-                g.emitBackendEvent('card_moved', {
-                    card_id: cardId,
-                    from_zone_id: fromZoneId,
-                    to_zone_id: holderId
-                });
             });
         }, insertIndex);
+        }
+        finally {
+            if (typeof g.setCommandExecutionInProgress === 'function') {
+                g.setCommandExecutionInProgress(false);
+            }
+        }
     }
 
     private printHelp (g: any): void
     {
         g.appendTerminalLine('Commands:');
         g.appendTerminalLine('  help | ?');
-        g.appendTerminalLine('  mv [cardid] [cardholderid] [index?]');
-        g.appendTerminalLine('  attach-tool [tool card id] [target character id]');
-        g.appendTerminalLine('    alias: attachtool');
+        g.appendTerminalLine('  mv [cardid] [cardholderid|target_character_id] [index?]');
         g.appendTerminalLine('  shuffle-animation');
         g.appendTerminalLine('  unselect-all');
         g.appendTerminalLine('    alias: unselectall');
-        g.appendTerminalLine('  notify [player-1|player-2] [msg]');
+        g.appendTerminalLine('  notify [player-1|player-2|both] [msg]');
+        g.appendTerminalLine('  winner [player-1|player-2]');
         g.appendTerminalLine('  reveal [player-1|player-2] [list of cards]');
         g.appendTerminalLine('  game-phase [no-input|phase2|atk]');
         g.appendTerminalLine('    alias: phase');
@@ -1029,15 +1642,33 @@ export class GameCommandProcessor
         g.appendTerminalLine('    alias: turn');
         g.appendTerminalLine('  stat [player-1|player-2] [attribute] [value]');
         g.appendTerminalLine('  hp [cardid] [hp] [maxhp]');
+        g.appendTerminalLine('  maxhp [cardid] [maxhp]');
+        g.appendTerminalLine('    alias: max-hp');
         g.appendTerminalLine('  border [cardid] [hex]');
+        g.appendTerminalLine('  changetype [cardid] [NONE|WW|PERC|PIANO|STRING|GUITAR|CHOIR|BRASS]');
+        g.appendTerminalLine('    alias: change-type');
+        g.appendTerminalLine('  set_status [card_id] [status_effect] [count]');
+        g.appendTerminalLine('    status_effect: arranger|goon|maid');
         g.appendTerminalLine('  flip [cardid]');
         g.appendTerminalLine('  rm [energyid]');
+        g.appendTerminalLine('  create_energy [energyid] [player-1|player-2] [energyholderid] [attached_card_id|none]');
+        g.appendTerminalLine('    alias: create-energy');
+        g.appendTerminalLine('  mv-energy [energyid] [target_card_id|p1-energy|p2-energy|energy-discard]');
+        g.appendTerminalLine('    alias: mvenergy');
+        g.appendTerminalLine('  create_card [cardid] [player-1|player-2] [character|tool|item|stadium|supporter] [cardholderid] [card_class] [has_atk_1] [has_active] [has_atk_2] [hp] [maxhp] [attached_card_id|none]');
+        g.appendTerminalLine('    alias: create-card');
         g.appendTerminalLine('  boom [cardid] [asset?]');
         g.appendTerminalLine('  view [admin|player-1|player-2]');
         g.appendTerminalLine('    note: "view" with no args cycles views');
         g.appendTerminalLine('  input [type] [msg] [..args]');
         g.appendTerminalLine('  input [type] [player-1|player-2] [msg] [..args]');
-        g.appendTerminalLine('    types: on, off, d6, coin, selection, kei-watanabe-drumkidworkshop, numerical-entry');
+        g.appendTerminalLine('    types: on, off, d6, coin, binary, selection, kei-watanabe-drumkidworkshop, numerical-entry');
+        g.appendTerminalLine('    input d6 [msg] [1-6]');
+        g.appendTerminalLine('    input d6 [player-1|player-2] [msg] [1-6]');
+        g.appendTerminalLine('    input coin [msg] [0|1]   (0=tails, 1=heads)');
+        g.appendTerminalLine('    input coin [player-1|player-2] [msg] [0|1]   (0=tails, 1=heads)');
+        g.appendTerminalLine('    input binary [msg]');
+        g.appendTerminalLine('    input binary [player-1|player-2] [msg]');
         g.appendTerminalLine('    input selection [msg] [display1,display2], [highlight1,highlight2], [num-cards], [allow-repeat] [allow-none]');
         g.appendTerminalLine('    input kei-watanabe-drumkidworkshop [msg] [card1,card2,...]');
         g.appendTerminalLine('      alias type: kei_watanabe_drumkidworkshop');

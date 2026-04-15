@@ -24,7 +24,10 @@ export class CoinInputOverlay
     private hintText: Phaser.GameObjects.BitmapText | null;
     private tickerEvent: Phaser.Time.TimerEvent | null;
     private isFlipping: boolean;
+    private awaitingConfirm: boolean;
+    private settledResult: 'heads' | 'tails' | null;
     private onComplete: CoinFlipCompleteCallback | null;
+    private forcedFinalResult: 'heads' | 'tails' | null;
 
     constructor (scene: Scene, inputLockOverlay: Phaser.GameObjects.Rectangle)
     {
@@ -35,7 +38,10 @@ export class CoinInputOverlay
         this.hintText = null;
         this.tickerEvent = null;
         this.isFlipping = false;
+        this.awaitingConfirm = false;
+        this.settledResult = null;
         this.onComplete = null;
+        this.forcedFinalResult = null;
     }
 
     hasActiveOverlay (): boolean
@@ -60,13 +66,17 @@ export class CoinInputOverlay
         this.hintText = null;
 
         this.isFlipping = false;
+        this.awaitingConfirm = false;
+        this.settledResult = null;
         this.onComplete = null;
+        this.forcedFinalResult = null;
     }
 
-    start (onComplete: CoinFlipCompleteCallback, topMessage: string): void
+    start (onComplete: CoinFlipCompleteCallback, topMessage: string, forcedResult?: 'heads' | 'tails'): void
     {
         this.stopActiveOverlay();
         this.onComplete = onComplete;
+        this.forcedFinalResult = forcedResult ?? null;
 
         const startResult = this.getRandomCoinResult();
         const overlayDepth = this.inputLockOverlay.depth + 5;
@@ -127,6 +137,16 @@ export class CoinInputOverlay
             .setDepth(overlayDepth);
 
         this.image.on('pointerdown', () => {
+            if (this.awaitingConfirm) {
+                const callback = this.onComplete;
+                const finalResult = this.settledResult;
+                this.stopActiveOverlay();
+                if (callback && finalResult) {
+                    callback(finalResult);
+                }
+                return;
+            }
+
             this.startFlipAnimation();
         });
     }
@@ -138,7 +158,7 @@ export class CoinInputOverlay
         }
 
         this.isFlipping = true;
-        const finalResult = this.getRandomCoinResult();
+        const finalResult = this.forcedFinalResult ?? this.getRandomCoinResult();
         const totalTicks = 12;
         let tickCount = 0;
 
@@ -164,10 +184,20 @@ export class CoinInputOverlay
                         duration: 140,
                         ease: 'Sine.easeOut',
                         onComplete: () => {
-                            const callback = this.onComplete;
-                            this.stopActiveOverlay();
-                            if (callback) {
-                                callback(finalResult);
+                            this.isFlipping = false;
+                            this.awaitingConfirm = true;
+                            this.settledResult = finalResult;
+                            if (this.hintText) {
+                                const confirmHint = 'CLICK AGAIN TO CONFIRM';
+                                this.hintText.setText(confirmHint);
+                                this.hintText.setFontSize(fitBitmapTextToSingleLine({
+                                    scene: this.scene,
+                                    font: 'minogram',
+                                    text: confirmHint,
+                                    preferredSize: 24,
+                                    minSize: 10,
+                                    maxWidth: Math.round(this.scene.scale.width * 0.92)
+                                }));
                             }
                         }
                     });

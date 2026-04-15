@@ -11,6 +11,7 @@ export type SelectionOverlayItem = {
     isCard: boolean;
     selectable: boolean;
     cardColor?: number;
+    cardClassLabel?: string;
     cardTypeLabel?: string;
 };
 
@@ -226,13 +227,14 @@ export class SelectionInputOverlay
                 .setStrokeStyle(3, 0xffffff, 1)
                 .setInteractive({ useHandCursor: item.selectable });
 
-            const label = this.scene.add.bitmapText(0, -Math.round(cardHeight * GAME_INPUT_SELECTION_OVERLAY.itemLabelYOffsetRatio), 'minogram', item.id, itemLabelFontSize)
+            const primaryLabel = item.isCard ? (item.cardClassLabel ?? item.id) : item.id;
+            const label = this.scene.add.bitmapText(0, -Math.round(cardHeight * GAME_INPUT_SELECTION_OVERLAY.itemLabelYOffsetRatio), 'minogram', primaryLabel, itemLabelFontSize)
                 .setOrigin(0.5)
                 .setMaxWidth(itemTextMaxWidth);
             label.setFontSize(fitBitmapTextToSingleLine({
                 scene: this.scene,
                 font: 'minogram',
-                text: item.id,
+                text: primaryLabel,
                 preferredSize: itemLabelFontSize,
                 minSize: 9,
                 maxWidth: itemTextMaxWidth
@@ -242,7 +244,13 @@ export class SelectionInputOverlay
             }
 
             const subLabel = item.isCard
-                ? this.scene.add.bitmapText(0, Math.round(cardHeight * GAME_INPUT_SELECTION_OVERLAY.itemSubLabelYOffsetRatio), 'minogram', item.cardTypeLabel ?? 'CARD', itemSubLabelFontSize)
+                ? this.scene.add.bitmapText(
+                    0,
+                    Math.round(cardHeight * GAME_INPUT_SELECTION_OVERLAY.itemSubLabelYOffsetRatio),
+                    'minogram',
+                    `${item.cardTypeLabel ?? 'CARD'} | ${item.id}`,
+                    itemSubLabelFontSize
+                )
                     .setOrigin(0.5)
                     .setMaxWidth(itemTextMaxWidth)
                 : undefined;
@@ -250,7 +258,7 @@ export class SelectionInputOverlay
                 subLabel.setFontSize(fitBitmapTextToSingleLine({
                     scene: this.scene,
                     font: 'minogram',
-                    text: item.cardTypeLabel ?? 'CARD',
+                    text: `${item.cardTypeLabel ?? 'CARD'} | ${item.id}`,
                     preferredSize: itemSubLabelFontSize,
                     minSize: 8,
                     maxWidth: itemTextMaxWidth

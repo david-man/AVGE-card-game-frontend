@@ -16,8 +16,22 @@ export const BOARD_SCALE = 0.8;
 
 export const CARD_BASE_WIDTH = 60;
 export const CARD_BASE_HEIGHT = 108;
-export const CARD_BORDER_WIDTH = 4;
-export const CARD_SELECTED_BORDER_WIDTH = 8;
+export const CARD_BORDER_WIDTH = 8;
+export const CARD_SELECTED_BORDER_WIDTH = 12;
+
+export const AVGE_CARD_TYPES = ['NONE', 'WW', 'PERC', 'PIANO', 'STRING', 'GUITAR', 'CHOIR', 'BRASS'] as const;
+export type AVGECardType = typeof AVGE_CARD_TYPES[number];
+
+export const AVGE_CARD_TYPE_BORDER_COLORS: Record<AVGECardType, number> = {
+	NONE: 0xffffff,
+	WW: 0x2a9d8f,
+	PERC: 0x06402B,
+	PIANO: 0x4c6ef5,
+	STRING: 0x8e44ad,
+	GUITAR: 0xff9f1c,
+	CHOIR: 0xd62828,
+	BRASS: 0xc19a00
+} as const;
 
 export const CARD_DEFAULTS = {
 	characterHp: 100,
@@ -31,8 +45,10 @@ export const CARD_VISUALS = {
 } as const;
 
 export const CARD_TEXT_LAYOUT = {
-	idYOffset: 10,
-	typeYOffset: 10,
+	idYOffset: 14,
+	typeYOffset: 18,
+	classTwoLineTypeGap: 10,
+	classTwoLineYOffsetBoost: 6,
 	hpPadding: 2,
 	minIdFontSize: 10,
 	minTypeFontSize: 8,
@@ -296,6 +312,10 @@ export const GAME_LAYOUT = {
 	energyTokenZoneMinGapPx: 2,
 	energyTokenZoneColumnsDefault: 5,
 	energyTokenZoneColumnsDiscard: 4,
+	energyTokenZonePileCount: 5,
+	energyTokenZonePileSidePaddingRatio: 0.14,
+	energyTokenZonePileYRatio: 0.62,
+	energyTokenZonePileCountLabelYOffsetRatio: 0.7,
 	energyTokenRadiusMin: 10,
 	energyTokenRadiusWidthRatio: 0.14,
 	energyTokenCountPerPlayer: 10,
@@ -341,6 +361,7 @@ export const ENTITY_VISUALS = {
 	cardHolderLabelBaseSize: 18,
 	cardHolderLabelMinSize: 12,
 	cardHolderLabelTint: 0xffffff,
+	cardHolderLabelAlpha: 0.68,
 	cardHolderLabelDepth: 2,
 	energyHolderFillAlpha: 0.27,
 	energyHolderStrokeWidth: 3,
@@ -350,6 +371,7 @@ export const ENTITY_VISUALS = {
 	energyHolderLabelBaseSize: 14,
 	energyHolderLabelMinSize: 11,
 	energyHolderLabelTint: 0xffffff,
+	energyHolderLabelAlpha: 0.68,
 	energyHolderLabelDepth: 2,
 	energyHolderLabelYOffsetRatio: 0.35,
 	energyTokenFillColor: 0xffd166,

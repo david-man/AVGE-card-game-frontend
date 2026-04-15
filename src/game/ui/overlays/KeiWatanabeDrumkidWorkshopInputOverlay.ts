@@ -4,6 +4,7 @@ import { fitBitmapTextToSingleLine } from './bitmapTextFit';
 
 export type KeiWatanabeDrumkidWorkshopItem = {
     id: string;
+    cardClassLabel: string;
     cardColor: number;
     cardTypeLabel: string;
     hasAtk1: boolean;
@@ -179,13 +180,13 @@ export class KeiWatanabeDrumkidWorkshopInputOverlay
                 .setStrokeStyle(3, 0xffffff, 1)
                 .setInteractive({ useHandCursor: true });
 
-            const idText = this.scene.add.bitmapText(0, -Math.round(cardHeight * 0.2), 'minogram', item.id, itemLabelFontSize)
+            const idText = this.scene.add.bitmapText(0, -Math.round(cardHeight * 0.2), 'minogram', item.cardClassLabel, itemLabelFontSize)
                 .setOrigin(0.5)
                 .setMaxWidth(itemTextMaxWidth);
             idText.setFontSize(fitBitmapTextToSingleLine({
                 scene: this.scene,
                 font: 'minogram',
-                text: item.id,
+                text: item.cardClassLabel,
                 preferredSize: itemLabelFontSize,
                 minSize: 9,
                 maxWidth: itemTextMaxWidth

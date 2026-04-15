@@ -32,6 +32,10 @@ export class BoardInteractionController
                 return;
             }
 
+            if (!g.boardInputEnabled) {
+                return;
+            }
+
             if (g.isInteractionLockedByAnimation()) {
                 return;
             }
@@ -58,6 +62,16 @@ export class BoardInteractionController
         this.scene.input.on('drag', (_pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.Rectangle, dragX: number, dragY: number) => {
             const card = g.getCardFromGameObject(gameObject);
             if (!card) {
+                return;
+            }
+
+            if (!g.boardInputEnabled) {
+                g.activelyDraggedCardIds.delete(card.id);
+                g.dragOriginZoneByCardId.delete(card.id);
+                g.dragStartPositionByCardId.delete(card.id);
+                g.dragDistanceByCardId.delete(card.id);
+                g.layoutAllHolders();
+                g.redrawAllCardMarks();
                 return;
             }
 
@@ -104,6 +118,16 @@ export class BoardInteractionController
         this.scene.input.on('drop', (_pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.Rectangle, dropZone: Phaser.GameObjects.Zone) => {
             const card = g.getCardFromGameObject(gameObject);
             if (!card) {
+                return;
+            }
+
+            if (!g.boardInputEnabled) {
+                g.activelyDraggedCardIds.delete(card.id);
+                g.dragOriginZoneByCardId.delete(card.id);
+                g.dragStartPositionByCardId.delete(card.id);
+                g.dragDistanceByCardId.delete(card.id);
+                g.layoutAllHolders();
+                g.redrawAllCardMarks();
                 return;
             }
 
@@ -209,39 +233,34 @@ export class BoardInteractionController
                 return;
             }
 
-            if (cardType === 'item') {
-                if (originZoneId !== ownerHandZone) {
+            if (cardType === 'item' || cardType === 'supporter') {
+                const restoreToDragStart = (): void => {
+                    if (dragStartPosition) {
+                        card.setPosition(dragStartPosition.x, dragStartPosition.y);
+                    }
                     g.layoutAllHolders();
                     g.redrawAllCardMarks();
+                };
+
+                if (originZoneId !== ownerHandZone) {
+                    restoreToDragStart();
                     return;
                 }
 
                 if (targetZoneId === ownerHandZone) {
-                    g.moveCardToZone(card, ownerHandZone, () => {
-                        g.emitBackendEvent('card_moved', {
-                            card_id: card.id,
-                            card_type: card.getCardType(),
-                            owner_id: card.getOwnerId(),
-                            from_zone: originZoneId,
-                            to_zone: ownerHandZone,
-                            interaction: 'drag_drop'
-                        });
-                        g.layoutAllHolders();
-                        g.redrawAllCardMarks();
-                    });
+                    restoreToDragStart();
                 }
                 else {
-                    g.sendCardToOwnerDiscard(card, () => {
-                        g.emitBackendEvent('card_moved', {
-                            card_id: card.id,
-                            card_type: card.getCardType(),
-                            owner_id: card.getOwnerId(),
-                            from_zone: originZoneId,
-                            to_zone: `${card.getOwnerId()}-discard`,
-                            interaction: 'drag_drop'
-                        });
-                        g.layoutAllHolders();
-                        g.redrawAllCardMarks();
+                    restoreToDragStart();
+                    g.emitBackendEvent('item_supporter_use', {
+                        card_id: card.id,
+                        card_type: card.getCardType(),
+                        owner_id: card.getOwnerId(),
+                        from_zone: originZoneId,
+                        attempted_zone: targetZoneId,
+                        to_zone: ownerHandZone,
+                        reason: 'item_supporter_invalid_drop',
+                        interaction: 'drag_drop'
                     });
                 }
                 return;
@@ -279,6 +298,16 @@ export class BoardInteractionController
                 return;
             }
 
+            if (!g.boardInputEnabled) {
+                g.activelyDraggedCardIds.delete(card.id);
+                g.dragOriginZoneByCardId.delete(card.id);
+                g.dragStartPositionByCardId.delete(card.id);
+                g.dragDistanceByCardId.delete(card.id);
+                g.layoutAllHolders();
+                g.redrawAllCardMarks();
+                return;
+            }
+
             if (g.isInteractionLockedByAnimation()) {
                 g.activelyDraggedCardIds.delete(card.id);
                 g.dragOriginZoneByCardId.delete(card.id);
@@ -292,6 +321,7 @@ export class BoardInteractionController
             const wasDragged = g.activelyDraggedCardIds.has(card.id);
             const draggedDistance = g.dragDistanceByCardId.get(card.id) ?? 0;
             const originZoneId = g.dragOriginZoneByCardId.get(card.id) ?? card.getZoneId();
+            const dragStartPosition = g.dragStartPositionByCardId.get(card.id);
             const minDragDistance = Math.max(GAME_INTERACTION.minDragDistancePx, Math.round(g.objectWidth * GAME_INTERACTION.minDragDistanceWidthRatio));
 
             g.activelyDraggedCardIds.delete(card.id);
@@ -301,26 +331,28 @@ export class BoardInteractionController
 
             if (!dropped) {
                 const ownerHandZone = `${card.getOwnerId()}-hand`;
-                const isItemDiscardFromFreeDrop =
+                const isItemSupporterReturnFromFreeDrop =
                     wasDragged &&
                     draggedDistance >= minDragDistance &&
-                    card.getCardType() === 'item' &&
+                    (card.getCardType() === 'item' || card.getCardType() === 'supporter') &&
                     originZoneId === ownerHandZone;
 
-                if (isItemDiscardFromFreeDrop) {
-                    g.sendCardToOwnerDiscard(card, () => {
-                        g.emitBackendEvent('card_moved', {
-                            card_id: card.id,
-                            card_type: card.getCardType(),
-                            owner_id: card.getOwnerId(),
-                            from_zone: originZoneId,
-                            to_zone: `${card.getOwnerId()}-discard`,
-                            interaction: 'drag_drop'
-                        });
-                        g.layoutAllHolders();
-                        g.updateAttachedChildrenPositions(card);
-                        g.redrawAllCardMarks();
+                if (isItemSupporterReturnFromFreeDrop) {
+                    if (dragStartPosition) {
+                        card.setPosition(dragStartPosition.x, dragStartPosition.y);
+                    }
+                    g.emitBackendEvent('item_supporter_use', {
+                        card_id: card.id,
+                        card_type: card.getCardType(),
+                        owner_id: card.getOwnerId(),
+                        from_zone: originZoneId,
+                        to_zone: ownerHandZone,
+                        reason: 'item_supporter_free_drop',
+                        interaction: 'drag_drop'
                     });
+                    g.layoutAllHolders();
+                    g.updateAttachedChildrenPositions(card);
+                    g.redrawAllCardMarks();
                     return;
                 }
 
@@ -334,6 +366,10 @@ export class BoardInteractionController
         this.scene.input.on('dragstart', (_pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.GameObject) => {
             const token = g.energyTokenByBody.get(gameObject);
             if (!token || token.getAttachedToCardId()) {
+                return;
+            }
+
+            if (!g.boardInputEnabled) {
                 return;
             }
 
@@ -358,6 +394,14 @@ export class BoardInteractionController
         this.scene.input.on('drag', (_pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.GameObject, dragX: number, dragY: number) => {
             const token = g.energyTokenByBody.get(gameObject);
             if (!token || !g.activelyDraggedEnergyTokenIds.has(token.id)) {
+                return;
+            }
+
+            if (!g.boardInputEnabled) {
+                g.activelyDraggedEnergyTokenIds.delete(token.id);
+                g.energyDragStartPositionById.delete(token.id);
+                g.energyDragDistanceById.delete(token.id);
+                g.layoutEnergyTokensInZone(token.getZoneId());
                 return;
             }
 
@@ -387,6 +431,14 @@ export class BoardInteractionController
                 return;
             }
 
+            if (!g.boardInputEnabled) {
+                g.activelyDraggedEnergyTokenIds.delete(token.id);
+                g.energyDragStartPositionById.delete(token.id);
+                g.energyDragDistanceById.delete(token.id);
+                g.layoutEnergyTokensInZone(token.getZoneId());
+                return;
+            }
+
             if (g.isInteractionLockedByAnimation()) {
                 g.activelyDraggedEnergyTokenIds.delete(token.id);
                 g.energyDragStartPositionById.delete(token.id);
@@ -399,12 +451,24 @@ export class BoardInteractionController
             g.energyDragStartPositionById.delete(token.id);
             g.energyDragDistanceById.delete(token.id);
 
+            const fromZoneId = token.getZoneId();
+            const fromAttachedToCardId = token.getAttachedToCardId();
+
             const ownerEnergyZoneId = g.energyZoneIdByOwner[token.ownerId];
             const targetZoneId = (dropZone?.getData('zoneId') as string | undefined) ?? null;
             const characterTarget = g.findOverlappedOwnedCharacterForToken(token);
 
             if (characterTarget) {
                 g.attachEnergyTokenToCard(token, characterTarget);
+                g.emitBackendEvent('energy_moved', {
+                    energy_id: token.id,
+                    owner_id: token.ownerId,
+                    from_zone_id: fromZoneId,
+                    to_zone_id: characterTarget.getZoneId(),
+                    from_attached_to_card_id: fromAttachedToCardId,
+                    to_attached_to_card_id: characterTarget.id,
+                    interaction: 'drag_drop'
+                });
                 return;
             }
 
@@ -412,6 +476,18 @@ export class BoardInteractionController
                 token.setAttachedToCardId(null);
                 g.setEnergyTokenZone(token, ownerEnergyZoneId);
                 g.layoutEnergyTokensInZone(ownerEnergyZoneId);
+                const didMove = fromZoneId !== ownerEnergyZoneId || fromAttachedToCardId !== null;
+                if (didMove) {
+                    g.emitBackendEvent('energy_moved', {
+                        energy_id: token.id,
+                        owner_id: token.ownerId,
+                        from_zone_id: fromZoneId,
+                        to_zone_id: ownerEnergyZoneId,
+                        from_attached_to_card_id: fromAttachedToCardId,
+                        to_attached_to_card_id: null,
+                        interaction: 'drag_drop'
+                    });
+                }
                 return;
             }
 
@@ -421,6 +497,14 @@ export class BoardInteractionController
         this.scene.input.on('dragend', (_pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.GameObject, dropped: boolean) => {
             const token = g.energyTokenByBody.get(gameObject);
             if (!token) {
+                return;
+            }
+
+            if (!g.boardInputEnabled) {
+                g.activelyDraggedEnergyTokenIds.delete(token.id);
+                g.energyDragStartPositionById.delete(token.id);
+                g.energyDragDistanceById.delete(token.id);
+                g.layoutEnergyTokensInZone(token.getZoneId());
                 return;
             }
 

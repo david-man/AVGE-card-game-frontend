@@ -58,16 +58,16 @@ export class InputOverlayController
         this.numericalOverlay.stopActiveOverlay();
     }
 
-    startDiceRollOverlay (topMessage: string, onComplete: DiceRollCompleteCallback): void
+    startDiceRollOverlay (topMessage: string, onComplete: DiceRollCompleteCallback, forcedValue?: number): void
     {
         this.stopActiveOverlay();
-        this.diceOverlay.start(onComplete, topMessage);
+        this.diceOverlay.start(onComplete, topMessage, forcedValue);
     }
 
-    startCoinFlipOverlay (topMessage: string, onComplete: CoinFlipCompleteCallback): void
+    startCoinFlipOverlay (topMessage: string, onComplete: CoinFlipCompleteCallback, forcedResult?: 'heads' | 'tails'): void
     {
         this.stopActiveOverlay();
-        this.coinOverlay.start(onComplete, topMessage);
+        this.coinOverlay.start(onComplete, topMessage, forcedResult);
     }
 
     startSelectionOverlay (
@@ -101,6 +101,12 @@ export class InputOverlayController
     {
         this.stopActiveOverlay();
         this.displayOverlay.startRevealOverlay(playerLabel, cards, onClose, onCardClick, onBackgroundClick);
+    }
+
+    startWinnerOverlay (winnerLabel: string, panelColor: number, onBackToMenu: OverlayCloseCallback): void
+    {
+        this.stopActiveOverlay();
+        this.displayOverlay.startWinnerOverlay(winnerLabel, panelColor, onBackToMenu);
     }
 
     startKeiWatanabeDrumkidWorkshopOverlay (

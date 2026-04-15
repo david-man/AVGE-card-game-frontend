@@ -6,6 +6,7 @@ type OverlayCardClickCallback = (cardId: string) => void;
 
 export type RevealOverlayCard = {
     id: string;
+    cardClassLabel: string;
     cardColor: number;
     cardTypeLabel: string;
     isKnownCard?: boolean;
@@ -207,7 +208,7 @@ export class DisplayInputOverlay
                 const body = this.scene.add.rectangle(0, 0, cardWidth, cardHeight, card.cardColor, 1)
                     .setStrokeStyle(3, 0xffffff, 0.95);
 
-                const idText = this.scene.add.bitmapText(0, -Math.round(cardHeight * 0.2), 'minogram', card.id, cardLabelFontSize)
+                const idText = this.scene.add.bitmapText(0, -Math.round(cardHeight * 0.2), 'minogram', card.cardClassLabel, cardLabelFontSize)
                     .setOrigin(0.5)
                     .setMaxWidth(cardWidth - 8);
 
@@ -252,5 +253,79 @@ export class DisplayInputOverlay
         closeButton.on('pointerdown', close);
 
         this.activeObjects.push(closeButton, closeLabel);
+    }
+
+    startWinnerOverlay (
+        winnerLabel: string,
+        panelColor: number,
+        onBackToMenu: OverlayCloseCallback
+    ): void
+    {
+        this.stopActiveOverlay();
+
+        const width = this.scene.scale.width;
+        const height = this.scene.scale.height;
+        const overlayDepth = this.inputLockOverlay.depth + 5;
+        const panelWidth = Math.max(360, Math.round(width * 0.58));
+        const panelHeight = Math.max(240, Math.round(height * 0.44));
+        const panelX = Math.round(width / 2);
+        const panelY = Math.round(height / 2);
+
+        const titleFontSize = Math.max(34, Math.round(panelWidth * 0.085));
+        const winnerFontSize = Math.max(28, Math.round(panelWidth * 0.062));
+        const buttonWidth = Math.max(170, Math.round(panelWidth * 0.34));
+        const buttonHeight = Math.max(52, Math.round(panelHeight * 0.18));
+        const buttonFontSize = Math.max(16, Math.round(buttonHeight * 0.38));
+
+        const backdrop = this.scene.add.rectangle(
+            panelX,
+            panelY,
+            width,
+            height,
+            0x000000,
+            0.35
+        ).setDepth(overlayDepth - 1);
+
+        const panel = this.scene.add.rectangle(panelX, panelY, panelWidth, panelHeight, panelColor, 0.96)
+            .setStrokeStyle(3, 0xffffff, 0.9)
+            .setDepth(overlayDepth);
+
+        const title = this.scene.add.bitmapText(panelX, panelY - Math.round(panelHeight * 0.31), 'minogram', 'WINNER:', titleFontSize)
+            .setOrigin(0.5)
+            .setDepth(overlayDepth + 1)
+            .setTint(0xffffff);
+
+        const winnerText = this.scene.add.bitmapText(panelX, panelY - Math.round(panelHeight * 0.08), 'minogram', winnerLabel, winnerFontSize)
+            .setOrigin(0.5)
+            .setDepth(overlayDepth + 1)
+            .setTint(0xffffff);
+
+        const buttonY = panelY + Math.round(panelHeight * 0.26);
+        const menuButton = this.scene.add.rectangle(panelX, buttonY, buttonWidth, buttonHeight, 0x111827, 0.95)
+            .setStrokeStyle(2, 0xffffff, 0.9)
+            .setDepth(overlayDepth + 2)
+            .setInteractive({ useHandCursor: true });
+
+        const menuLabel = this.scene.add.bitmapText(panelX, buttonY, 'minogram', 'MAIN MENU', buttonFontSize)
+            .setOrigin(0.5)
+            .setDepth(overlayDepth + 3)
+            .setTint(0xffffff);
+
+        menuButton.on('pointerover', () => {
+            menuButton.setFillStyle(0x1f2937, 0.98);
+            menuLabel.setTint(0xfef08a);
+        });
+
+        menuButton.on('pointerout', () => {
+            menuButton.setFillStyle(0x111827, 0.95);
+            menuLabel.setTint(0xffffff);
+        });
+
+        menuButton.on('pointerdown', () => {
+            this.stopActiveOverlay();
+            onBackToMenu();
+        });
+
+        this.activeObjects.push(backdrop, panel, title, winnerText, menuButton, menuLabel);
     }
 }

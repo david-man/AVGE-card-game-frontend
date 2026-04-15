@@ -1,5 +1,5 @@
-import { GameOver } from './scenes/GameOver';
 import { Game as MainGame } from './scenes/Game';
+import { MainMenu } from './scenes/MainMenu';
 import { AUTO, Game } from 'phaser';
 import { GAME_HEIGHT, GAME_WIDTH } from './config';
 
@@ -20,8 +20,8 @@ const config: Phaser.Types.Core.GameConfig = {
         zoom: RESOLUTION_ZOOM
     },
     scene: [
-        MainGame,
-        GameOver
+        MainMenu,
+        MainGame
     ],
 };
 

@@ -2,6 +2,7 @@ import { Scene } from 'phaser';
 
 import { Card } from './index';
 import { CARDHOLDER_LAYOUT_SIDE_PADDING_MULTIPLIER, ENTITY_VISUALS, GAME_DEPTHS, UI_SCALE } from '../config';
+import { fitBitmapTextToSingleLine } from '../ui/overlays/bitmapTextFit';
 
 export type CardHolderConfig = {
     id: string;
@@ -45,10 +46,22 @@ export class CardHolder
             .setRectangleDropZone(config.width, config.height)
             .setData('zoneId', config.id);
 
-        this.labelText = scene.add.bitmapText(config.x, config.y, 'minogram', config.label, Math.max(ENTITY_VISUALS.cardHolderLabelMinSize, Math.round(ENTITY_VISUALS.cardHolderLabelBaseSize * UI_SCALE)))
+        const preferredLabelSize = Math.max(ENTITY_VISUALS.cardHolderLabelMinSize, Math.round(ENTITY_VISUALS.cardHolderLabelBaseSize * UI_SCALE));
+        this.labelText = scene.add.bitmapText(config.x, config.y, 'minogram', config.label, preferredLabelSize)
             .setOrigin(0.5)
+            .setCenterAlign()
             .setTint(ENTITY_VISUALS.cardHolderLabelTint)
+            .setAlpha(ENTITY_VISUALS.cardHolderLabelAlpha)
             .setDepth(ENTITY_VISUALS.cardHolderLabelDepth);
+
+        this.labelText.setFontSize(fitBitmapTextToSingleLine({
+            scene,
+            font: 'minogram',
+            text: config.label,
+            preferredSize: preferredLabelSize,
+            minSize: Math.max(ENTITY_VISUALS.cardHolderLabelMinSize, Math.round(preferredLabelSize * 0.72)),
+            maxWidth: Math.max(10, Math.round(config.width * 0.9))
+        }));
     }
 
     setPosition (x: number, y: number): void
