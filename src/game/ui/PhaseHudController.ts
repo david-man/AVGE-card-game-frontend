@@ -7,7 +7,7 @@ import {
 } from '../config';
 import { fitBitmapTextToSingleLine } from './overlays/bitmapTextFit';
 
-type ViewMode = PlayerId | 'admin';
+type ViewMode = PlayerId | 'admin' | 'spectator';
 type GamePhase = 'no-input' | 'phase2' | 'atk';
 
 type PhaseHudUi = {
@@ -116,6 +116,27 @@ export class PhaseHudController
         if (!this.ui) {
             return;
         }
+
+        if (_activeViewMode === 'spectator') {
+            this.ui.background.setVisible(false);
+            this.ui.title.setVisible(false);
+            this.ui.roundLabel.setVisible(false);
+            this.ui.roundValue.setVisible(false);
+            this.ui.phaseLabel.setVisible(false);
+            this.ui.phaseValue.setVisible(false);
+            this.ui.turnLabel.setVisible(false);
+            this.ui.turnValue.setVisible(false);
+            return;
+        }
+
+        this.ui.background.setVisible(true);
+        this.ui.title.setVisible(true);
+        this.ui.roundLabel.setVisible(true);
+        this.ui.roundValue.setVisible(true);
+        this.ui.phaseLabel.setVisible(true);
+        this.ui.phaseValue.setVisible(true);
+        this.ui.turnLabel.setVisible(true);
+        this.ui.turnValue.setVisible(true);
 
         this.ui.roundValue.setText(String(roundNumber));
         this.ui.phaseValue.setText(gamePhase.toUpperCase());

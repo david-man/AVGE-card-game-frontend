@@ -48,7 +48,8 @@ export class EnergyHolder
             .setData('zoneId', config.id);
 
         const preferredLabelSize = Math.max(ENTITY_VISUALS.energyHolderLabelMinSize, Math.round(ENTITY_VISUALS.energyHolderLabelBaseSize * UI_SCALE));
-        this.labelText = scene.add.bitmapText(config.x, config.y - Math.round(config.height * ENTITY_VISUALS.energyHolderLabelYOffsetRatio), 'minogram', config.label, preferredLabelSize)
+        const labelTopGap = Math.max(4, Math.round(ENTITY_VISUALS.energyHolderLabelTopGapBase * UI_SCALE));
+        this.labelText = scene.add.bitmapText(config.x, config.y - Math.round((config.height / 2) + labelTopGap), 'minogram', config.label, preferredLabelSize)
             .setOrigin(0.5)
             .setCenterAlign()
             .setTint(ENTITY_VISUALS.energyHolderLabelTint)
@@ -81,7 +82,8 @@ export class EnergyHolder
         this.y = y;
         this.background.setPosition(x, y);
         this.zone.setPosition(x, y);
-        this.labelText.setPosition(x, y - Math.round(this.height * ENTITY_VISUALS.energyHolderLabelYOffsetRatio));
+        const labelTopGap = Math.max(4, Math.round(ENTITY_VISUALS.energyHolderLabelTopGapBase * UI_SCALE));
+        this.labelText.setPosition(x, y - Math.round((this.height / 2) + labelTopGap));
     }
 
     setPileCountDisplay (pileIndex: number, x: number, y: number, count: number): void

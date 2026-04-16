@@ -8,7 +8,7 @@ import {
     UI_SCALE
 } from '../config';
 
-type ViewMode = 'p1' | 'p2' | 'admin';
+type ViewMode = 'p1' | 'p2' | 'admin' | 'spectator';
 
 type SurrenderControllerOptions = {
     onArm: (seconds: number) => void;
@@ -75,7 +75,7 @@ export class SurrenderController
             return;
         }
 
-        const visible = activeViewMode !== 'admin';
+        const visible = activeViewMode === 'p1' || activeViewMode === 'p2';
 
         if (visible && handHolder) {
             const handOffsetX = Math.round((GAME_SURRENDER_BUTTON_LAYOUT.handOffsetXBase / BASE_WIDTH) * GAME_WIDTH);

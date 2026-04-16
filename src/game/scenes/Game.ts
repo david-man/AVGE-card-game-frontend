@@ -3,7 +3,18 @@ import { io, Socket } from 'socket.io-client';
 
 import { GameCommandProcessor } from '../commands/GameCommandProcessor';
 import { Card, CardHolder, CardHolderConfig, EnergyHolder, EnergyHolderConfig, EnergyToken, PlayerId } from '../entities';
-import { sendFrontendProtocolPacket, BackendEntitiesSetup, BackendProtocolPacket, FrontendProtocolPacket, parseBackendEntitiesSetup } from '../Network';
+import {
+    sendFrontendProtocolPacket,
+    BackendEntitiesSetup,
+    BackendProtocolPacket,
+    FrontendProtocolPacket,
+    parseBackendEntitiesSetup,
+    getBackendBaseUrl,
+    getRouterBaseUrl,
+    checkServiceHealth,
+    ROOM_BACKEND_BASE_URL_STORAGE_KEY,
+    ROUTER_SESSION_ID_STORAGE_KEY,
+} from '../Network';
 import { BoardInteractionController } from '../ui/BoardInteractionController';
 import { CardPreviewController } from '../ui/CardPreviewController';
 import { InputOverlayController } from '../ui/InputOverlayController';
@@ -39,7 +50,7 @@ import {
     UI_SCALE
 } from '../config';
 
-type ViewMode = PlayerId | 'admin';
+type ViewMode = PlayerId | 'admin' | 'spectator';
 type GamePhase = 'no-input' | 'phase2' | 'atk';
 type CardActionKey = 'atk1' | 'atk2' | 'active';
 type OverlayPreviewContext = 'input' | 'reveal' | null;
@@ -50,25 +61,8 @@ type PlayerSetupProfile = {
     attributes: Partial<PlayerTurnAttributes>;
 };
 
-const DEFAULT_BACKEND_SOCKET_URL = 'http://127.0.0.1:5500';
-
 const getBackendSocketUrl = (): string => {
-    if (typeof window === 'undefined') {
-        return DEFAULT_BACKEND_SOCKET_URL;
-    }
-
-    const configuredUrl = (window as Window & { AVGE_BACKEND_PROTOCOL_URL?: string }).AVGE_BACKEND_PROTOCOL_URL;
-    if (typeof configuredUrl !== 'string' || configuredUrl.trim().length === 0) {
-        return DEFAULT_BACKEND_SOCKET_URL;
-    }
-
-    try {
-        const parsed = new URL(configuredUrl);
-        return parsed.origin;
-    }
-    catch {
-        return DEFAULT_BACKEND_SOCKET_URL;
-    }
+    return getBackendBaseUrl();
 };
 
 export class Game extends Scene
@@ -116,6 +110,8 @@ export class Game extends Scene
     commandProcessor: GameCommandProcessor;
     boardInputEnabled: boolean;
     inputLockOverlay: Phaser.GameObjects.Rectangle;
+    opponentDisconnectBackdrop: Phaser.GameObjects.Rectangle;
+    opponentDisconnectText: Phaser.GameObjects.BitmapText;
     inputOverlayController: InputOverlayController;
     boardInteractionController: BoardInteractionController;
     cardPreviewController: CardPreviewController;
@@ -134,16 +130,23 @@ export class Game extends Scene
     protocolClientId: string;
     protocolClientSlot: PlayerId | null;
     protocolReconnectToken: string | null;
+    routerSessionId: string | null;
     waitingForOpponent: boolean;
     inputAcknowledged: boolean;
     pendingInputCommand: string | null;
     pendingNotifyCommand: string | null;
     awaitingRemoteNotifyAck: boolean;
     remoteInputLockActive: boolean;
+    opponentDisconnected: boolean;
+    opponentDisconnectCountdownSeconds: number;
+    opponentDisconnectCountdownTimer: Phaser.Time.TimerEvent | null;
     protocolSocket: Socket | null;
     protocolSocketFallbackToHttp: boolean;
     protocolRecoveryInProgress: boolean;
     protocolSendChain: Promise<void>;
+    serviceHealthTimer: Phaser.Time.TimerEvent | null;
+    serviceHealthCheckInFlight: boolean;
+    hasRedirectedToMainMenu: boolean;
 
     cardActionButtons: Array<{
         key: CardActionKey;
@@ -185,8 +188,41 @@ export class Game extends Scene
         this.background.setAlpha(GAME_SCENE_VISUALS.backgroundAlpha);
 
         this.boardInputEnabled = true;
+        const inputLockDepth = Math.max(GAME_SCENE_VISUALS.inputLockDepth, GAME_DEPTHS.previewText + 10);
         this.inputLockOverlay = this.add.rectangle(GAME_CENTER_X, GAME_CENTER_Y, GAME_WIDTH, GAME_HEIGHT, GAME_SCENE_VISUALS.inputLockColor, GAME_SCENE_VISUALS.inputLockAlpha)
-            .setDepth(GAME_SCENE_VISUALS.inputLockDepth)
+            .setDepth(inputLockDepth)
+            .setInteractive({ useHandCursor: false })
+            .setVisible(false);
+        this.inputLockOverlay.on('pointerdown', (
+            _pointer: Phaser.Input.Pointer,
+            _localX: number,
+            _localY: number,
+            event: Phaser.Types.Input.EventData
+        ) => {
+            event.stopPropagation();
+        });
+        this.opponentDisconnectBackdrop = this.add.rectangle(
+            GAME_CENTER_X,
+            GAME_CENTER_Y,
+            Math.round(GAME_WIDTH * 0.72),
+            Math.round(GAME_HEIGHT * 0.24),
+            0x0f172a,
+            0.92
+        )
+            .setStrokeStyle(2, 0xffffff, 0.85)
+            .setDepth(inputLockDepth + 2)
+            .setVisible(false);
+        this.opponentDisconnectText = this.add.bitmapText(
+            GAME_CENTER_X,
+            GAME_CENTER_Y,
+            'minogram',
+            'Other player disconnected. Waiting for reconnection...',
+            Math.max(14, Math.round(16 * UI_SCALE))
+        )
+            .setOrigin(0.5)
+            .setCenterAlign()
+            .setMaxWidth(Math.round(GAME_WIDTH * 0.64))
+            .setDepth(inputLockDepth + 3)
             .setVisible(false);
         this.inputOverlayController = new InputOverlayController(this, this.inputLockOverlay);
         this.boardInteractionController = new BoardInteractionController(this, this);
@@ -197,10 +233,18 @@ export class Game extends Scene
             },
             onConfirm: () => {
                 const winningPlayerLabel = this.activeViewMode === 'p1' ? 'PLAYER 2' : 'PLAYER 1';
+                const loserView = this.activeViewMode === 'p1'
+                    ? 'player-1'
+                    : (this.activeViewMode === 'p2' ? 'player-2' : null);
+                const winnerView = loserView === 'player-1'
+                    ? 'player-2'
+                    : (loserView === 'player-2' ? 'player-1' : null);
                 this.appendTerminalLine(`${winningPlayerLabel} won by surrender.`);
                 this.emitBackendEvent('surrender_result', {
                     winner: winningPlayerLabel,
-                    loser: this.getViewModeLabel(this.activeViewMode)
+                    loser: this.getViewModeLabel(this.activeViewMode),
+                    winner_view: winnerView,
+                    loser_view: loserView,
                 });
             },
             onTimeout: () => {
@@ -221,16 +265,23 @@ export class Game extends Scene
         this.protocolClientId = this.loadOrCreateProtocolClientId();
         this.protocolClientSlot = this.loadProtocolClientSlot();
         this.protocolReconnectToken = this.loadProtocolReconnectToken();
+        this.routerSessionId = this.loadRouterSessionId();
         this.waitingForOpponent = false;
         this.inputAcknowledged = false;
         this.pendingInputCommand = null;
         this.pendingNotifyCommand = null;
         this.awaitingRemoteNotifyAck = false;
         this.remoteInputLockActive = false;
+        this.opponentDisconnected = false;
+        this.opponentDisconnectCountdownSeconds = 0;
+        this.opponentDisconnectCountdownTimer = null;
         this.protocolSocket = null;
         this.protocolSocketFallbackToHttp = false;
         this.protocolRecoveryInProgress = false;
         this.protocolSendChain = Promise.resolve();
+        this.serviceHealthTimer = null;
+        this.serviceHealthCheckInFlight = false;
+        this.hasRedirectedToMainMenu = false;
 
         const xRatio = GAME_WIDTH / BASE_WIDTH;
         const yRatio = GAME_HEIGHT / BASE_HEIGHT;
@@ -244,7 +295,7 @@ export class Game extends Scene
         this.cardHolderById = {};
         this.baseCardHolderPositionById = {};
         this.baseEnergyHolderPositionById = {};
-        this.activeViewMode = 'admin';
+        this.activeViewMode = 'spectator';
         this.gamePhase = 'phase2';
         this.roundNumber = 0;
         this.playerTurn = 'p1';
@@ -301,6 +352,16 @@ export class Game extends Scene
         this.createPhaseHud();
 
         void this.initializeProtocolSession();
+        this.startServiceHealthMonitor();
+
+        this.events.once('shutdown', () => {
+            this.stopServiceHealthMonitor();
+            if (this.protocolSocket) {
+                this.protocolSocket.removeAllListeners();
+                this.protocolSocket.disconnect();
+                this.protocolSocket = null;
+            }
+        });
 
         this.applyBoardView(this.activeViewMode);
         this.boardInteractionController.register();
@@ -315,6 +376,85 @@ export class Game extends Scene
         }
 
         return this.cards.some((card) => card.isCurrentlyFlipping());
+    }
+
+    private startServiceHealthMonitor (): void
+    {
+        if (this.serviceHealthTimer) {
+            return;
+        }
+
+        this.serviceHealthTimer = this.time.addEvent({
+            delay: 5000,
+            loop: true,
+            callback: () => {
+                void this.checkCoreServiceHealth();
+            }
+        });
+    }
+
+    private stopServiceHealthMonitor (): void
+    {
+        if (!this.serviceHealthTimer) {
+            return;
+        }
+
+        this.serviceHealthTimer.remove(false);
+        this.serviceHealthTimer = null;
+    }
+
+    private async checkCoreServiceHealth (): Promise<void>
+    {
+        if (this.hasRedirectedToMainMenu || this.serviceHealthCheckInFlight) {
+            return;
+        }
+
+        this.serviceHealthCheckInFlight = true;
+        try {
+            const routerHealthy = await checkServiceHealth(getRouterBaseUrl());
+            if (!routerHealthy) {
+                this.redirectToMainMenuAfterServiceFailure('router_unreachable', 'Router unavailable. Returning to main menu.');
+                return;
+            }
+
+            if (this.protocolSocketFallbackToHttp) {
+                const backendHealthy = await checkServiceHealth(getBackendBaseUrl());
+                if (!backendHealthy) {
+                    this.redirectToMainMenuAfterServiceFailure('room_unreachable', 'Game server unavailable. Returning to main menu.');
+                }
+            }
+        }
+        finally {
+            this.serviceHealthCheckInFlight = false;
+        }
+    }
+
+    private redirectToMainMenuAfterServiceFailure (reason: string, message: string): void
+    {
+        if (this.hasRedirectedToMainMenu) {
+            return;
+        }
+
+        this.hasRedirectedToMainMenu = true;
+        console.warn('[Protocol] redirecting to MainMenu after service failure', { reason });
+        this.stopServiceHealthMonitor();
+
+        if (typeof window !== 'undefined') {
+            window.sessionStorage.removeItem('avge_protocol_client_slot');
+            window.sessionStorage.removeItem('avge_protocol_reconnect_token');
+            window.sessionStorage.removeItem(ROOM_BACKEND_BASE_URL_STORAGE_KEY);
+        }
+
+        if (this.protocolSocket) {
+            this.protocolSocket.removeAllListeners();
+            this.protocolSocket.disconnect();
+            this.protocolSocket = null;
+        }
+
+        this.scene.start('MainMenu', {
+            systemMessage: message,
+            failureReason: reason,
+        });
     }
 
     public setBoardInputEnabled (enabled: boolean, showLockOverlayWhenDisabled = true): void
@@ -418,11 +558,12 @@ export class Game extends Scene
         const holderWidth = Math.round(this.objectWidth * ENERGYHOLDER_LAYOUT.widthMultiplier);
         const holderHeight = Math.round(this.objectHeight * ENERGYHOLDER_LAYOUT.heightMultiplier);
         const xOffset = Math.round(this.objectWidth * ENERGYHOLDER_LAYOUT.xOffsetMultiplier);
+        const verticalSpread = Math.round(this.objectHeight * ENERGYHOLDER_LAYOUT.verticalSpreadMultiplier);
 
         const p2EnergyX = p2Discard.x - xOffset;
         const p1EnergyX = p1Discard.x - xOffset;
-        const p2EnergyY = p2Discard.y;
-        const p1EnergyY = p1Discard.y;
+        const p2EnergyY = p2Discard.y - verticalSpread;
+        const p1EnergyY = p1Discard.y + verticalSpread;
 
         const discardZoneId = 'energy-discard';
         const discardX = Math.round((p1EnergyX + p2EnergyX) / 2);
@@ -446,6 +587,7 @@ export class Game extends Scene
             this.enqueueProtocolPacket('register_client', {
                 requested_slot: this.protocolClientSlot,
                 reconnect_token: this.protocolReconnectToken,
+                session_id: this.routerSessionId,
             });
         }
     }
@@ -471,6 +613,7 @@ export class Game extends Scene
             this.enqueueProtocolPacket('register_client', {
                 requested_slot: this.protocolClientSlot,
                 reconnect_token: this.protocolReconnectToken,
+                session_id: this.routerSessionId,
             });
         });
 
@@ -499,6 +642,10 @@ export class Game extends Scene
             this.waitingForOpponent = data.both_players_connected !== true;
             if (this.waitingForOpponent) {
                 this.appendTerminalLine('Waiting for opponent to connect...');
+                this.setOpponentDisconnectedState(true, 'Other player disconnected. Waiting for reconnection...');
+            }
+            else {
+                this.setOpponentDisconnectedState(false);
             }
 
             this.persistProtocolClientSession();
@@ -529,6 +676,26 @@ export class Game extends Scene
             console.warn('[Protocol] protocol_error', payload);
         });
 
+        socket.on('opponent_disconnected', (payload: unknown) => {
+            const data = typeof payload === 'object' && payload !== null
+                ? payload as { grace_seconds?: unknown }
+                : {};
+            const graceSeconds = typeof data.grace_seconds === 'number' && Number.isFinite(data.grace_seconds)
+                ? Math.max(0, Math.round(data.grace_seconds))
+                : 0;
+            this.waitingForOpponent = true;
+            this.setOpponentDisconnectedState(true, 'Other player disconnected. Waiting for reconnection...', graceSeconds);
+        });
+
+        socket.on('opponent_reconnected', (_payload: unknown) => {
+            this.waitingForOpponent = false;
+            this.setOpponentDisconnectedState(false);
+        });
+
+        socket.on('disconnect', () => {
+            this.redirectToMainMenuAfterServiceFailure('room_disconnected', 'Game server disconnected. Returning to main menu.');
+        });
+
         return true;
     }
 
@@ -548,6 +715,7 @@ export class Game extends Scene
         this.enqueueProtocolPacket('register_client', {
             requested_slot: this.protocolClientSlot,
             reconnect_token: this.protocolReconnectToken,
+            session_id: this.routerSessionId,
         });
     }
 
@@ -590,6 +758,16 @@ export class Game extends Scene
         return typeof raw === 'string' && raw.trim().length > 0 ? raw.trim() : null;
     }
 
+    private loadRouterSessionId (): string | null
+    {
+        if (typeof window === 'undefined') {
+            return null;
+        }
+
+        const raw = window.sessionStorage.getItem(ROUTER_SESSION_ID_STORAGE_KEY);
+        return typeof raw === 'string' && raw.trim().length > 0 ? raw.trim() : null;
+    }
+
     private persistProtocolClientSession (): void
     {
         if (typeof window === 'undefined') {
@@ -613,7 +791,7 @@ export class Game extends Scene
 
     private setInputAcknowledged (acknowledged: boolean): void
     {
-        if (acknowledged && (this.awaitingRemoteNotifyAck || this.remoteInputLockActive)) {
+        if (acknowledged && (this.awaitingRemoteNotifyAck || this.remoteInputLockActive || this.opponentDisconnected)) {
             acknowledged = false;
         }
 
@@ -642,6 +820,7 @@ export class Game extends Scene
                 this.protocolSocket.emit('register_client_or_play', {
                     slot: this.protocolClientSlot,
                     reconnect_token: this.protocolReconnectToken,
+                    session_id: this.routerSessionId,
                 });
                 return;
             }
@@ -665,6 +844,11 @@ export class Game extends Scene
                     client_slot: this.protocolClientSlot ?? undefined,
                     reconnect_token: this.protocolReconnectToken ?? undefined,
                 });
+
+                if (response.requestFailed) {
+                    this.redirectToMainMenuAfterServiceFailure('room_unreachable', 'Game server unavailable. Returning to main menu.');
+                    return;
+                }
 
                 if (response.clientSlot) {
                     this.protocolClientSlot = response.clientSlot;
@@ -705,6 +889,7 @@ export class Game extends Scene
 
             if (packet.PacketType === 'environment') {
                 this.waitingForOpponent = false;
+                this.setOpponentDisconnectedState(false);
                 const setup = parseBackendEntitiesSetup(packet.Body);
                 if (!setup) {
                     this.handleProtocolMismatch(packet);
@@ -850,6 +1035,101 @@ export class Game extends Scene
         this.protocolRecoveryInProgress = false;
     }
 
+    private setOpponentDisconnectedState (disconnected: boolean, message?: string, graceSeconds = 0): void
+    {
+        this.opponentDisconnected = disconnected;
+        this.stopOpponentDisconnectCountdown();
+
+        if (disconnected) {
+            const label = typeof message === 'string' && message.trim().length > 0
+                ? message.trim()
+                : 'Other player disconnected. Waiting for reconnection...';
+            this.safeSetOpponentDisconnectText(label);
+            if (this.canRenderOpponentDisconnectUi()) {
+                this.opponentDisconnectBackdrop.setVisible(true);
+                this.opponentDisconnectText.setVisible(true);
+            }
+            else {
+                console.warn('[Protocol] disconnect UI unavailable, using terminal fallback only.');
+                this.appendTerminalLine(label);
+            }
+
+            if (graceSeconds > 0) {
+                this.startOpponentDisconnectCountdown(label, graceSeconds);
+            }
+            this.setInputAcknowledged(false);
+            return;
+        }
+
+        if (this.canRenderOpponentDisconnectUi()) {
+            this.opponentDisconnectBackdrop.setVisible(false);
+            this.opponentDisconnectText.setVisible(false);
+        }
+        this.setInputAcknowledged(true);
+    }
+
+    private stopOpponentDisconnectCountdown (): void
+    {
+        if (this.opponentDisconnectCountdownTimer) {
+            this.opponentDisconnectCountdownTimer.remove(false);
+            this.opponentDisconnectCountdownTimer = null;
+        }
+        this.opponentDisconnectCountdownSeconds = 0;
+    }
+
+    private startOpponentDisconnectCountdown (baseMessage: string, graceSeconds: number): void
+    {
+        this.opponentDisconnectCountdownSeconds = graceSeconds;
+        this.safeSetOpponentDisconnectText(`${baseMessage}\nAuto-win in ${this.opponentDisconnectCountdownSeconds}s`);
+        this.appendTerminalLine(`Opponent disconnected. Auto-win in ${this.opponentDisconnectCountdownSeconds}s if they do not reconnect.`);
+
+        this.opponentDisconnectCountdownTimer = this.time.addEvent({
+            delay: 1000,
+            loop: true,
+            callback: () => {
+                if (!this.opponentDisconnected) {
+                    this.stopOpponentDisconnectCountdown();
+                    return;
+                }
+
+                this.opponentDisconnectCountdownSeconds = Math.max(0, this.opponentDisconnectCountdownSeconds - 1);
+                this.safeSetOpponentDisconnectText(`${baseMessage}\nAuto-win in ${this.opponentDisconnectCountdownSeconds}s`);
+                this.appendTerminalLine(`Opponent reconnect timer: ${this.opponentDisconnectCountdownSeconds}s remaining.`);
+
+                if (this.opponentDisconnectCountdownSeconds <= 0) {
+                    this.appendTerminalLine('Reconnect grace period expired. Awaiting backend winner resolution...');
+                    this.stopOpponentDisconnectCountdown();
+                }
+            }
+        });
+    }
+
+    private canRenderOpponentDisconnectUi (): boolean
+    {
+        return Boolean(
+            this.opponentDisconnectBackdrop
+            && this.opponentDisconnectBackdrop.active
+            && this.opponentDisconnectBackdrop.scene
+            && this.opponentDisconnectText
+            && this.opponentDisconnectText.active
+            && this.opponentDisconnectText.scene
+        );
+    }
+
+    private safeSetOpponentDisconnectText (text: string): void
+    {
+        if (!this.canRenderOpponentDisconnectUi()) {
+            return;
+        }
+
+        try {
+            this.opponentDisconnectText.setText(text);
+        }
+        catch (error) {
+            console.warn('[Protocol] Failed to update disconnect overlay text.', error);
+        }
+    }
+
     private applyBackendEntitySetup (setup: BackendEntitiesSetup): void
     {
         this.roundNumber = setup.roundNumber;
@@ -925,7 +1205,7 @@ export class Game extends Scene
         }
 
         const assignedView =
-            setup.playerView === 'admin' || setup.playerView === 'p1' || setup.playerView === 'p2'
+            setup.playerView === 'admin' || setup.playerView === 'p1' || setup.playerView === 'p2' || setup.playerView === 'spectator'
                 ? setup.playerView
                 : this.activeViewMode;
         this.applyBoardView(assignedView);
@@ -1066,7 +1346,10 @@ export class Game extends Scene
 
     private refreshSurrenderButton (): void
     {
-        const handHolder = this.activeViewMode === 'admin' ? undefined : this.cardHolderById[`${this.activeViewMode}-hand`];
+        const handHolder =
+            this.activeViewMode === 'p1' || this.activeViewMode === 'p2'
+                ? this.cardHolderById[`${this.activeViewMode}-hand`]
+                : undefined;
         this.surrenderController.refresh(this.activeViewMode, handHolder);
     }
 
@@ -1164,12 +1447,23 @@ export class Game extends Scene
 
     private refreshPlayerStatsHud (): void
     {
-        this.playerStatsHudController.refresh(this.activeViewMode, this.playerTurnAttributesByPlayer);
+        this.playerStatsHudController.refresh(
+            this.activeViewMode,
+            this.playerTurnAttributesByPlayer,
+            {
+                p1: this.getPlayerUsername('p1'),
+                p2: this.getPlayerUsername('p2'),
+            }
+        );
     }
 
     private refreshPhaseHud (): void
     {
-        this.phaseHudController.refresh(this.activeViewMode, this.gamePhase, this.getPlayerUsername(this.playerTurn), this.roundNumber);
+        const turnDisplayName =
+            (this.activeViewMode === 'p1' || this.activeViewMode === 'p2') && this.activeViewMode === this.playerTurn
+                ? 'YOURS'
+                : this.getPlayerUsername(this.playerTurn);
+        this.phaseHudController.refresh(this.activeViewMode, this.gamePhase, turnDisplayName, this.roundNumber);
         this.refreshPhaseStateActionButton();
     }
 
@@ -1327,6 +1621,16 @@ export class Game extends Scene
     private refreshCardActionButtons (): void
     {
         if (!this.cardActionButtons || this.cardActionButtons.length === 0) {
+            return;
+        }
+
+        if (this.activeViewMode === 'spectator') {
+            for (const button of this.cardActionButtons) {
+                button.body.setVisible(false);
+                button.label.setVisible(false);
+                button.body.setScale(1);
+                button.label.setScale(1);
+            }
             return;
         }
 
@@ -1683,8 +1987,7 @@ export class Game extends Scene
                 continue;
             }
 
-            const x = rotateTopBottom ? ((GAME_CENTER_X * 2) - basePosition.x) : basePosition.x;
-            const y = rotateTopBottom ? ((GAME_CENTER_Y * 2) - basePosition.y) : basePosition.y;
+            const { x, y } = this.transformBoardPositionForView(basePosition.x, basePosition.y, rotateTopBottom);
             holder.setPosition(x, y);
         }
 
@@ -1694,21 +1997,72 @@ export class Game extends Scene
                 continue;
             }
 
-            const x = rotateTopBottom ? ((GAME_CENTER_X * 2) - basePosition.x) : basePosition.x;
-            const y = rotateTopBottom ? ((GAME_CENTER_Y * 2) - basePosition.y) : basePosition.y;
+            const { x, y } = this.transformBoardPositionForView(basePosition.x, basePosition.y, rotateTopBottom);
             holder.setPosition(x, y);
         }
 
         this.layoutAllHolders();
         this.redrawAllCardMarks();
         this.updateZoneLabelsForView();
+        this.applyZoneVisibilityByView();
         this.refreshSurrenderButton();
         this.refreshPlayerStatsHud();
         this.refreshPhaseHud();
     }
 
+    private transformBoardPositionForView (x: number, y: number, rotate180: boolean): { x: number; y: number }
+    {
+        if (!rotate180) {
+            return { x, y };
+        }
+
+        // A 180-degree rotation around board center (not a single-axis reflection).
+        return {
+            x: ((GAME_CENTER_X * 2) - x),
+            y: ((GAME_CENTER_Y * 2) - y),
+        };
+    }
+
+    private isZoneVisibleInSpectator (zoneId: string): boolean
+    {
+        return zoneId === 'stadium'
+            || zoneId === 'p1-bench'
+            || zoneId === 'p1-active'
+            || zoneId === 'p2-bench'
+            || zoneId === 'p2-active';
+    }
+
+    private applyZoneVisibilityByView (): void
+    {
+        const spectatorView = this.activeViewMode === 'spectator';
+
+        for (const holder of this.cardHolders) {
+            const visible = spectatorView ? this.isZoneVisibleInSpectator(holder.id) : true;
+            holder.background.setVisible(visible);
+            holder.labelText.setVisible(visible);
+        }
+
+        for (const holder of this.energyHolders) {
+            const visible = spectatorView ? this.isZoneVisibleInSpectator(holder.id) : true;
+            holder.background.setVisible(visible);
+            holder.labelText.setVisible(visible);
+            if (!visible) {
+                holder.hidePileCountDisplays();
+            }
+        }
+
+        for (const token of this.energyTokens) {
+            const visible = spectatorView ? this.isZoneVisibleInSpectator(token.getZoneId()) : true;
+            token.body.setVisible(visible);
+        }
+    }
+
     public isZoneVisibleToView (zoneId: string, ownerId: PlayerId, viewMode: ViewMode = this.activeViewMode): boolean
     {
+        if (viewMode === 'spectator') {
+            return this.isZoneVisibleInSpectator(zoneId);
+        }
+
         if (viewMode === 'admin') {
             return true;
         }
@@ -1726,27 +2080,18 @@ export class Game extends Scene
 
     private applyCardVisibilityByView (): void
     {
-        if (this.activeViewMode === 'admin') {
-            for (const card of this.cards) {
-                card.setTurnedOver(false);
-            }
-            return;
-        }
-
         for (const card of this.cards) {
             const zoneId = card.getZoneId();
             const cardOwner = card.getOwnerId();
-            const isOwnerView = cardOwner === this.activeViewMode;
-            const isHand = zoneId === `${cardOwner}-hand`;
-            const isBench = zoneId === `${cardOwner}-bench`;
-            const isActive = zoneId === `${cardOwner}-active`;
-            const isStadium = zoneId === 'stadium';
+            const zoneVisible = this.isZoneVisibleToView(zoneId, cardOwner);
 
-            const visible = isStadium ||
-                (isOwnerView && (isHand || isBench || isActive)) ||
-                (!isOwnerView && (isBench || isActive));
+            if (this.activeViewMode === 'spectator') {
+                card.setVisibility(zoneVisible);
+                continue;
+            }
 
-            card.setTurnedOver(!visible);
+            card.setVisibility(true);
+            card.setTurnedOver(!zoneVisible);
         }
     }
 
@@ -1754,6 +2099,10 @@ export class Game extends Scene
     {
         if (this.scannerCommandInProgress) {
             return true;
+        }
+
+        if (this.activeViewMode === 'spectator') {
+            return false;
         }
 
         if (this.activeViewMode === 'admin') {
@@ -1769,10 +2118,6 @@ export class Game extends Scene
 
     private canPreviewCard (card: Card): boolean
     {
-        if (this.activeViewMode === 'admin') {
-            return true;
-        }
-
         if (card.isTurnedOver()) {
             return false;
         }
@@ -1797,6 +2142,10 @@ export class Game extends Scene
     {
         if (this.scannerCommandInProgress) {
             return true;
+        }
+
+        if (this.activeViewMode === 'spectator') {
+            return false;
         }
 
         if (this.activeViewMode === 'admin') {
@@ -1879,6 +2228,10 @@ export class Game extends Scene
     {
         if (rawMode === 'admin') {
             return 'admin';
+        }
+
+        if (rawMode === 'spectator' || rawMode === 'spec') {
+            return 'spectator';
         }
 
         if (rawMode === 'p1' || rawMode === 'player-1' || rawMode === 'player1') {
@@ -2030,10 +2383,6 @@ export class Game extends Scene
         this.input.setDraggable(card.body);
 
         card.body.on('pointerdown', () => {
-            if (!this.boardInputEnabled) {
-                return;
-            }
-
             if (!this.canPreviewCard(card)) {
                 return;
             }
@@ -2067,6 +2416,10 @@ export class Game extends Scene
             return 'ADMIN';
         }
 
+        if (viewMode === 'spectator') {
+            return 'SPECTATOR';
+        }
+
         return this.getPlayerUsername(viewMode);
     }
 
@@ -2084,6 +2437,10 @@ export class Game extends Scene
 
         const resolvePerspectiveLabel = (ownerId: PlayerId, pileName: string): string => {
             if (this.activeViewMode === 'admin') {
+                return `${ownerId} ${pileName}`.toUpperCase();
+            }
+
+            if (this.activeViewMode === 'spectator') {
                 return `${ownerId} ${pileName}`.toUpperCase();
             }
 

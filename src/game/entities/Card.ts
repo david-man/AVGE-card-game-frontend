@@ -60,6 +60,7 @@ export class Card
     private hpLabel: Phaser.GameObjects.BitmapText;
         private statusLabel: Phaser.GameObjects.BitmapText;
     private turnedOver: boolean;
+    private externallyVisible: boolean;
     private isFlipping: boolean;
     private isSelected: boolean;
     private hp: number;
@@ -118,6 +119,7 @@ export class Card
             .setTint(0xe2e8f0);
 
         this.turnedOver = false;
+        this.externallyVisible = true;
 
         this.body.setData('cardId', this.id);
         this.body.setData('zoneId', options.zoneId);
@@ -337,6 +339,12 @@ export class Card
         this.applyFaceState();
     }
 
+    setVisibility (visible: boolean): void
+    {
+        this.externallyVisible = visible;
+        this.applyFaceState();
+    }
+
     flip (onComplete?: () => void): void
     {
         if (this.isFlipping) {
@@ -537,6 +545,7 @@ export class Card
     private applyFaceState (): void
     {
         this.applyBorderStyle();
+        this.body.setVisible(this.externallyVisible);
 
         if (this.turnedOver) {
             this.body.setFillStyle(CARD_VISUALS.faceDownFillColor, 1);
@@ -549,8 +558,8 @@ export class Card
         }
 
         this.body.setFillStyle(this.baseColor, 1);
-        this.idLabel.setVisible(true);
-        this.typeLabel.setVisible(true);
+    this.idLabel.setVisible(this.externallyVisible);
+    this.typeLabel.setVisible(this.externallyVisible);
         this.refreshHpLabel();
         this.refreshStatusLabel();
         this.redrawMarks();
@@ -563,13 +572,13 @@ export class Card
             return;
         }
 
-        this.hpLabel.setVisible(!this.turnedOver);
+        this.hpLabel.setVisible(this.externallyVisible && !this.turnedOver);
         this.hpLabel.setText(`[${this.hp}/${this.maxHp}]`);
     }
 
     private refreshStatusLabel (): void
     {
-        if (this.cardType !== 'character' || this.turnedOver) {
+        if (this.cardType !== 'character' || this.turnedOver || !this.externallyVisible) {
             this.statusLabel.setVisible(false);
             return;
         }

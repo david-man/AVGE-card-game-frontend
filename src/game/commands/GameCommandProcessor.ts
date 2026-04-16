@@ -80,7 +80,11 @@ export class GameCommandProcessor
             // Replay commands coming from backend must not be re-emitted back to
             // backend, otherwise each client echoes the same event and creates
             // a command feedback loop.
-            const isResponseEvent = eventType === 'notify' || eventType === 'input_result' || eventType === 'input_state_change';
+            const isResponseEvent =
+                eventType === 'notify'
+                || eventType === 'input_result'
+                || eventType === 'input_state_change'
+                || eventType === 'winner';
             if (isBackendReplayCommand && !isResponseEvent) {
                 return;
             }
@@ -89,6 +93,53 @@ export class GameCommandProcessor
 
         const normalizeInputMode = (rawMode: string): string => {
             return rawMode.trim().toLowerCase().replace(/\s+/g, '-').replace(/_/g, '-');
+        };
+
+        const parseLeadingMessageAndRest = (rawValue: string): { message: string; rest: string } | null => {
+            const trimmed = rawValue.trim();
+            if (!trimmed) {
+                return null;
+            }
+
+            const firstChar = trimmed[0];
+            if (firstChar !== '"' && firstChar !== '\'') {
+                const firstSpaceIndex = trimmed.search(/\s/);
+                if (firstSpaceIndex < 0) {
+                    return { message: trimmed, rest: '' };
+                }
+
+                return {
+                    message: trimmed.slice(0, firstSpaceIndex),
+                    rest: trimmed.slice(firstSpaceIndex + 1).trim()
+                };
+            }
+
+            for (let i = 1; i < trimmed.length; i += 1) {
+                const ch = trimmed[i];
+                if (ch !== firstChar) {
+                    continue;
+                }
+
+                let backslashCount = 0;
+                for (let j = i - 1; j >= 0 && trimmed[j] === '\\'; j -= 1) {
+                    backslashCount += 1;
+                }
+
+                // Quote is escaped when preceded by an odd number of backslashes.
+                if (backslashCount % 2 === 1) {
+                    continue;
+                }
+
+                const message = trimmed
+                    .slice(1, i)
+                    .replace(/\\"/g, '"')
+                    .replace(/\\'/g, "'")
+                    .replace(/\\\\/g, '\\');
+                const rest = trimmed.slice(i + 1).trim();
+                return { message, rest };
+            }
+
+            return null;
         };
 
         if (action === 'help' || action === '?') {
@@ -676,10 +727,37 @@ export class GameCommandProcessor
             }
 
             const mode = normalizeInputMode(rawArgOne);
-            const parsedTargetView = g.parseViewModeArg(rawArgTwo.toLowerCase());
+            const actionPrefixLength = rawAction.length;
+            const rawAfterAction = command.slice(actionPrefixLength).trim();
+            const modeTokenMatch = /^([^\s]+)\s*(.*)$/.exec(rawAfterAction);
+            if (!modeTokenMatch) {
+                g.appendTerminalLine('Usage: input [type] [msg] [..args]');
+                g.appendTerminalLine('   or: input [type] [player-1|player-2] [msg] [..args]');
+                g.appendTerminalLine('Types: on, off, d6, coin, selection, kei_watanabe_drumkidworkshop, numerical-entry');
+                return;
+            }
+
+            let rawInputBody = modeTokenMatch[2].trim();
+            if (!rawInputBody) {
+                g.appendTerminalLine('Usage: input [type] [msg] [..args]');
+                g.appendTerminalLine('   or: input [type] [player-1|player-2] [msg] [..args]');
+                g.appendTerminalLine('Types: on, off, d6, coin, selection, kei_watanabe_drumkidworkshop, numerical-entry');
+                return;
+            }
+
+            const targetTokenMatch = /^([^\s]+)\s*(.*)$/.exec(rawInputBody);
+            const possibleTargetToken = targetTokenMatch ? targetTokenMatch[1] : '';
+            const parsedTargetView = possibleTargetToken
+                ? g.parseViewModeArg(possibleTargetToken.toLowerCase())
+                : null;
             const targetView = parsedTargetView && parsedTargetView !== 'admin' ? parsedTargetView : null;
-            const topMessage = targetView ? (rawArgThree ?? '') : rawArgTwo;
-            const argsStartIndex = targetView ? 4 : 3;
+            if (targetView && targetTokenMatch) {
+                rawInputBody = targetTokenMatch[2].trim();
+            }
+
+            const parsedMessage = parseLeadingMessageAndRest(rawInputBody);
+            const topMessage = parsedMessage?.message ?? '';
+            const rawInputArgs = parsedMessage?.rest ?? '';
             const canShowTargetedInputInCurrentView = !targetView || g.activeViewMode === 'admin' || g.activeViewMode === targetView;
 
             if (!topMessage) {
@@ -715,7 +793,7 @@ export class GameCommandProcessor
                     revealLatest();
                 };
 
-                if (commandParts.length < argsStartIndex + 5) {
+                if (!rawInputArgs) {
                     failSelection(
                         'Usage: input selection [msg] [display1,display2], [highlight1,highlight2], [num-cards], [allow-repeat] [allow-none]'
                     );
@@ -737,7 +815,7 @@ export class GameCommandProcessor
                     return null;
                 };
 
-                const selectionTail = commandParts.slice(argsStartIndex).join(' ').trim();
+                const selectionTail = rawInputArgs.trim();
                 const selectionArgsMatch = selectionTail.match(/^\[([^\]]*)\]\s*,?\s*\[([^\]]*)\]\s*,?\s*([^,\s]+)\s*,?\s*([^,\s]+)\s*,?\s*([^,\s]+)$/);
                 if (!selectionArgsMatch) {
                     failSelection(
@@ -892,7 +970,7 @@ export class GameCommandProcessor
             }
 
             if (mode === 'kei-watanabe-drumkidworkshop') {
-                const listRaw = commandParts.slice(argsStartIndex).join(' ').trim();
+                const listRaw = rawInputArgs.trim();
                 if (!listRaw) {
                     g.appendTerminalLine('Usage: input kei-watanabe-drumkidworkshop [msg] [card1,card2,...]');
                     return;
@@ -1021,7 +1099,7 @@ export class GameCommandProcessor
             }
 
             if (mode === 'd6') {
-                const forcedValueToken = (commandParts[argsStartIndex] ?? '').trim();
+                const forcedValueToken = (rawInputArgs.split(/\s+/)[0] ?? '').trim();
                 const forcedValue = Number(forcedValueToken);
                 if (!Number.isInteger(forcedValue) || forcedValue < 1 || forcedValue > 6) {
                     g.appendTerminalLine('Usage: input d6 [msg] [1-6]');
@@ -1053,7 +1131,7 @@ export class GameCommandProcessor
             }
 
             if (mode === 'coin') {
-                const forcedValueToken = (commandParts[argsStartIndex] ?? '').trim();
+                const forcedValueToken = (rawInputArgs.split(/\s+/)[0] ?? '').trim();
                 if (forcedValueToken !== '0' && forcedValueToken !== '1') {
                     g.appendTerminalLine('Usage: input coin [msg] [0|1]');
                     g.appendTerminalLine('   or: input coin [player-1|player-2] [msg] [0|1]');
@@ -1176,7 +1254,13 @@ export class GameCommandProcessor
                 return;
             }
 
-            const message = commandParts.slice(2).join(' ').trim();
+            const message = commandParts
+                .slice(2)
+                .join(' ')
+                .trim()
+                .replace(/[_-]+/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
             if (!message) {
                 g.appendTerminalLine('Usage: notify [player-1|player-2|both] [msg]');
                 return;
@@ -1209,25 +1293,28 @@ export class GameCommandProcessor
         }
 
         if (action === 'winner') {
-            if (!rawArgOne) {
-                g.appendTerminalLine('Usage: winner [player-1|player-2]');
+            const winnerArg = commandParts.slice(1).join(' ').trim();
+            if (!winnerArg) {
+                g.appendTerminalLine('Usage: winner [player-1|player-2|winner_name]');
                 return;
             }
 
             const winnerView = g.parseViewModeArg(rawArgOne.toLowerCase());
-            if (!winnerView || winnerView === 'admin') {
-                g.appendTerminalLine('Usage: winner [player-1|player-2]');
-                return;
-            }
+            const explicitWinnerName = winnerView
+                ? commandParts.slice(2).join(' ').trim()
+                : '';
 
             if (g.inputOverlayController.hasActiveOverlay()) {
                 g.appendTerminalLine('Input overlay already active.');
                 return;
             }
 
-            const winnerLabel = g.getViewModeLabel(winnerView);
+            const winnerLabel = (!winnerView || winnerView === 'admin')
+                ? winnerArg
+                : (explicitWinnerName || g.getPlayerUsername(winnerView));
+
             const panelColor =
-                g.activeViewMode === 'admin'
+                g.activeViewMode === 'admin' || !winnerView || winnerView === 'admin'
                     ? 0x4b5563
                     : (g.activeViewMode === winnerView ? 0x166534 : 0x991b1b);
 
@@ -1235,7 +1322,7 @@ export class GameCommandProcessor
             g.appendTerminalLine(`WINNER -> ${winnerLabel}`);
             g.inputOverlayController.startWinnerOverlay(winnerLabel, panelColor, () => {
                 emitCommandEvent('winner', {
-                    winner_view: winnerLabel,
+                    winner_view: winnerView ? g.getViewModeLabel(winnerView) : winnerLabel,
                     current_view: g.getViewModeLabel(g.activeViewMode),
                     panel_color: panelColor,
                     redirected_to: 'MainMenu'

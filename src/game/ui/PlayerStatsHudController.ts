@@ -7,7 +7,7 @@ import {
     UI_SCALE
 } from '../config';
 
-type ViewMode = PlayerId | 'admin';
+type ViewMode = PlayerId | 'admin' | 'spectator';
 
 type PlayerTurnAttributes = {
     ENERGY_ADD_REMAINING_IN_TURN: number;
@@ -16,6 +16,8 @@ type PlayerTurnAttributes = {
     SWAP_REMAINING_IN_TURN: number;
     ATTACKS_LEFT: number;
 };
+
+type PlayerUsernamesByPlayer = Record<PlayerId, string>;
 
 type PlayerStatsHudUi = {
     background: Phaser.GameObjects.Rectangle;
@@ -47,7 +49,11 @@ export class PlayerStatsHudController
         };
     }
 
-    refresh (activeViewMode: ViewMode, statsByPlayer: Record<PlayerId, PlayerTurnAttributes>): void
+    refresh (
+        activeViewMode: ViewMode,
+        statsByPlayer: Record<PlayerId, PlayerTurnAttributes>,
+        usernamesByPlayer: PlayerUsernamesByPlayer
+    ): void
     {
         if (!this.uiByPlayer) {
             return;
@@ -74,7 +80,11 @@ export class PlayerStatsHudController
                 ['ATTACKS_LEFT', statsByPlayer[playerId].ATTACKS_LEFT]
             ];
 
-            const titleText = playerId === 'p1' ? 'PLAYER 1' : 'PLAYER 2';
+            const canonicalTitle = playerId === 'p1' ? 'PLAYER 1' : 'PLAYER 2';
+            const username = (usernamesByPlayer[playerId] ?? '').trim();
+            const titleText = username.length > 0
+                ? `${canonicalTitle} - ${username.toUpperCase()}`
+                : canonicalTitle;
             const rowHeight = Math.max(14, Math.round(GAME_PLAYER_STATS_HUD_LAYOUT.fontSize * UI_SCALE * 1.35));
             const titleGap = Math.max(8, Math.round(8 * UI_SCALE));
             const colGap = Math.max(20, Math.round(20 * UI_SCALE));
@@ -126,6 +136,12 @@ export class PlayerStatsHudController
             layoutHud('p2', leftMargin + adminColumnGap, topMargin);
             setHudVisible('p1', true);
             setHudVisible('p2', true);
+            return;
+        }
+
+        if (activeViewMode === 'spectator') {
+            setHudVisible('p1', false);
+            setHudVisible('p2', false);
             return;
         }
 

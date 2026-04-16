@@ -91,7 +91,8 @@ export const CARDHOLDER_LAYOUT_SIDE_PADDING_MULTIPLIER = 0.35;
 export const ENERGYHOLDER_LAYOUT = {
 	widthMultiplier: 2.05,
 	heightMultiplier: 0.48,
-	xOffsetMultiplier: 2.25
+	xOffsetMultiplier: 2.25,
+	verticalSpreadMultiplier: 0.95
 } as const;
 
 export const ENERGY_TOKEN_DEPTHS = {
@@ -373,7 +374,7 @@ export const ENTITY_VISUALS = {
 	energyHolderLabelTint: 0xffffff,
 	energyHolderLabelAlpha: 0.68,
 	energyHolderLabelDepth: 2,
-	energyHolderLabelYOffsetRatio: 0.35,
+	energyHolderLabelTopGapBase: 20,
 	energyTokenFillColor: 0xffd166,
 	energyTokenFillAlpha: 1,
 	energyTokenStrokeWidth: 3,

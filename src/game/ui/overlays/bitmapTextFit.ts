@@ -31,9 +31,21 @@ export const fitBitmapTextToSingleLine = ({
         return safePreferredSize;
     }
 
-    const probe = scene.add.bitmapText(-10000, -10000, font, normalizedText, safePreferredSize)
-        .setVisible(false)
-        .setAlpha(0);
+    // Guard against runtime font cache races/misses. If the bitmap font is
+    // unavailable, return a safe fallback size instead of probing text width.
+    if (!scene.cache.bitmapFont.exists(font)) {
+        return safePreferredSize;
+    }
+
+    let probe: Phaser.GameObjects.BitmapText | null = null;
+    try {
+        probe = scene.add.bitmapText(-10000, -10000, font, normalizedText, safePreferredSize)
+            .setVisible(false)
+            .setAlpha(0);
+    }
+    catch {
+        return safePreferredSize;
+    }
 
     let measuredWidth = probe.width;
     if (measuredWidth <= 0 || measuredWidth <= safeMaxWidth) {
@@ -72,6 +84,10 @@ export const fitBitmapTextToTwoLines = ({
         return { text: '', fontSize: safePreferredSize };
     }
 
+    if (!scene.cache.bitmapFont.exists(font)) {
+        return { text: normalizedText, fontSize: safePreferredSize };
+    }
+
     const singleLineSize = fitBitmapTextToSingleLine({
         scene,
         font,
@@ -81,9 +97,15 @@ export const fitBitmapTextToTwoLines = ({
         maxWidth: safeMaxWidth
     });
 
-    const singleLineProbe = scene.add.bitmapText(-10000, -10000, font, normalizedText, singleLineSize)
-        .setVisible(false)
-        .setAlpha(0);
+    let singleLineProbe: Phaser.GameObjects.BitmapText | null = null;
+    try {
+        singleLineProbe = scene.add.bitmapText(-10000, -10000, font, normalizedText, singleLineSize)
+            .setVisible(false)
+            .setAlpha(0);
+    }
+    catch {
+        return { text: normalizedText, fontSize: singleLineSize };
+    }
     const singleLineFits = singleLineProbe.width <= safeMaxWidth;
     singleLineProbe.destroy();
 
@@ -119,9 +141,15 @@ export const fitBitmapTextToTwoLines = ({
         }
     }
 
-    const probe = scene.add.bitmapText(-10000, -10000, font, '', safePreferredSize)
-        .setVisible(false)
-        .setAlpha(0);
+    let probe: Phaser.GameObjects.BitmapText | null = null;
+    try {
+        probe = scene.add.bitmapText(-10000, -10000, font, '', safePreferredSize)
+            .setVisible(false)
+            .setAlpha(0);
+    }
+    catch {
+        return { text: normalizedText, fontSize: singleLineSize };
+    }
 
     let bestText = normalizedText;
     let bestSize = safeMinSize;
