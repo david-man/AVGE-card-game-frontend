@@ -1,10 +1,9 @@
 import { Scene } from 'phaser';
-import { PlayerId } from './Card';
 import { ENTITY_VISUALS } from '../config';
 
 type EnergyTokenOptions = {
     id: string;
-    ownerId: PlayerId;
+    ownerId: string;
     x: number;
     y: number;
     radius: number;
@@ -16,7 +15,7 @@ export class EnergyToken
     private readonly scene: Scene;
     readonly id: string;
     readonly uniqueId: string;
-    readonly ownerId: PlayerId;
+    readonly ownerId: string;
     readonly body: Phaser.GameObjects.Ellipse;
 
     private attachedToCardId: string | null;

@@ -85,22 +85,29 @@ export class InputOverlayController
         this.selectionOverlay.start(items, numberOfSelections, allowRepeat, allowNone, topMessage, onSubmit, onCardClick, onBackgroundClick);
     }
 
-    startNotifyOverlay (playerLabel: string, message: string, onClose: OverlayCloseCallback): void
+    startNotifyOverlay (
+        playerLabel: string,
+        message: string,
+        onClose: OverlayCloseCallback,
+        timeoutSeconds: number | null = null
+    ): void
     {
         this.stopActiveOverlay();
-        this.displayOverlay.startNotifyOverlay(playerLabel, message, onClose);
+        this.displayOverlay.startNotifyOverlay(playerLabel, message, onClose, timeoutSeconds);
     }
 
     startRevealOverlay (
         playerLabel: string,
         cards: RevealOverlayCard[],
+        message: string | null,
+        timeoutSeconds: number | null,
         onClose: OverlayCloseCallback,
         onCardClick?: OverlayCardClickCallback,
         onBackgroundClick?: OverlayCloseCallback
     ): void
     {
         this.stopActiveOverlay();
-        this.displayOverlay.startRevealOverlay(playerLabel, cards, onClose, onCardClick, onBackgroundClick);
+        this.displayOverlay.startRevealOverlay(playerLabel, cards, message, timeoutSeconds, onClose, onCardClick, onBackgroundClick);
     }
 
     startWinnerOverlay (winnerLabel: string, panelColor: number, onBackToMenu: OverlayCloseCallback): void

@@ -18,6 +18,8 @@ export class DisplayInputOverlay
     private inputLockOverlay: Phaser.GameObjects.Rectangle;
     private activeObjects: Phaser.GameObjects.GameObject[];
     private activeRevealCardContainer: Phaser.GameObjects.Container | null;
+    private activeTimer: Phaser.Time.TimerEvent | null;
+    private activeCountdownTween: Phaser.Tweens.Tween | null;
 
     constructor (scene: Scene, inputLockOverlay: Phaser.GameObjects.Rectangle)
     {
@@ -25,6 +27,8 @@ export class DisplayInputOverlay
         this.inputLockOverlay = inputLockOverlay;
         this.activeObjects = [];
         this.activeRevealCardContainer = null;
+        this.activeTimer = null;
+        this.activeCountdownTween = null;
     }
 
     hasActiveOverlay (): boolean
@@ -34,6 +38,14 @@ export class DisplayInputOverlay
 
     stopActiveOverlay (): void
     {
+        if (this.activeTimer) {
+            this.activeTimer.remove(false);
+            this.activeTimer = null;
+        }
+        if (this.activeCountdownTween) {
+            this.activeCountdownTween.remove();
+            this.activeCountdownTween = null;
+        }
         this.activeObjects.forEach((obj) => obj.destroy());
         this.activeObjects = [];
         this.activeRevealCardContainer = null;
@@ -52,7 +64,60 @@ export class DisplayInputOverlay
         }
     }
 
-    startNotifyOverlay (playerLabel: string, message: string, onClose: OverlayCloseCallback): void
+    private drawSquareCountdownFrame (
+        graphics: Phaser.GameObjects.Graphics,
+        centerX: number,
+        centerY: number,
+        size: number,
+        remainingRatio: number
+    ): void
+    {
+        const ratio = Math.max(0, Math.min(1, remainingRatio));
+        graphics.clear();
+        if (ratio <= 0) {
+            return;
+        }
+
+        graphics.lineStyle(2, 0xfef08a, 0.95);
+
+        const half = size / 2;
+        const left = centerX - half;
+        const top = centerY - half;
+        const segmentLength = size;
+        let remainingPerimeter = (segmentLength * 4) * ratio;
+
+        let x = left;
+        let y = top;
+        graphics.beginPath();
+        graphics.moveTo(x, y);
+
+        const segments = [
+            { dx: 1, dy: 0 },
+            { dx: 0, dy: 1 },
+            { dx: -1, dy: 0 },
+            { dx: 0, dy: -1 },
+        ];
+
+        for (const segment of segments) {
+            if (remainingPerimeter <= 0) {
+                break;
+            }
+            const drawLength = Math.min(segmentLength, remainingPerimeter);
+            x += segment.dx * drawLength;
+            y += segment.dy * drawLength;
+            graphics.lineTo(x, y);
+            remainingPerimeter -= drawLength;
+        }
+
+        graphics.strokePath();
+    }
+
+    startNotifyOverlay (
+        playerLabel: string,
+        message: string,
+        onClose: OverlayCloseCallback,
+        timeoutSeconds: number | null = null
+    ): void
     {
         this.stopActiveOverlay();
 
@@ -72,7 +137,7 @@ export class DisplayInputOverlay
             .setStrokeStyle(3, 0xffffff, 0.8)
             .setDepth(overlayDepth);
 
-        const title = this.scene.add.bitmapText(panelX, panelY - Math.round(panelHeight * 0.36), 'minogram', `NOTIFY -> ${playerLabel}`, titleFontSize)
+        const title = this.scene.add.bitmapText(panelX, panelY - Math.round(panelHeight * 0.36), 'minogram', `${playerLabel}`, titleFontSize)
             .setOrigin(0.5)
             .setDepth(overlayDepth + 1)
             .setMaxWidth(Math.round(panelWidth * 0.86));
@@ -94,19 +159,51 @@ export class DisplayInputOverlay
             .setOrigin(0.5)
             .setDepth(overlayDepth + 3);
 
+        const countdownFrameSize = closeButtonSize + 8;
+        const timeoutFrame = this.scene.add.graphics().setDepth(overlayDepth + 4);
+        this.drawSquareCountdownFrame(timeoutFrame, closeX, closeY, countdownFrameSize, 1);
+
+        let closed = false;
         const close = () => {
+            if (closed) {
+                return;
+            }
+            closed = true;
             this.stopActiveOverlay();
             onClose();
         };
 
         closeButton.on('pointerdown', close);
 
-        this.activeObjects.push(panel, title, body, closeButton, closeLabel);
+        if (timeoutSeconds !== null && Number.isFinite(timeoutSeconds) && timeoutSeconds >= 0) {
+            const timeoutMs = Math.max(0, Math.round(timeoutSeconds * 1000));
+            const countdownState = { remaining: 1 };
+            this.activeCountdownTween = this.scene.tweens.add({
+                targets: countdownState,
+                remaining: 0,
+                duration: timeoutMs,
+                ease: 'Linear',
+                onUpdate: () => {
+                    this.drawSquareCountdownFrame(timeoutFrame, closeX, closeY, countdownFrameSize, countdownState.remaining);
+                },
+                onComplete: () => {
+                    this.drawSquareCountdownFrame(timeoutFrame, closeX, closeY, countdownFrameSize, 0);
+                }
+            });
+            this.activeTimer = this.scene.time.delayedCall(timeoutMs, close);
+        }
+        else {
+            timeoutFrame.setVisible(false);
+        }
+
+        this.activeObjects.push(panel, title, body, closeButton, closeLabel, timeoutFrame);
     }
 
     startRevealOverlay (
         playerLabel: string,
         cards: RevealOverlayCard[],
+        message: string | null,
+        timeoutSeconds: number | null,
         onClose: OverlayCloseCallback,
         onCardClick?: OverlayCardClickCallback,
         onBackgroundClick?: OverlayCloseCallback
@@ -123,9 +220,11 @@ export class DisplayInputOverlay
         const panelY = Math.round(height / 2);
         const closeButtonSize = Math.max(28, Math.round(Math.min(panelWidth, panelHeight) * 0.12));
         const titleFontSize = Math.max(30, Math.round(panelWidth * 0.06));
+        const messageFontSize = Math.max(18, Math.round(panelWidth * 0.03));
         const cardLabelFontSize = Math.max(14, Math.round(panelWidth * 0.022));
         const cardSubLabelFontSize = Math.max(12, Math.round(panelWidth * 0.018));
         const closeFontSize = Math.max(20, Math.round(closeButtonSize * 0.7));
+        const revealMessage = (message ?? '').trim();
 
         const clickBackdrop = this.scene.add.rectangle(
             this.scene.scale.width / 2,
@@ -153,7 +252,20 @@ export class DisplayInputOverlay
             .setDepth(overlayDepth + 1)
             .setMaxWidth(Math.round(panelWidth * 0.86));
 
-        const gridTopY = panelY - Math.round(panelHeight * 0.26);
+        const messageText = revealMessage
+            ? this.scene.add.bitmapText(
+                panelX - Math.round(panelWidth * 0.42),
+                panelY - Math.round(panelHeight * 0.28),
+                'minogram',
+                revealMessage,
+                messageFontSize,
+            )
+                .setOrigin(0, 0)
+                .setDepth(overlayDepth + 1)
+                .setMaxWidth(Math.round(panelWidth * 0.84))
+            : null;
+
+        const gridTopY = panelY - Math.round(panelHeight * (revealMessage ? 0.14 : 0.26));
         const gridBottomY = panelY + Math.round(panelHeight * 0.35);
         const gridLeftX = panelX - Math.round(panelWidth * 0.43);
         const gridRightX = panelX + Math.round(panelWidth * 0.43);
@@ -165,6 +277,9 @@ export class DisplayInputOverlay
                 .setOrigin(0.5)
                 .setDepth(overlayDepth + 1);
             this.activeObjects.push(clickBackdrop, panel, title, emptyText);
+            if (messageText) {
+                this.activeObjects.push(messageText);
+            }
         }
         else {
             const preferredCardWidth = Math.max(
@@ -231,6 +346,9 @@ export class DisplayInputOverlay
             });
 
             this.activeObjects.push(clickBackdrop, panel, title);
+            if (messageText) {
+                this.activeObjects.push(messageText);
+            }
         }
 
         const closeX = panelX - Math.round(panelWidth * 0.5) + Math.round(closeButtonSize * 0.7);
@@ -245,14 +363,45 @@ export class DisplayInputOverlay
             .setOrigin(0.5)
             .setDepth(overlayDepth + 3);
 
+        const countdownFrameSize = closeButtonSize + 8;
+        const timeoutFrame = this.scene.add.graphics().setDepth(overlayDepth + 4);
+        this.drawSquareCountdownFrame(timeoutFrame, closeX, closeY, countdownFrameSize, 1);
+
+        let closed = false;
+
         const close = () => {
+            if (closed) {
+                return;
+            }
+            closed = true;
             this.stopActiveOverlay();
             onClose();
         };
 
         closeButton.on('pointerdown', close);
 
-        this.activeObjects.push(closeButton, closeLabel);
+        if (timeoutSeconds !== null && Number.isFinite(timeoutSeconds) && timeoutSeconds >= 0) {
+            const timeoutMs = Math.max(0, Math.round(timeoutSeconds * 1000));
+            const countdownState = { remaining: 1 };
+            this.activeCountdownTween = this.scene.tweens.add({
+                targets: countdownState,
+                remaining: 0,
+                duration: timeoutMs,
+                ease: 'Linear',
+                onUpdate: () => {
+                    this.drawSquareCountdownFrame(timeoutFrame, closeX, closeY, countdownFrameSize, countdownState.remaining);
+                },
+                onComplete: () => {
+                    this.drawSquareCountdownFrame(timeoutFrame, closeX, closeY, countdownFrameSize, 0);
+                }
+            });
+            this.activeTimer = this.scene.time.delayedCall(timeoutMs, close);
+        }
+        else {
+            timeoutFrame.setVisible(false);
+        }
+
+        this.activeObjects.push(closeButton, closeLabel, timeoutFrame);
     }
 
     startWinnerOverlay (

@@ -72,6 +72,14 @@ export class PlayerStatsHudController
                 return;
             }
 
+            const formatAttributeLabel = (attributeKey: string): string => {
+                if (attributeKey === 'ENERGY_ADD_REMAINING_IN_TURN') {
+                    return 'shared energy adds left';
+                }
+
+                return attributeKey.toLowerCase().replace(/_/g, ' ');
+            };
+
             const rows: Array<[string, number]> = [
                 ['ENERGY_ADD_REMAINING_IN_TURN', statsByPlayer[playerId].ENERGY_ADD_REMAINING_IN_TURN],
                 ['KO_COUNT', statsByPlayer[playerId].KO_COUNT],
@@ -97,7 +105,7 @@ export class PlayerStatsHudController
                 const keyText = ui.keyTexts[index];
                 const valueText = ui.valueTexts[index];
 
-                keyText.setText(`${key.toLowerCase().replace(/_/g, ' ')}:`);
+                keyText.setText(`${formatAttributeLabel(key)}:`);
                 valueText.setText(String(value));
                 maxKeyWidth = Math.max(maxKeyWidth, keyText.width);
                 maxValueWidth = Math.max(maxValueWidth, valueText.width);

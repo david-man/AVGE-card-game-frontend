@@ -1,10 +1,16 @@
 import { Scene, GameObjects } from 'phaser';
 import { GAME_CENTER_X, GAME_CENTER_Y, GAME_HEIGHT, GAME_WIDTH, UI_SCALE } from '../config';
 import {
+    clearClientSessionState,
     fetchRouterSession,
+    logoutRouterSession,
     fetchUserDecks,
     enqueueForMatchmaking,
     fetchMatchmakingStatus,
+    isSessionSupersededError,
+    subscribeToRouterSessionEvents,
+    rejoinAssignedRoom,
+    leaveMatchmakingQueue,
     ROOM_BACKEND_BASE_URL_STORAGE_KEY,
     ROUTER_SESSION_ID_STORAGE_KEY,
     ROUTER_USERNAME_STORAGE_KEY,
@@ -20,8 +26,12 @@ export class MainMenu extends Scene
     startButtonLabel: GameObjects.BitmapText;
     decksButton: GameObjects.Rectangle;
     decksButtonLabel: GameObjects.BitmapText;
+    private usernameIndicator: GameObjects.BitmapText | null;
+    private logoutButton: GameObjects.Rectangle | null;
+    private logoutButtonLabel: GameObjects.BitmapText | null;
     private transitioning: boolean;
     private matchmakingPollTimer: Phaser.Time.TimerEvent | null;
+    private authSessionUnsubscribe: (() => void) | null;
     private matchmakingInProgress: boolean;
     private authReady: boolean;
     private disconnectGateActive: boolean;
@@ -30,20 +40,28 @@ export class MainMenu extends Scene
     private disconnectGateContinueButton: GameObjects.Rectangle | null;
     private disconnectGateContinueLabel: GameObjects.BitmapText | null;
     private selectedDeckId: string | null;
+    private pageHideHandler: (() => void) | null;
+    private beforeUnloadHandler: (() => void) | null;
 
     constructor ()
     {
         super('MainMenu');
         this.transitioning = false;
         this.matchmakingPollTimer = null;
+        this.authSessionUnsubscribe = null;
         this.matchmakingInProgress = false;
         this.authReady = false;
+        this.usernameIndicator = null;
+        this.logoutButton = null;
+        this.logoutButtonLabel = null;
         this.disconnectGateActive = false;
         this.disconnectGateBackdrop = null;
         this.disconnectGateTitle = null;
         this.disconnectGateContinueButton = null;
         this.disconnectGateContinueLabel = null;
         this.selectedDeckId = null;
+        this.pageHideHandler = null;
+        this.beforeUnloadHandler = null;
     }
 
     preload ()
@@ -84,6 +102,68 @@ export class MainMenu extends Scene
         )
             .setOrigin(0.5)
             .setTint(0xcbd5e1);
+
+        const accountMargin = Math.round(50 * UI_SCALE);
+        const accountTop = Math.round(60 * UI_SCALE);
+        const logoutWidth = Math.round(250 * UI_SCALE);
+        const logoutHeight = Math.round(100 * UI_SCALE);
+        const accountUiDepth = 620;
+        const logoutBottomMargin = Math.round(40 * UI_SCALE);
+        const persistedUsername = typeof window !== 'undefined'
+            ? window.localStorage.getItem(ROUTER_USERNAME_STORAGE_KEY)
+            : null;
+
+        this.usernameIndicator = this.add.bitmapText(
+            GAME_WIDTH - accountMargin,
+            accountTop,
+            'minogram',
+            this.formatUsernameIndicator(persistedUsername),
+            Math.max(9, Math.round(30 * UI_SCALE))
+        )
+            .setOrigin(1, 0)
+            .setTint(0xe2e8f0)
+            .setRightAlign()
+            .setDepth(accountUiDepth + 1);
+
+        this.logoutButton = this.add.rectangle(
+            GAME_WIDTH - accountMargin - Math.round(logoutWidth / 2),
+            GAME_HEIGHT - logoutBottomMargin - Math.round(logoutHeight / 2),
+            logoutWidth,
+            logoutHeight,
+            0x7f1d1d,
+            0.95
+        )
+            .setStrokeStyle(2, 0xffffff, 0.8)
+            .setDepth(accountUiDepth)
+            .setInteractive({ useHandCursor: true });
+
+        this.logoutButtonLabel = this.add.bitmapText(
+            this.logoutButton.x,
+            this.logoutButton.y,
+            'minogram',
+            'LOG OUT',
+            Math.max(9, Math.round(30 * UI_SCALE))
+        )
+            .setOrigin(0.5)
+            .setTint(0xffffff)
+            .setDepth(accountUiDepth + 1);
+
+        this.logoutButton.on('pointerover', () => {
+            this.logoutButton?.setFillStyle(0x991b1b, 0.98);
+            this.logoutButtonLabel?.setTint(0xfef08a);
+        });
+
+        this.logoutButton.on('pointerout', () => {
+            this.logoutButton?.setFillStyle(0x7f1d1d, 0.95);
+            this.logoutButtonLabel?.setTint(0xffffff);
+        });
+
+        this.logoutButton.on('pointerdown', () => {
+            if (this.disconnectGateActive || this.transitioning) {
+                return;
+            }
+            void this.logoutAndReturnToLogin();
+        });
 
         const buttonWidth = Math.round(280 * UI_SCALE);
         const buttonHeight = Math.round(84 * UI_SCALE);
@@ -132,17 +212,34 @@ export class MainMenu extends Scene
             .setTint(0xffffff);
 
         this.startButton.on('pointerover', () => {
+            if (this.matchmakingInProgress) {
+                this.startButton.setFillStyle(0x991b1b, 0.98);
+                this.startButtonLabel.setTint(0xffffff);
+                return;
+            }
+
             this.startButton.setFillStyle(0x1e293b, 0.95);
             this.startButtonLabel.setTint(0xfef08a);
         });
 
         this.startButton.on('pointerout', () => {
+            if (this.matchmakingInProgress) {
+                this.startButton.setFillStyle(0x7f1d1d, 0.96);
+                this.startButtonLabel.setTint(0xffffff);
+                return;
+            }
+
             this.startButton.setFillStyle(0x0f172a, 0.9);
             this.startButtonLabel.setTint(0xffffff);
         });
 
         const startGame = () => {
-            if (this.disconnectGateActive || !this.authReady || this.transitioning || this.matchmakingInProgress) {
+            if (this.disconnectGateActive || !this.authReady || this.transitioning) {
+                return;
+            }
+
+            if (this.matchmakingInProgress) {
+                void this.cancelMatchmakingFlow();
                 return;
             }
 
@@ -153,9 +250,7 @@ export class MainMenu extends Scene
             }
 
             this.matchmakingInProgress = true;
-            this.startButton.disableInteractive();
-            this.startButton.setFillStyle(0x1e293b, 0.95);
-            this.startButtonLabel.setText('MATCHMAKING...');
+            this.applyQueueUiState(true);
             this.updateMatchmakingSubtitle('Connecting to matchmaking...');
             void this.beginMatchmakingFlow();
         };
@@ -169,8 +264,32 @@ export class MainMenu extends Scene
         });
         this.input.keyboard?.once('keydown-ENTER', startGame);
 
+        if (typeof window !== 'undefined') {
+            this.pageHideHandler = () => {
+                this.leaveQueueOnDisconnect();
+            };
+            this.beforeUnloadHandler = () => {
+                this.leaveQueueOnDisconnect();
+            };
+            window.addEventListener('pagehide', this.pageHideHandler);
+            window.addEventListener('beforeunload', this.beforeUnloadHandler);
+        }
+
         this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
             this.stopMatchmakingPolling();
+            this.stopAuthSessionPush();
+            this.leaveQueueOnDisconnect();
+
+            if (typeof window !== 'undefined') {
+                if (this.pageHideHandler) {
+                    window.removeEventListener('pagehide', this.pageHideHandler);
+                    this.pageHideHandler = null;
+                }
+                if (this.beforeUnloadHandler) {
+                    window.removeEventListener('beforeunload', this.beforeUnloadHandler);
+                    this.beforeUnloadHandler = null;
+                }
+            }
         });
 
         const initData = this.scene.settings.data as { systemMessage?: unknown } | undefined;
@@ -179,6 +298,47 @@ export class MainMenu extends Scene
         }
 
         void this.ensureAuthenticatedSession();
+    }
+
+    private startAuthSessionPush (sessionId: string): void
+    {
+        this.stopAuthSessionPush();
+        this.authSessionUnsubscribe = subscribeToRouterSessionEvents(sessionId, ({ reason, message }) => {
+            if (reason !== 'session_superseded') {
+                return;
+            }
+            this.forceSessionSupersededLogout(message);
+        });
+    }
+
+    private stopAuthSessionPush (): void
+    {
+        if (!this.authSessionUnsubscribe) {
+            return;
+        }
+
+        this.authSessionUnsubscribe();
+        this.authSessionUnsubscribe = null;
+    }
+
+    private forceSessionSupersededLogout (message?: string): void
+    {
+        if (this.transitioning) {
+            return;
+        }
+
+        this.transitioning = true;
+        this.stopMatchmakingPolling();
+        this.stopAuthSessionPush();
+        this.matchmakingInProgress = false;
+        this.authReady = false;
+
+        clearClientSessionState();
+        this.scene.start('Login', {
+            systemMessage: typeof message === 'string' && message.trim().length > 0
+                ? message
+                : 'Signed out: account opened on another client.'
+        });
     }
 
     private async ensureAuthenticatedSession (): Promise<void>
@@ -194,20 +354,65 @@ export class MainMenu extends Scene
 
         const auth = await fetchRouterSession(sessionId);
         if (!auth.ok || !auth.sessionId || !auth.username) {
+            if (isSessionSupersededError(auth)) {
+                this.forceSessionSupersededLogout();
+                return;
+            }
             if (typeof window !== 'undefined') {
                 window.sessionStorage.removeItem(ROUTER_SESSION_ID_STORAGE_KEY);
+                window.localStorage.removeItem(ROUTER_SESSION_ID_STORAGE_KEY);
             }
             this.scene.start('Login');
             return;
         }
 
         this.persistMatchmakingIdentity(auth.sessionId, auth.username);
+        this.startAuthSessionPush(auth.sessionId);
+        this.usernameIndicator?.setText(this.formatUsernameIndicator(auth.username));
+
+        const resumed = await this.resumeAssignedRoomIfPresent(auth.sessionId, auth.currentRoomId ?? null);
+        if (resumed) {
+            return;
+        }
+
         const decksResult = await fetchUserDecks(auth.sessionId);
         this.selectedDeckId = decksResult.ok ? (decksResult.selectedDeckId ?? null) : null;
         this.authReady = true;
-        this.startButton.setInteractive({ useHandCursor: true });
-        this.decksButton.setInteractive({ useHandCursor: true });
+        this.applyQueueUiState(false);
         this.updateMatchmakingSubtitle(this.selectedDeckId ? 'Admin Visual Game Environment' : 'No deck selected. Open Deck Builder.');
+    }
+
+    private async resumeAssignedRoomIfPresent (sessionId: string, currentRoomId: string | null): Promise<boolean>
+    {
+        const status = await fetchMatchmakingStatus(sessionId);
+        if (status.ok && status.status === 'assigned' && status.room) {
+            const roomHealthy = await this.isAssignedRoomReachable(status.room.endpointUrl);
+            if (!roomHealthy) {
+                this.updateMatchmakingSubtitle('Saved room is unavailable. Returning to menu.');
+                return false;
+            }
+
+            this.launchAssignedRoom(status.room);
+            return true;
+        }
+
+        if (typeof currentRoomId === 'string' && currentRoomId.trim().length > 0) {
+            const rejoin = await rejoinAssignedRoom(sessionId, currentRoomId);
+            if (!rejoin.ok || !rejoin.room) {
+                return false;
+            }
+
+            const roomHealthy = await this.isAssignedRoomReachable(rejoin.room.endpointUrl);
+            if (!roomHealthy) {
+                this.updateMatchmakingSubtitle('Saved room is unavailable. Returning to menu.');
+                return false;
+            }
+
+            this.launchAssignedRoom(rejoin.room);
+            return true;
+        }
+
+        return false;
     }
 
     private showDisconnectGate (titleText: string): void
@@ -220,6 +425,9 @@ export class MainMenu extends Scene
         this.startButtonLabel.setVisible(false);
         this.decksButton.setVisible(false).disableInteractive();
         this.decksButtonLabel.setVisible(false);
+        this.usernameIndicator?.setVisible(false);
+        this.logoutButton?.setVisible(false).disableInteractive();
+        this.logoutButtonLabel?.setVisible(false);
 
         const depthBase = 900;
         const buttonWidth = Math.round(220 * UI_SCALE);
@@ -305,34 +513,77 @@ export class MainMenu extends Scene
         this.startButton.setFillStyle(0x0f172a, 0.9);
         this.decksButton.setVisible(true).setInteractive({ useHandCursor: true });
         this.decksButtonLabel.setVisible(true);
+        this.usernameIndicator?.setVisible(true);
+        this.logoutButton?.setVisible(true).setInteractive({ useHandCursor: true });
+        this.logoutButtonLabel?.setVisible(true);
         this.updateMatchmakingSubtitle('Admin Visual Game Environment');
+    }
+
+    private async logoutAndReturnToLogin (): Promise<void>
+    {
+        if (this.transitioning) {
+            return;
+        }
+
+        this.stopMatchmakingPolling();
+        this.matchmakingInProgress = false;
+        this.transitioning = false;
+        this.authReady = false;
+
+        this.startButton.disableInteractive();
+        this.decksButton.disableInteractive();
+        this.logoutButton?.disableInteractive();
+        this.updateMatchmakingSubtitle('Logging out...');
+
+        const sessionId = this.getStoredSessionId();
+        if (sessionId) {
+            await logoutRouterSession(sessionId);
+        }
+
+        if (typeof window !== 'undefined') {
+            window.sessionStorage.removeItem(ROUTER_SESSION_ID_STORAGE_KEY);
+            window.localStorage.removeItem(ROUTER_SESSION_ID_STORAGE_KEY);
+            window.sessionStorage.removeItem(ROOM_BACKEND_BASE_URL_STORAGE_KEY);
+            window.sessionStorage.removeItem('avge_protocol_client_slot');
+            window.sessionStorage.removeItem('avge_protocol_reconnect_token');
+            window.localStorage.removeItem(ROUTER_USERNAME_STORAGE_KEY);
+        }
+
+        this.scene.start('Login');
     }
 
     private async beginMatchmakingFlow (): Promise<void>
     {
         const sessionId = this.getStoredSessionId();
         if (!sessionId) {
+            this.applyQueueUiState(false);
             this.scene.start('Login');
             return;
         }
 
         const auth = await fetchRouterSession(sessionId);
         if (!auth.ok || !auth.sessionId || !auth.username) {
+            if (isSessionSupersededError(auth)) {
+                this.forceSessionSupersededLogout();
+                return;
+            }
+            this.applyQueueUiState(false);
             if (typeof window !== 'undefined') {
                 window.sessionStorage.removeItem(ROUTER_SESSION_ID_STORAGE_KEY);
+                window.localStorage.removeItem(ROUTER_SESSION_ID_STORAGE_KEY);
             }
             this.scene.start('Login');
             return;
         }
 
         this.persistMatchmakingIdentity(auth.sessionId, auth.username);
+        this.startAuthSessionPush(auth.sessionId);
 
         const deckState = await fetchUserDecks(auth.sessionId);
         this.selectedDeckId = deckState.ok ? (deckState.selectedDeckId ?? null) : null;
         if (!this.selectedDeckId) {
             this.matchmakingInProgress = false;
-            this.startButton.setInteractive({ useHandCursor: true });
-            this.startButtonLabel.setText('START');
+            this.applyQueueUiState(false);
             this.updateMatchmakingSubtitle('No deck selected. Open Deck Builder.');
             this.scene.start('DeckBuilder');
             return;
@@ -416,8 +667,44 @@ export class MainMenu extends Scene
         }
 
         this.stopMatchmakingPolling();
+        this.matchmakingInProgress = false;
+        this.applyQueueUiState(false);
         this.updateMatchmakingSubtitle('Match found. Validating room...');
         void this.transitionToAssignedRoom(room);
+    }
+
+    private async cancelMatchmakingFlow (): Promise<void>
+    {
+        if (!this.matchmakingInProgress || this.transitioning) {
+            return;
+        }
+
+        this.stopMatchmakingPolling();
+        this.matchmakingInProgress = false;
+        this.applyQueueUiState(false);
+
+        const sessionId = this.getStoredSessionId();
+        if (sessionId) {
+            await leaveMatchmakingQueue(sessionId);
+        }
+
+        this.updateMatchmakingSubtitle(this.selectedDeckId ? 'Matchmaking canceled.' : 'No deck selected. Open Deck Builder.');
+    }
+
+    private leaveQueueOnDisconnect (): void
+    {
+        if (!this.matchmakingInProgress || this.transitioning) {
+            return;
+        }
+
+        const sessionId = this.getStoredSessionId();
+        if (!sessionId) {
+            return;
+        }
+
+        this.matchmakingInProgress = false;
+        this.applyQueueUiState(false);
+        void leaveMatchmakingQueue(sessionId, true);
     }
 
     private async transitionToAssignedRoom (room: RouterAssignedRoom): Promise<void>
@@ -427,6 +714,7 @@ export class MainMenu extends Scene
         if (!roomHealthy) {
             this.matchmakingInProgress = true;
             this.transitioning = false;
+            this.applyQueueUiState(true);
             this.updateMatchmakingSubtitle('Room startup failed. Re-queueing...');
             const sessionId = typeof window !== 'undefined'
                 ? window.sessionStorage.getItem(ROUTER_SESSION_ID_STORAGE_KEY)
@@ -441,8 +729,31 @@ export class MainMenu extends Scene
         if (typeof window !== 'undefined') {
             window.sessionStorage.setItem(ROOM_BACKEND_BASE_URL_STORAGE_KEY, room.endpointUrl);
             // New room assignment should not reuse slot/reconnect identity from an old room.
-            window.sessionStorage.removeItem('avge_protocol_client_slot');
             window.sessionStorage.removeItem('avge_protocol_reconnect_token');
+
+            const activeSessionId = this.getStoredSessionId();
+            const playerSessionIds = Array.isArray(room.playerSessionIds) ? room.playerSessionIds : undefined;
+            if (
+                activeSessionId
+                && playerSessionIds
+                && playerSessionIds.length >= 2
+                && typeof playerSessionIds[0] === 'string'
+                && typeof playerSessionIds[1] === 'string'
+            ) {
+                const normalized = activeSessionId.trim();
+                if (normalized === playerSessionIds[0].trim()) {
+                    window.sessionStorage.setItem('avge_protocol_client_slot', 'p1');
+                }
+                else if (normalized === playerSessionIds[1].trim()) {
+                    window.sessionStorage.setItem('avge_protocol_client_slot', 'p2');
+                }
+                else {
+                    window.sessionStorage.removeItem('avge_protocol_client_slot');
+                }
+            }
+            else {
+                window.sessionStorage.removeItem('avge_protocol_client_slot');
+            }
         }
 
         this.updateMatchmakingSubtitle('Match found. Launching room...');
@@ -491,11 +802,16 @@ export class MainMenu extends Scene
         }
 
         const raw = window.sessionStorage.getItem(ROUTER_SESSION_ID_STORAGE_KEY);
-        if (typeof raw !== 'string' || raw.trim().length === 0) {
+        if (typeof raw === 'string' && raw.trim().length > 0) {
+            return raw.trim();
+        }
+
+        const persisted = window.localStorage.getItem(ROUTER_SESSION_ID_STORAGE_KEY);
+        if (typeof persisted !== 'string' || persisted.trim().length === 0) {
             return null;
         }
 
-        return raw.trim();
+        return persisted.trim();
     }
 
     private persistMatchmakingIdentity (sessionId: string, username: string): void
@@ -505,7 +821,22 @@ export class MainMenu extends Scene
         }
 
         window.sessionStorage.setItem(ROUTER_SESSION_ID_STORAGE_KEY, sessionId);
+        window.localStorage.setItem(ROUTER_SESSION_ID_STORAGE_KEY, sessionId);
         window.localStorage.setItem(ROUTER_USERNAME_STORAGE_KEY, username);
+    }
+
+    private formatUsernameIndicator (username: string | null | undefined): string
+    {
+        const normalized = typeof username === 'string' ? username.trim().toUpperCase() : '';
+        if (normalized.length === 0) {
+            return 'USER: ...';
+        }
+
+        const maxUsernameChars = 18;
+        const clipped = normalized.length > maxUsernameChars
+            ? `${normalized.slice(0, maxUsernameChars - 3)}...`
+            : normalized;
+        return `USER: ${clipped}`;
     }
 
     private updateQueueStatusLabel (queuePosition: number | null): void
@@ -528,17 +859,59 @@ export class MainMenu extends Scene
         this.stopMatchmakingPolling();
         this.matchmakingInProgress = false;
         this.transitioning = false;
-        this.startButton.setInteractive({ useHandCursor: true });
-        this.startButton.setFillStyle(0x0f172a, 0.9);
-        this.startButtonLabel.setTint(0xffffff);
-        this.startButtonLabel.setText('START');
+        this.applyQueueUiState(false);
+
+        if (isSessionSupersededError({ error: message })) {
+            this.forceSessionSupersededLogout();
+            return;
+        }
 
         const normalized = message.toLowerCase();
-        if (normalized.includes('unable to reach matchmaking provider') || normalized.includes('unable to reach matchmaking router')) {
+        if (normalized.includes('unable to reach matchmaking provider') || normalized.includes('Failed to connect to server')) {
             this.showDisconnectGate('Unable to reach matchmaking provider');
             return;
         }
 
         this.updateMatchmakingSubtitle(message);
+    }
+
+    private applyQueueUiState (inQueue: boolean): void
+    {
+        if (inQueue) {
+            this.startButton
+                .setInteractive({ useHandCursor: true })
+                .setFillStyle(0x7f1d1d, 0.96);
+            this.startButtonLabel
+                .setText('CANCEL')
+                .setTint(0xffffff);
+
+            this.decksButton
+                .disableInteractive()
+                .setFillStyle(0x334155, 0.5);
+            this.decksButtonLabel.setTint(0x94a3b8);
+
+            this.logoutButton
+                ?.disableInteractive()
+                .setFillStyle(0x334155, 0.5);
+            this.logoutButtonLabel?.setTint(0x94a3b8);
+            return;
+        }
+
+        this.startButton
+            .setInteractive({ useHandCursor: true })
+            .setFillStyle(0x0f172a, 0.9);
+        this.startButtonLabel
+            .setText('START')
+            .setTint(0xffffff);
+
+        this.decksButton
+            .setInteractive({ useHandCursor: true })
+            .setFillStyle(0x1e293b, 0.9);
+        this.decksButtonLabel.setTint(0xffffff);
+
+        this.logoutButton
+            ?.setInteractive({ useHandCursor: true })
+            .setFillStyle(0x7f1d1d, 0.95);
+        this.logoutButtonLabel?.setTint(0xffffff);
     }
 }

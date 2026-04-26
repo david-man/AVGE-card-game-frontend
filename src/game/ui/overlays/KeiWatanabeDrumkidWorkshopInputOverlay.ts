@@ -162,13 +162,17 @@ export class KeiWatanabeDrumkidWorkshopInputOverlay
 
         this.titleText = this.scene.add.bitmapText(
             this.scene.scale.width / 2,
-            startY - titleGap,
+            startY,
             'minogram',
             topMessage,
             fittedTitleFontSize
         )
             .setOrigin(0.5)
             .setDepth(overlayDepth);
+
+        const cardRowTopY = startY - Math.round(cardHeight / 2);
+        const titleOffset = Math.round(this.titleText.height / 2) + titleGap;
+        this.titleText.setY(cardRowTopY - titleOffset);
 
         const totalWidth = (items.length * cardWidth) + (Math.max(0, items.length - 1) * rowSpacing);
         const startX = Math.round((this.scene.scale.width - totalWidth) / 2) + Math.round(cardWidth / 2);

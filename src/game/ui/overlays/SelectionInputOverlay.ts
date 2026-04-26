@@ -208,13 +208,17 @@ export class SelectionInputOverlay
 
         this.selectionTitleText = this.scene.add.bitmapText(
             this.scene.scale.width / 2,
-            displayRowY - titleGap,
+            displayRowY,
             'minogram',
             topMessage,
             fittedTitleFontSize
         )
             .setOrigin(0.5)
             .setDepth(overlayDepth);
+
+        const displayRowTopY = displayRowY - Math.round(cardHeight / 2);
+        const titleOffset = Math.round(this.selectionTitleText.height / 2) + titleGap;
+        this.selectionTitleText.setY(displayRowTopY - titleOffset);
 
         const makeItemUi = (item: SelectionOverlayItem, centerX: number, centerY: number): SelectionItemUi => {
             const container = this.scene.add.container(centerX, centerY).setDepth(overlayDepth);

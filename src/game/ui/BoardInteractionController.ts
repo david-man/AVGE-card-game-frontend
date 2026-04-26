@@ -170,15 +170,109 @@ export class BoardInteractionController
             const ownerActiveZone = `${ownerId}-active`;
             const cardType = card.getCardType();
 
+            if (g.isPregameInitActive && g.isPregameInitActive() && cardType !== 'character') {
+                g.layoutAllHolders();
+                g.redrawAllCardMarks();
+                return;
+            }
+
             if (cardType === 'character') {
-                const validCharacterMove =
-                    (originZoneId === ownerHandZone && targetZoneId === ownerBenchZone) ||
-                    (originZoneId === ownerBenchZone && targetZoneId === ownerActiveZone) ||
-                    (originZoneId === ownerActiveZone && targetZoneId === ownerBenchZone);
+                const isInitPhase = Boolean(g.isPregameInitActive && g.isPregameInitActive());
+                const validCharacterMove = isInitPhase
+                    ? (
+                        (originZoneId === ownerHandZone && targetZoneId === ownerBenchZone) ||
+                        (originZoneId === ownerBenchZone && targetZoneId === ownerHandZone) ||
+                        (originZoneId === ownerBenchZone && targetZoneId === ownerActiveZone)
+                    )
+                    : (
+                        (originZoneId === ownerHandZone && targetZoneId === ownerBenchZone) ||
+                        (originZoneId === ownerBenchZone && targetZoneId === ownerActiveZone) ||
+                        (originZoneId === ownerActiveZone && targetZoneId === ownerBenchZone)
+                    );
 
                 if (!validCharacterMove) {
                     g.layoutAllHolders();
                     g.redrawAllCardMarks();
+                    return;
+                }
+
+                if (isInitPhase) {
+                    const initMoveDurationMs = 140;
+                    const animateCardBodyTo = (movingCard: any, x: number, y: number, onComplete: () => void): void => {
+                        g.tweens.add({
+                            targets: movingCard.body,
+                            x,
+                            y,
+                            duration: initMoveDurationMs,
+                            ease: 'Sine.easeOut',
+                            onUpdate: () => {
+                                movingCard.redrawMarks();
+                                g.updateAttachedChildrenPositions(movingCard);
+                            },
+                            onComplete,
+                        });
+                    };
+
+                    const completeLocalInitMove = (): void => {
+                        g.layoutAllHolders();
+                        g.redrawAllCardMarks();
+                        if (g.onPregameInitLocalMove) {
+                            g.onPregameInitLocalMove();
+                        }
+                    };
+
+                    if (originZoneId === ownerBenchZone && targetZoneId === ownerActiveZone) {
+                        const activeHolder = g.cardHolderById[ownerActiveZone];
+                        const benchHolder = g.cardHolderById[ownerBenchZone];
+                        const currentActive = activeHolder?.cards?.find((candidate: any) => candidate && candidate.id !== card.id && candidate.getCardType && candidate.getCardType() === 'character');
+
+                        if (!activeHolder || !benchHolder) {
+                            g.moveCardToZone(card, targetZoneId, () => {
+                                completeLocalInitMove();
+                            });
+                            return;
+                        }
+
+                        if (currentActive) {
+                            let completedAnimations = 0;
+                            const finishSwapAnimation = (): void => {
+                                completedAnimations += 1;
+                                if (completedAnimations < 2) {
+                                    return;
+                                }
+
+                                g.moveCardToZone(currentActive, ownerBenchZone);
+                                g.moveCardToZone(card, targetZoneId, () => {
+                                    completeLocalInitMove();
+                                });
+                            };
+
+                            animateCardBodyTo(card, activeHolder.x, activeHolder.y, finishSwapAnimation);
+                            animateCardBodyTo(currentActive, benchHolder.x, benchHolder.y, finishSwapAnimation);
+                            return;
+                        }
+
+                        animateCardBodyTo(card, activeHolder.x, activeHolder.y, () => {
+                            g.moveCardToZone(card, targetZoneId, () => {
+                                completeLocalInitMove();
+                            });
+                        });
+                        return;
+                    }
+
+                    const targetHolder = g.cardHolderById[targetZoneId];
+                    if (!targetHolder) {
+                        g.moveCardToZone(card, targetZoneId, () => {
+                            completeLocalInitMove();
+                        });
+                        return;
+                    }
+
+                    animateCardBodyTo(card, targetHolder.x, targetHolder.y, () => {
+                        g.moveCardToZone(card, targetZoneId, () => {
+                            completeLocalInitMove();
+                        });
+                    });
                     return;
                 }
 
@@ -454,7 +548,7 @@ export class BoardInteractionController
             const fromZoneId = token.getZoneId();
             const fromAttachedToCardId = token.getAttachedToCardId();
 
-            const ownerEnergyZoneId = g.energyZoneIdByOwner[token.ownerId];
+            const sharedEnergyZoneId = g.energyZoneIdByOwner.p1;
             const targetZoneId = (dropZone?.getData('zoneId') as string | undefined) ?? null;
             const characterTarget = g.findOverlappedOwnedCharacterForToken(token);
 
@@ -472,17 +566,17 @@ export class BoardInteractionController
                 return;
             }
 
-            if (targetZoneId === ownerEnergyZoneId) {
+            if (targetZoneId === sharedEnergyZoneId) {
                 token.setAttachedToCardId(null);
-                g.setEnergyTokenZone(token, ownerEnergyZoneId);
-                g.layoutEnergyTokensInZone(ownerEnergyZoneId);
-                const didMove = fromZoneId !== ownerEnergyZoneId || fromAttachedToCardId !== null;
+                g.setEnergyTokenZone(token, sharedEnergyZoneId);
+                g.layoutEnergyTokensInZone(sharedEnergyZoneId);
+                const didMove = fromZoneId !== sharedEnergyZoneId || fromAttachedToCardId !== null;
                 if (didMove) {
                     g.emitBackendEvent('energy_moved', {
                         energy_id: token.id,
                         owner_id: token.ownerId,
                         from_zone_id: fromZoneId,
-                        to_zone_id: ownerEnergyZoneId,
+                        to_zone_id: sharedEnergyZoneId,
                         from_attached_to_card_id: fromAttachedToCardId,
                         to_attached_to_card_id: null,
                         interaction: 'drag_drop'

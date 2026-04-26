@@ -40,6 +40,25 @@ export class GameCommandProcessor
             return null;
         };
 
+        const parseTimeoutToken = (rawValue: string): number | null => {
+            const normalized = rawValue.trim().toLowerCase();
+            if (normalized === 'none' || normalized === 'null') {
+                return -1;
+            }
+            if (!/^-?\d+$/.test(normalized)) {
+                return null;
+            }
+
+            const parsed = Number.parseInt(normalized, 10);
+            if (!Number.isFinite(parsed)) {
+                return null;
+            }
+            if (parsed < -1) {
+                return null;
+            }
+            return parsed;
+        };
+
         const normalizeStatusKey = (rawStatus: string): 'Arranger' | 'Goon' | 'Maid' | null => {
             const normalized = rawStatus.trim().toLowerCase();
             if (normalized === 'arranger' || normalized === 'arr' || normalized === 'a') {
@@ -82,6 +101,7 @@ export class GameCommandProcessor
             // a command feedback loop.
             const isResponseEvent =
                 eventType === 'notify'
+                || eventType === 'reveal'
                 || eventType === 'input_result'
                 || eventType === 'input_state_change'
                 || eventType === 'winner';
@@ -198,27 +218,33 @@ export class GameCommandProcessor
         }
 
         if (action === 'create-energy' || action === 'create_energy') {
-            if (commandParts.length !== 5) {
-                g.appendTerminalLine('Usage: create_energy [energyid] [player-1|player-2] [energyholderid] [attached_card_id|none]');
+            if (commandParts.length < 4 || commandParts.length > 5) {
+                g.appendTerminalLine('Usage: create_energy [energyid] [shared-energy|energy-discard] [attached_card_id|none] [owner_id?]');
                 return;
             }
 
             const tokenId = commandParts[1];
 
-            const ownerId = g.parsePlayerTurnArg(commandParts[2]);
-            if (!ownerId) {
-                g.appendTerminalLine('Usage: create_energy [energyid] [player-1|player-2] [energyholderid] [attached_card_id|none]');
-                return;
-            }
-
-            const holderId = commandParts[3].toLowerCase();
+            const holderId = commandParts[2].toLowerCase();
             if (!g.energyHolderById[holderId]) {
                 g.appendTerminalLine(`Unknown energy holder: ${holderId}`);
                 return;
             }
 
-            const attachedArg = commandParts[4];
+            const attachedArg = commandParts[3];
             const attachedToCardId = attachedArg.toLowerCase() === 'none' ? null : attachedArg.toUpperCase();
+            const attachedCard = attachedToCardId ? resolveCardById(attachedToCardId) : null;
+            if (attachedToCardId && !attachedCard) {
+                g.appendTerminalLine(`Unknown attached card: ${attachedToCardId}`);
+                return;
+            }
+
+            const ownerArg = commandParts[4];
+            const ownerFromArg = typeof ownerArg === 'string' ? g.parsePlayerTurnArg(ownerArg) : null;
+            const fallbackOwner = g.playerTurn ?? 'p1';
+            const ownerId = attachedCard
+                ? attachedCard.getOwnerId()
+                : (ownerFromArg ?? (typeof ownerArg === 'string' && ownerArg.trim().length > 0 ? ownerArg.trim().toLowerCase() : fallbackOwner));
 
             const result = g.createEnergyTokenFromCommand({
                 id: tokenId,
@@ -386,7 +412,7 @@ export class GameCommandProcessor
 
         if (action === 'mv-energy' || action === 'mvenergy' || action === 'add-energy' || action === 'addenergy') {
             if (!rawArgOne || !rawArgTwo) {
-                g.appendTerminalLine('Usage: mv-energy [energyid] [target_card_id|p1-energy|p2-energy|energy-discard]');
+                g.appendTerminalLine('Usage: mv-energy [energyid] [target_card_id|shared-energy|energy-discard]');
                 return;
             }
 
@@ -441,14 +467,10 @@ export class GameCommandProcessor
                 return;
             }
 
-            if (targetCard.getOwnerId() !== token.ownerId) {
-                g.appendTerminalLine('mv-energy requires token and target card to share an owner.');
-                return;
-            }
-
             const targetZoneId = targetCard.getZoneId();
-            const ownerBenchZone = `${token.ownerId}-bench`;
-            const ownerActiveZone = `${token.ownerId}-active`;
+            const targetOwnerId = targetCard.getOwnerId();
+            const ownerBenchZone = `${targetOwnerId}-bench`;
+            const ownerActiveZone = `${targetOwnerId}-active`;
             if (targetZoneId !== ownerBenchZone && targetZoneId !== ownerActiveZone) {
                 g.appendTerminalLine(`mv-energy target must be in ${ownerBenchZone} or ${ownerActiveZone}.`);
                 return;
@@ -600,8 +622,13 @@ export class GameCommandProcessor
                 return;
             }
 
-            card.setHpValues(hp, maxHp);
-            g.redrawAllCardMarks();
+            if (typeof g.animateCardHpChange === 'function') {
+                g.animateCardHpChange(card, hp, maxHp);
+            }
+            else {
+                card.setHpValues(hp, maxHp);
+                g.redrawAllCardMarks();
+            }
             g.appendTerminalLine(`${cardId} HP -> [${hp}/${maxHp}]`);
             return;
         }
@@ -756,7 +783,11 @@ export class GameCommandProcessor
             }
 
             const parsedMessage = parseLeadingMessageAndRest(rawInputBody);
-            const topMessage = parsedMessage?.message ?? '';
+            const rawTopMessage = parsedMessage?.message ?? '';
+            const topMessage = rawTopMessage
+                .replace(/_+/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
             const rawInputArgs = parsedMessage?.rest ?? '';
             const canShowTargetedInputInCurrentView = !targetView || g.activeViewMode === 'admin' || g.activeViewMode === targetView;
 
@@ -768,18 +799,7 @@ export class GameCommandProcessor
             }
 
             if (!canShowTargetedInputInCurrentView) {
-                g.clearOverlayPreviewIfActive();
-                g.setBoardInputEnabled(false, false);
-                g.appendTerminalLine(`Input OFF (target: ${g.getViewModeLabel(targetView)}, current: ${g.getViewModeLabel(g.activeViewMode)})`);
-                emitCommandEvent('input_state_change', {
-                    input_type: 'off',
-                    requested_input_type: mode,
-                    target_view: g.getViewModeLabel(targetView),
-                    current_view: g.getViewModeLabel(g.activeViewMode),
-                    message: topMessage,
-                    enabled: false,
-                    reason: 'view_mismatch'
-                });
+                g.appendTerminalLine(`Input routed to ${g.getViewModeLabel(targetView)} (current: ${g.getViewModeLabel(g.activeViewMode)}).`);
                 return;
             }
 
@@ -1254,11 +1274,20 @@ export class GameCommandProcessor
                 return;
             }
 
-            const message = commandParts
-                .slice(2)
+            let timeoutSeconds: number | null = null;
+            let messageTokens = commandParts.slice(2);
+            if (messageTokens.length >= 1) {
+                const maybeTimeout = parseTimeoutToken(messageTokens[messageTokens.length - 1]);
+                if (maybeTimeout !== null) {
+                    timeoutSeconds = maybeTimeout;
+                    messageTokens = messageTokens.slice(0, -1);
+                }
+            }
+
+            const message = messageTokens
                 .join(' ')
                 .trim()
-                .replace(/[_-]+/g, ' ')
+                .replace(/_+/g, ' ')
                 .replace(/\s+/g, ' ')
                 .trim();
             if (!message) {
@@ -1286,9 +1315,10 @@ export class GameCommandProcessor
                     command: g.pendingNotifyCommand ?? command,
                     target_view: notifyTargetLabel,
                     message,
-                    dismissed: true
+                    dismissed: true,
+                    timeout_seconds: timeoutSeconds,
                 });
-            });
+            }, timeoutSeconds);
             return;
         }
 
@@ -1319,6 +1349,9 @@ export class GameCommandProcessor
                     : (g.activeViewMode === winnerView ? 0x166534 : 0x991b1b);
 
             g.setBoardInputEnabled(false);
+            if (typeof g.markMatchEndedAwaitingExit === 'function') {
+                g.markMatchEndedAwaitingExit();
+            }
             g.appendTerminalLine(`WINNER -> ${winnerLabel}`);
             g.inputOverlayController.startWinnerOverlay(winnerLabel, panelColor, () => {
                 emitCommandEvent('winner', {
@@ -1327,7 +1360,12 @@ export class GameCommandProcessor
                     panel_color: panelColor,
                     redirected_to: 'MainMenu'
                 });
-                g.scene.start('MainMenu');
+                if (typeof g.returnToMainMenuAfterMatchEnd === 'function') {
+                    g.returnToMainMenuAfterMatchEnd();
+                }
+                else {
+                    g.scene.start('MainMenu');
+                }
             });
             return;
         }
@@ -1338,16 +1376,50 @@ export class GameCommandProcessor
                 return;
             }
 
-            const targetView = g.parseViewModeArg(rawArgOne.toLowerCase());
-            if (!targetView || targetView === 'admin') {
-                g.appendTerminalLine('Usage: reveal [player-1|player-2] [list of cards]');
+            const normalizedRevealTarget = rawArgOne.toLowerCase();
+            const revealBoth = normalizedRevealTarget === 'both' || normalizedRevealTarget === 'all';
+            const targetView = revealBoth
+                ? (g.activeViewMode === 'admin' ? null : g.activeViewMode)
+                : g.parseViewModeArg(normalizedRevealTarget);
+            if ((!targetView || targetView === 'admin') && !revealBoth) {
+                g.appendTerminalLine('Usage: reveal [player-1|player-2|both] [list of cards]');
                 return;
             }
 
-            const listRaw = commandParts.slice(2).join(' ').trim();
-            if (!listRaw) {
-                g.appendTerminalLine('Usage: reveal [player-1|player-2] [list of cards]');
+            const payloadRaw = commandParts.slice(2).join(' ').trim();
+            if (!payloadRaw) {
+                g.appendTerminalLine('Usage: reveal [player-1|player-2|both] [list of cards]');
                 return;
+            }
+
+            let listRaw = payloadRaw;
+            let revealMessage = '';
+            let timeoutSeconds: number | null = null;
+            if (payloadRaw.startsWith('[')) {
+                const listEndIndex = payloadRaw.indexOf(']');
+                if (listEndIndex <= 0) {
+                    g.appendTerminalLine('Usage: reveal [player-1|player-2|both] [list of cards] [message?]');
+                    return;
+                }
+                listRaw = payloadRaw.slice(0, listEndIndex + 1).trim();
+                const trailingTokens = payloadRaw
+                    .slice(listEndIndex + 1)
+                    .trim()
+                    .split(/\s+/)
+                    .filter((token) => token.length > 0);
+                if (trailingTokens.length > 0) {
+                    const maybeTimeout = parseTimeoutToken(trailingTokens[trailingTokens.length - 1]);
+                    if (maybeTimeout !== null) {
+                        timeoutSeconds = maybeTimeout;
+                        trailingTokens.pop();
+                    }
+                }
+                revealMessage = trailingTokens
+                    .join(' ')
+                    .trim()
+                    .replace(/_+/g, ' ')
+                    .replace(/\s+/g, ' ')
+                    .trim();
             }
 
             if (g.inputOverlayController.hasActiveOverlay()) {
@@ -1355,10 +1427,12 @@ export class GameCommandProcessor
                 return;
             }
 
-            if (g.activeViewMode !== 'admin' && g.activeViewMode !== targetView) {
+            if (!revealBoth && g.activeViewMode !== 'admin' && g.activeViewMode !== targetView) {
                 g.appendTerminalLine(`Reveal skipped in ${g.getViewModeLabel(g.activeViewMode)} view (target: ${g.getViewModeLabel(targetView)}).`);
                 return;
             }
+
+            const revealTargetLabel = revealBoth ? 'BOTH PLAYERS' : g.getViewModeLabel(targetView);
 
             const cleanedList = listRaw.replace(/^\[/, '').replace(/\]$/, '');
             const revealCards = cleanedList
@@ -1366,8 +1440,7 @@ export class GameCommandProcessor
                 .map((entry) => entry.trim())
                 .filter((entry) => entry.length > 0)
                 .map((entry) => {
-                    const normalized = entry.toUpperCase();
-                    const card = resolveCardById(normalized);
+                    const card = resolveCardById(entry);
                     if (card) {
                         return {
                             id: card.id,
@@ -1379,7 +1452,7 @@ export class GameCommandProcessor
                     }
 
                     return {
-                        id: normalized,
+                        id: entry,
                         cardClassLabel: 'UNKNOWN',
                         cardColor: 0x334155,
                         cardTypeLabel: 'CARD',
@@ -1390,16 +1463,20 @@ export class GameCommandProcessor
             g.setBoardInputEnabled(false);
             g.overlayPreviewContext = 'reveal';
             g.refreshCardActionButtons();
-            g.appendTerminalLine(`Reveal -> ${g.getViewModeLabel(targetView)} (${revealCards.length})`);
+            g.appendTerminalLine(`Reveal -> ${revealTargetLabel} (${revealCards.length})`);
             g.inputOverlayController.startRevealOverlay(
-                g.getViewModeLabel(targetView),
+                revealTargetLabel,
                 revealCards,
+                revealMessage,
+                timeoutSeconds,
                 () => {
                     g.overlayPreviewContext = null;
                     g.appendTerminalLine('Reveal dismissed.');
                     emitCommandEvent('reveal', {
-                        target_view: g.getViewModeLabel(targetView),
+                        target_view: revealTargetLabel,
                         cards: revealCards,
+                        message: revealMessage || null,
+                        timeout_seconds: timeoutSeconds,
                         dismissed: true
                     });
                     g.setBoardInputEnabled(true);
@@ -1408,7 +1485,7 @@ export class GameCommandProcessor
                     const card = resolveCardById(cardId);
                     if (card) {
                         g.overlayPreviewContext = 'reveal';
-                        g.showCardPreview(card);
+                        g.showCardPreview(card, { forceFaceUp: true });
                     }
                 },
                 () => {
@@ -1483,7 +1560,19 @@ export class GameCommandProcessor
                 return;
             }
 
-            const pileIds = ['p1-discard', 'p1-deck', 'p2-discard', 'p2-deck'];
+            const defaultPileIds = ['p1-discard', 'p1-deck', 'p2-discard', 'p2-deck'];
+            const requestedPileId = rawArgOne?.toLowerCase();
+            const pileIds = requestedPileId ? [requestedPileId] : defaultPileIds;
+
+            if (requestedPileId) {
+                const isSupportedTargetPile = defaultPileIds.includes(requestedPileId);
+                if (!isSupportedTargetPile) {
+                    g.appendTerminalLine(`Unsupported shuffle pile: ${requestedPileId}`);
+                    g.appendTerminalLine('Supported values: p1-deck, p1-discard, p2-deck, p2-discard');
+                    return;
+                }
+            }
+
             let animatedPileCount = 0;
 
             for (const pileId of pileIds) {
@@ -1717,12 +1806,12 @@ export class GameCommandProcessor
         g.appendTerminalLine('Commands:');
         g.appendTerminalLine('  help | ?');
         g.appendTerminalLine('  mv [cardid] [cardholderid|target_character_id] [index?]');
-        g.appendTerminalLine('  shuffle-animation');
+        g.appendTerminalLine('  shuffle-animation [p1-deck|p1-discard|p2-deck|p2-discard]?');
         g.appendTerminalLine('  unselect-all');
         g.appendTerminalLine('    alias: unselectall');
         g.appendTerminalLine('  notify [player-1|player-2|both] [msg]');
         g.appendTerminalLine('  winner [player-1|player-2]');
-        g.appendTerminalLine('  reveal [player-1|player-2] [list of cards]');
+        g.appendTerminalLine('  reveal [player-1|player-2|both] [list of cards]');
         g.appendTerminalLine('  game-phase [no-input|phase2|atk]');
         g.appendTerminalLine('    alias: phase');
         g.appendTerminalLine('  player-turn [player-1|player-2]');
@@ -1738,9 +1827,9 @@ export class GameCommandProcessor
         g.appendTerminalLine('    status_effect: arranger|goon|maid');
         g.appendTerminalLine('  flip [cardid]');
         g.appendTerminalLine('  rm [energyid]');
-        g.appendTerminalLine('  create_energy [energyid] [player-1|player-2] [energyholderid] [attached_card_id|none]');
+        g.appendTerminalLine('  create_energy [energyid] [shared-energy|energy-discard] [attached_card_id|none] [owner_id?]');
         g.appendTerminalLine('    alias: create-energy');
-        g.appendTerminalLine('  mv-energy [energyid] [target_card_id|p1-energy|p2-energy|energy-discard]');
+        g.appendTerminalLine('  mv-energy [energyid] [target_card_id|shared-energy|energy-discard]');
         g.appendTerminalLine('    alias: mvenergy');
         g.appendTerminalLine('  create_card [cardid] [player-1|player-2] [character|tool|item|stadium|supporter] [cardholderid] [card_class] [has_atk_1] [has_active] [has_atk_2] [hp] [maxhp] [attached_card_id|none]');
         g.appendTerminalLine('    alias: create-card');

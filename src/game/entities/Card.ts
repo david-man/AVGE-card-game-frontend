@@ -34,6 +34,13 @@ export type CardOptions = {
     has_atk_1?: boolean;
     has_atk_2?: boolean;
     has_active?: boolean;
+    has_passive?: boolean;
+    retreat_cost?: number;
+    atk_1_name?: string | null;
+    atk_2_name?: string | null;
+    active_name?: string | null;
+    atk_1_cost?: number;
+    atk_2_cost?: number;
 };
 
 export class Card
@@ -48,6 +55,13 @@ export class Card
     readonly hasAtk1: boolean;
     readonly hasAtk2: boolean;
     readonly hasActive: boolean;
+    readonly hasPassive: boolean;
+    readonly atk1Name: string | null;
+    readonly atk2Name: string | null;
+    readonly activeName: string | null;
+    readonly atk1Cost: number | null;
+    readonly atk2Cost: number | null;
+    readonly retreatCost: number;
     readonly body: Phaser.GameObjects.Rectangle;
     readonly baseColor: number;
 
@@ -84,6 +98,23 @@ export class Card
         this.hasAtk1 = options.has_atk_1 ?? false;
         this.hasAtk2 = options.has_atk_2 ?? false;
         this.hasActive = options.has_active ?? false;
+        this.hasPassive = options.has_passive ?? false;
+        this.retreatCost = Number.isFinite(options.retreat_cost) ? Math.max(0, Math.round(options.retreat_cost as number)) : 0;
+        this.atk1Cost = Number.isFinite(options.atk_1_cost)
+            ? Math.max(0, Math.round(options.atk_1_cost as number))
+            : null;
+        this.atk2Cost = Number.isFinite(options.atk_2_cost)
+            ? Math.max(0, Math.round(options.atk_2_cost as number))
+            : null;
+        this.atk1Name = typeof options.atk_1_name === 'string' && options.atk_1_name.trim().length > 0
+            ? options.atk_1_name.trim()
+            : null;
+        this.atk2Name = typeof options.atk_2_name === 'string' && options.atk_2_name.trim().length > 0
+            ? options.atk_2_name.trim()
+            : null;
+        this.activeName = typeof options.active_name === 'string' && options.active_name.trim().length > 0
+            ? options.active_name.trim()
+            : null;
         this.baseColor = options.color;
         this.baseIdFontSize = Math.max(CARD_TEXT_LAYOUT.minIdFontSize, Math.round(CARD_TEXT_LAYOUT.baseIdFontSize * UI_SCALE));
         this.baseTypeFontSize = Math.max(CARD_TEXT_LAYOUT.minTypeFontSize + 1, Math.round(CARD_TEXT_LAYOUT.baseTypeFontSize * UI_SCALE));
@@ -314,14 +345,49 @@ export class Card
         return this.hasAtk1;
     }
 
+    getAttackOneName (): string | null
+    {
+        return this.atk1Name;
+    }
+
+    getAttackOneCost (): number | null
+    {
+        return this.atk1Cost;
+    }
+
     hasAttackTwo (): boolean
     {
         return this.hasAtk2;
     }
 
+    getAttackTwoName (): string | null
+    {
+        return this.atk2Name;
+    }
+
+    getAttackTwoCost (): number | null
+    {
+        return this.atk2Cost;
+    }
+
     hasActiveAbility (): boolean
     {
         return this.hasActive;
+    }
+
+    hasPassiveAbility (): boolean
+    {
+        return this.hasPassive;
+    }
+
+    getRetreatCost (): number
+    {
+        return this.retreatCost;
+    }
+
+    getActiveAbilityName (): string | null
+    {
+        return this.activeName;
     }
 
     isTurnedOver (): boolean

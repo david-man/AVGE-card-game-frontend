@@ -2,8 +2,11 @@ import { Scene, GameObjects } from 'phaser';
 import { GAME_CENTER_X, GAME_HEIGHT, GAME_WIDTH, UI_SCALE } from '../config';
 import { CARD_CATALOG, CardCatalogEntry, CardCatalogCategory, CharacterCardType } from '../data/cardCatalog';
 import {
+    clearClientSessionState,
     createUserDeck,
     fetchUserDecks,
+    isSessionSupersededError,
+    subscribeToRouterSessionEvents,
     selectUserDeck,
     updateUserDeck,
     ROUTER_SESSION_ID_STORAGE_KEY,
@@ -45,8 +48,6 @@ export class DeckBuilder extends Scene
     saveLabel: GameObjects.BitmapText;
     backButton: GameObjects.Rectangle;
     backLabel: GameObjects.BitmapText;
-    setActiveButton: GameObjects.Rectangle;
-    setActiveLabel: GameObjects.BitmapText;
     renameButton: GameObjects.Rectangle;
     renameLabel: GameObjects.BitmapText;
     nextPageButton: GameObjects.Rectangle;
@@ -82,6 +83,7 @@ export class DeckBuilder extends Scene
         card: CardCatalogEntry | null;
     }>;
     private busy: boolean;
+    private authSessionUnsubscribe: (() => void) | null;
     private draftByDeckId: Map<string, DeckDraft>;
     private activeDeckId: string | null;
 
@@ -104,6 +106,7 @@ export class DeckBuilder extends Scene
         this.slotDecks = [];
         this.draftByDeckId = new Map<string, DeckDraft>();
         this.activeDeckId = null;
+        this.authSessionUnsubscribe = null;
     }
 
     preload (): void
@@ -130,6 +133,10 @@ export class DeckBuilder extends Scene
         this.slotDecks = [];
         this.draftByDeckId = new Map<string, DeckDraft>();
         this.activeDeckId = null;
+
+        this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+            this.stopAuthSessionPush();
+        });
 
         this.cameras.main.fadeIn(180, 0, 0, 0);
 
@@ -260,27 +267,6 @@ export class DeckBuilder extends Scene
             .setOrigin(0.5)
             .setTint(0xffffff);
 
-        this.setActiveButton = this.add.rectangle(
-            Math.round(GAME_CENTER_X + 95 * UI_SCALE),
-            Math.round(GAME_HEIGHT * 0.93),
-            Math.round(180 * UI_SCALE),
-            Math.round(48 * UI_SCALE),
-            0x1d4ed8,
-            0.95
-        )
-            .setStrokeStyle(2, 0xffffff, 0.85)
-            .setInteractive({ useHandCursor: true });
-
-        this.setActiveLabel = this.add.bitmapText(
-            this.setActiveButton.x,
-            this.setActiveButton.y,
-            'minogram',
-            'SET ACTIVE',
-            Math.max(12, Math.round(20 * UI_SCALE))
-        )
-            .setOrigin(0.5)
-            .setTint(0xffffff);
-
         this.buildDeckSlotButtons();
         this.buildCategoryButtons();
         this.buildCharacterTypeButtons();
@@ -313,15 +299,16 @@ export class DeckBuilder extends Scene
             this.renameCurrentDeck();
         });
 
-        this.setActiveButton.on('pointerdown', () => {
-            void this.setActiveCurrentDeck();
-        });
-
         this.backButton.on('pointerdown', () => {
             this.scene.start('MainMenu');
         });
 
         void this.loadDeck();
+
+        const sessionId = this.getStoredSessionId();
+        if (sessionId) {
+            this.startAuthSessionPush(sessionId);
+        }
     }
 
     private buildDeckSlotButtons (): void
@@ -612,6 +599,12 @@ export class DeckBuilder extends Scene
         const result = await fetchUserDecks(sessionId);
         if (!result.ok) {
             this.busy = false;
+            if (isSessionSupersededError(result)) {
+                this.stopAuthSessionPush();
+                clearClientSessionState();
+                this.scene.start('Login');
+                return;
+            }
             this.subtitle.setText(result.error ?? 'Failed to load decks.');
             this.renderRows();
             return;
@@ -633,9 +626,11 @@ export class DeckBuilder extends Scene
         const selectedFromResult = typeof result.selectedDeckId === 'string'
             ? this.slotDecks.find((deck) => deck?.deckId === result.selectedDeckId) as UserDeck | undefined
             : undefined;
+        const isNewUser = (result.decks ?? []).length === 0;
         let selectedDeck = selectedFromResult
-            ?? (this.slotDecks.find((deck) => deck !== null) as UserDeck | undefined)
-            ?? null;
+            ?? (isNewUser
+                ? (this.slotDecks[0] as UserDeck | null)
+                : ((this.slotDecks.find((deck) => deck !== null) as UserDeck | undefined) ?? null));
 
         if (selectedDeck && result.selectedDeckId !== selectedDeck.deckId) {
             await selectUserDeck(selectedDeck.deckId, sessionId);
@@ -656,6 +651,34 @@ export class DeckBuilder extends Scene
         this.refreshDeckSlotButtons();
         this.renderRows();
         this.updateSummaryText();
+    }
+
+    private startAuthSessionPush (sessionId: string): void
+    {
+        this.stopAuthSessionPush();
+        this.authSessionUnsubscribe = subscribeToRouterSessionEvents(sessionId, ({ reason, message }) => {
+            if (reason !== 'session_superseded') {
+                return;
+            }
+
+            this.stopAuthSessionPush();
+            clearClientSessionState();
+            this.scene.start('Login', {
+                systemMessage: typeof message === 'string' && message.trim().length > 0
+                    ? message
+                    : 'Signed out: account opened on another client.'
+            });
+        });
+    }
+
+    private stopAuthSessionPush (): void
+    {
+        if (!this.authSessionUnsubscribe) {
+            return;
+        }
+
+        this.authSessionUnsubscribe();
+        this.authSessionUnsubscribe = null;
     }
 
     private async ensureFixedDeckSlots (sessionId: string, decks: UserDeck[]): Promise<Array<UserDeck | null>>
@@ -759,8 +782,7 @@ export class DeckBuilder extends Scene
             const draftCards = draft?.cards ?? deck?.cards ?? [];
             const name = (draft?.deckName ?? deck?.name ?? this.defaultDeckName(button.index)).toUpperCase();
             const dirtyMarker = draft?.dirty ? '*' : '';
-            const activeMarker = deck && deck.deckId === this.activeDeckId ? '[A] ' : '';
-            button.label.setText(`${activeMarker}${name}${dirtyMarker} (${draftCards.length})`);
+            button.label.setText(`${name}${dirtyMarker} (${draftCards.length})`);
 
             const active = deck !== null && deck.deckId === this.state.deckId;
             button.body.setFillStyle(active ? 0x1d4ed8 : 0x0b1220, active ? 0.95 : 0.88);
@@ -795,10 +817,46 @@ export class DeckBuilder extends Scene
         this.updateSummaryText();
     }
 
-    private async setActiveCurrentDeck (): Promise<void>
+    private async selectDeckSlot (index: number): Promise<void>
     {
-        if (!this.state.deckId || this.busy) {
+        if (this.busy) {
             return;
+        }
+
+        let deck = this.slotDecks[index] ?? null;
+        if (!deck) {
+            const sessionId = this.getStoredSessionId();
+            if (!sessionId) {
+                this.scene.start('Login');
+                return;
+            }
+
+            this.busy = true;
+            this.subtitle.setText(`Creating ${this.defaultDeckName(index)}...`);
+            const created = await createUserDeck(this.defaultDeckName(index), [], sessionId);
+            this.busy = false;
+            if (!created.ok || !created.deck) {
+                this.subtitle.setText(created.error ?? 'Failed to create deck slot.');
+                this.renderRows();
+                return;
+            }
+
+            deck = created.deck;
+            this.slotDecks[index] = deck;
+            this.draftByDeckId.set(deck.deckId, {
+                deckId: deck.deckId,
+                deckName: deck.name,
+                cards: [...deck.cards],
+                dirty: false,
+            });
+            this.writeDeckSlotIds(sessionId, this.slotDecks.map((slotDeck) => slotDeck?.deckId ?? null));
+        }
+
+        const switchingDeck = this.state.deckId !== deck.deckId;
+        if (switchingDeck) {
+            this.persistCurrentDeckDraft();
+            this.applyDeckFromDraftOrDeck(deck);
+            this.state.pageIndex = 0;
         }
 
         const sessionId = this.getStoredSessionId();
@@ -808,34 +866,15 @@ export class DeckBuilder extends Scene
         }
 
         this.busy = true;
-        this.subtitle.setText('Setting active deck...');
-
-        const result = await selectUserDeck(this.state.deckId, sessionId);
+        const selectResult = await selectUserDeck(deck.deckId, sessionId);
         this.busy = false;
-        if (!result.ok) {
-            this.subtitle.setText(result.error ?? 'Failed to set active deck.');
+        if (!selectResult.ok) {
+            this.subtitle.setText(selectResult.error ?? 'Failed to set active deck.');
+            this.renderRows();
             return;
         }
 
-        this.activeDeckId = this.state.deckId;
-        this.refreshDeckSlotButtons();
-        this.updateSummaryText();
-    }
-
-    private async selectDeckSlot (index: number): Promise<void>
-    {
-        const deck = this.slotDecks[index] ?? null;
-        if (!deck || this.busy) {
-            return;
-        }
-
-        if (this.state.deckId === deck.deckId) {
-            return;
-        }
-
-        this.persistCurrentDeckDraft();
-        this.applyDeckFromDraftOrDeck(deck);
-        this.state.pageIndex = 0;
+        this.activeDeckId = deck.deckId;
 
         this.refreshDeckSlotButtons();
         this.renderRows();
@@ -1024,8 +1063,8 @@ export class DeckBuilder extends Scene
 
     private validateDeckCards (cards: string[]): string | null
     {
-        if (cards.length !== DECK_REQUIRED_CARD_COUNT) {
-            return `Deck must contain exactly ${DECK_REQUIRED_CARD_COUNT} cards.`;
+        if (cards.length > DECK_REQUIRED_CARD_COUNT) {
+            return `Deck cannot exceed ${DECK_REQUIRED_CARD_COUNT} cards.`;
         }
 
         const countByCardId = new Map<string, number>();

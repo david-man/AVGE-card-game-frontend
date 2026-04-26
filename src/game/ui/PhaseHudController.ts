@@ -8,7 +8,7 @@ import {
 import { fitBitmapTextToSingleLine } from './overlays/bitmapTextFit';
 
 type ViewMode = PlayerId | 'admin' | 'spectator';
-type GamePhase = 'no-input' | 'phase2' | 'atk';
+type GamePhase = 'no-input' | 'phase2' | 'atk' | 'init';
 
 type PhaseHudUi = {
     background: Phaser.GameObjects.Rectangle;
@@ -135,12 +135,15 @@ export class PhaseHudController
         this.ui.roundValue.setVisible(true);
         this.ui.phaseLabel.setVisible(true);
         this.ui.phaseValue.setVisible(true);
-        this.ui.turnLabel.setVisible(true);
-        this.ui.turnValue.setVisible(true);
+        const showTurnRow = gamePhase !== 'init';
+        this.ui.turnLabel.setVisible(showTurnRow);
+        this.ui.turnValue.setVisible(showTurnRow);
 
         this.ui.roundValue.setText(String(roundNumber));
         this.ui.phaseValue.setText(gamePhase.toUpperCase());
-        this.ui.turnValue.setText(turnUsername.toUpperCase());
+        if (showTurnRow) {
+            this.ui.turnValue.setText(turnUsername.toUpperCase());
+        }
         this.layoutUi();
     }
 
@@ -167,19 +170,24 @@ export class PhaseHudController
         const panelRight = this.scene.scale.width - this.rightMargin;
         const panelTop = this.topMargin;
 
-        const contentWidth = Math.max(
+        const hasTurnRow = this.ui.turnLabel.visible && this.ui.turnValue.visible;
+        const rowWidths = [
             this.ui.title.width,
             this.ui.roundLabel.width + this.colGap + this.ui.roundValue.width,
             this.ui.phaseLabel.width + this.colGap + this.ui.phaseValue.width,
-            this.ui.turnLabel.width + this.colGap + this.ui.turnValue.width
-        );
+        ];
+        if (hasTurnRow) {
+            rowWidths.push(this.ui.turnLabel.width + this.colGap + this.ui.turnValue.width);
+        }
+        const contentWidth = Math.max(...rowWidths);
 
         const panelWidth = Math.min(
             this.maxPanelWidth,
             Math.max(this.minPanelWidth, contentWidth + (this.panelPaddingX * 2))
         );
 
-        const panelHeight = (this.titleGap + (this.rowHeight * 4)) + (this.panelPaddingY * 2);
+        const dataRowCount = hasTurnRow ? 3 : 2;
+        const panelHeight = (this.titleGap + this.rowHeight + (this.rowHeight * dataRowCount)) + (this.panelPaddingY * 2);
         const panelLeft = panelRight - panelWidth;
         this.panelBounds = new Phaser.Geom.Rectangle(panelLeft, panelTop, panelWidth, panelHeight);
 
@@ -199,10 +207,15 @@ export class PhaseHudController
         this.ui.roundValue.setPosition(valueRightX, rowRoundY);
         this.ui.phaseLabel.setPosition(titleX, rowPhaseY);
         this.ui.phaseValue.setPosition(valueRightX, rowPhaseY);
-        this.ui.turnLabel.setPosition(titleX, rowTurnY);
-        this.ui.turnValue.setPosition(valueRightX, rowTurnY);
+        if (hasTurnRow) {
+            this.ui.turnLabel.setPosition(titleX, rowTurnY);
+            this.ui.turnValue.setPosition(valueRightX, rowTurnY);
+        }
 
-        const availableValueWidth = Math.max(12, Math.round(panelWidth - (this.panelPaddingX * 2) - this.colGap - Math.max(this.ui.roundLabel.width, this.ui.phaseLabel.width, this.ui.turnLabel.width)));
+        const maxLabelWidth = hasTurnRow
+            ? Math.max(this.ui.roundLabel.width, this.ui.phaseLabel.width, this.ui.turnLabel.width)
+            : Math.max(this.ui.roundLabel.width, this.ui.phaseLabel.width);
+        const availableValueWidth = Math.max(12, Math.round(panelWidth - (this.panelPaddingX * 2) - this.colGap - maxLabelWidth));
         this.ui.roundValue.setFontSize(fitBitmapTextToSingleLine({
             scene: this.scene,
             font: 'minogram',
@@ -219,13 +232,15 @@ export class PhaseHudController
             minSize: Math.max(9, Math.round(this.ui.phaseValue.fontSize * 0.72)),
             maxWidth: availableValueWidth
         }));
-        this.ui.turnValue.setFontSize(fitBitmapTextToSingleLine({
-            scene: this.scene,
-            font: 'minogram',
-            text: this.ui.turnValue.text,
-            preferredSize: this.ui.turnValue.fontSize,
-            minSize: Math.max(9, Math.round(this.ui.turnValue.fontSize * 0.72)),
-            maxWidth: availableValueWidth
-        }));
+        if (hasTurnRow) {
+            this.ui.turnValue.setFontSize(fitBitmapTextToSingleLine({
+                scene: this.scene,
+                font: 'minogram',
+                text: this.ui.turnValue.text,
+                preferredSize: this.ui.turnValue.fontSize,
+                minSize: Math.max(9, Math.round(this.ui.turnValue.fontSize * 0.72)),
+                maxWidth: availableValueWidth
+            }));
+        }
     }
 }

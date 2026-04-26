@@ -1,3 +1,5 @@
+import { io, Socket } from 'socket.io-client';
+
 const DEFAULT_BACKEND_BASE_URL = 'http://127.0.0.1:5500';
 const DEFAULT_ROUTER_BASE_URL = 'http://127.0.0.1:5600';
 
@@ -5,18 +7,22 @@ export const ROOM_BACKEND_BASE_URL_STORAGE_KEY = 'avge_room_backend_base_url';
 export const ROUTER_SESSION_ID_STORAGE_KEY = 'avge_router_session_id';
 export const ROUTER_USERNAME_STORAGE_KEY = 'avge_router_username';
 
+export type NetworkErrorCode = 'session_superseded' | 'unknown_session' | 'session_id_required' | string;
+
 export type AuthSessionResult = {
     ok: boolean;
     sessionId?: string;
     username?: string;
     currentRoomId?: string | null;
     error?: string;
+    errorCode?: NetworkErrorCode;
 };
 
 export type RouterAssignedRoom = {
     roomId: string;
     endpointUrl: string;
     status: string;
+    playerSessionIds?: [string, string];
 };
 
 export type RouterBootstrapSessionResult = {
@@ -25,6 +31,42 @@ export type RouterBootstrapSessionResult = {
     username?: string;
     currentRoomId?: string | null;
     error?: string;
+    errorCode?: NetworkErrorCode;
+};
+
+const normalizeErrorCode = (value: unknown): NetworkErrorCode | undefined => {
+    if (typeof value !== 'string') {
+        return undefined;
+    }
+
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+};
+
+export const isSessionSupersededError = (result: { errorCode?: string; error?: string } | null | undefined): boolean => {
+    if (!result) {
+        return false;
+    }
+
+    if (result.errorCode === 'session_superseded') {
+        return true;
+    }
+
+    const message = typeof result.error === 'string' ? result.error.toLowerCase() : '';
+    return message.includes('superseded');
+};
+
+export const clearClientSessionState = (): void => {
+    if (typeof window === 'undefined') {
+        return;
+    }
+
+    window.sessionStorage.removeItem(ROUTER_SESSION_ID_STORAGE_KEY);
+    window.localStorage.removeItem(ROUTER_SESSION_ID_STORAGE_KEY);
+    window.localStorage.removeItem(ROUTER_USERNAME_STORAGE_KEY);
+    window.sessionStorage.removeItem(ROOM_BACKEND_BASE_URL_STORAGE_KEY);
+    window.sessionStorage.removeItem('avge_protocol_client_slot');
+    window.sessionStorage.removeItem('avge_protocol_reconnect_token');
 };
 
 export type RouterQueueResult = {
@@ -34,6 +76,7 @@ export type RouterQueueResult = {
     queuePosition?: number | null;
     room?: RouterAssignedRoom;
     error?: string;
+    errorCode?: NetworkErrorCode;
 };
 
 export type UserDeck = {
@@ -48,6 +91,7 @@ export type UserDecksResult = {
     decks?: UserDeck[];
     selectedDeckId?: string | null;
     error?: string;
+    errorCode?: NetworkErrorCode;
 };
 
 export type DeckMutationResult = {
@@ -55,9 +99,97 @@ export type DeckMutationResult = {
     deck?: UserDeck;
     selectedDeckId?: string | null;
     error?: string;
+    errorCode?: NetworkErrorCode;
+};
+
+export type RouterForceLogoutPayload = {
+    reason: string;
+    message?: string;
+    sessionId?: string;
+};
+
+export const subscribeToRouterSessionEvents = (
+    sessionId: string,
+    onForceLogout: (payload: RouterForceLogoutPayload) => void
+): (() => void) => {
+    const normalizedSessionId = sessionId.trim();
+    if (normalizedSessionId.length === 0) {
+        return () => {
+            // no-op
+        };
+    }
+
+    const socket: Socket = io(getRouterBaseUrl(), {
+        transports: ['polling'],
+        upgrade: false,
+        reconnection: true,
+        reconnectionAttempts: Infinity,
+    });
+
+    const register = (): void => {
+        socket.emit('auth_register_session', {
+            session_id: normalizedSessionId,
+        });
+    };
+
+    socket.on('connect', register);
+
+    socket.on('auth_registration_error', (payload: unknown) => {
+        const data = typeof payload === 'object' && payload !== null
+            ? payload as { error_code?: unknown; error?: unknown }
+            : {};
+
+        if (typeof data.error_code === 'string' && data.error_code === 'session_superseded') {
+            onForceLogout({
+                reason: 'session_superseded',
+                message: typeof data.error === 'string' ? data.error : 'Signed out: account opened on another client.',
+            });
+        }
+    });
+
+    socket.on('force_logout', (payload: unknown) => {
+        const data = typeof payload === 'object' && payload !== null
+            ? payload as { reason?: unknown; message?: unknown; session_id?: unknown }
+            : {};
+
+        const reason = typeof data.reason === 'string' && data.reason.trim().length > 0
+            ? data.reason.trim()
+            : 'session_superseded';
+        const message = typeof data.message === 'string' && data.message.trim().length > 0
+            ? data.message.trim()
+            : 'Signed out: account opened on another client.';
+        const sessionIdFromPayload = typeof data.session_id === 'string' ? data.session_id.trim() : undefined;
+
+        onForceLogout({
+            reason,
+            message,
+            sessionId: sessionIdFromPayload,
+        });
+    });
+
+    register();
+
+    return () => {
+        socket.removeAllListeners();
+        socket.disconnect();
+    };
 };
 
 const normalizeBaseUrl = (value: string): string => value.trim().replace(/\/$/, '');
+
+const readRouterSessionIdFromStorage = (): string => {
+    if (typeof window === 'undefined') {
+        return '';
+    }
+
+    const fromSession = window.sessionStorage.getItem(ROUTER_SESSION_ID_STORAGE_KEY);
+    if (typeof fromSession === 'string' && fromSession.trim().length > 0) {
+        return fromSession.trim();
+    }
+
+    const fromLocal = window.localStorage.getItem(ROUTER_SESSION_ID_STORAGE_KEY);
+    return typeof fromLocal === 'string' ? fromLocal.trim() : '';
+};
 
 const readRoomBackendBaseUrlFromStorage = (): string | null => {
     if (typeof window === 'undefined') {
@@ -156,6 +288,7 @@ const parseAssignedRoom = (value: unknown): RouterAssignedRoom | undefined => {
         room_id?: unknown;
         endpoint_url?: unknown;
         status?: unknown;
+        player_session_ids?: unknown;
     };
 
     if (typeof room.room_id !== 'string' || room.room_id.trim().length === 0) {
@@ -166,10 +299,20 @@ const parseAssignedRoom = (value: unknown): RouterAssignedRoom | undefined => {
         return undefined;
     }
 
+    let playerSessionIds: [string, string] | undefined;
+    if (Array.isArray(room.player_session_ids) && room.player_session_ids.length >= 2) {
+        const first = room.player_session_ids[0];
+        const second = room.player_session_ids[1];
+        if (typeof first === 'string' && first.trim().length > 0 && typeof second === 'string' && second.trim().length > 0) {
+            playerSessionIds = [first.trim(), second.trim()];
+        }
+    }
+
     return {
         roomId: room.room_id.trim(),
         endpointUrl: normalizeBaseUrl(room.endpoint_url),
         status: typeof room.status === 'string' ? room.status : 'running',
+        playerSessionIds,
     };
 };
 
@@ -185,12 +328,13 @@ export const bootstrapRouterSession = async (username: string): Promise<RouterBo
 
     const sessionId =
         typeof window !== 'undefined'
-            ? window.sessionStorage.getItem(ROUTER_SESSION_ID_STORAGE_KEY)
+            ? readRouterSessionIdFromStorage()
             : null;
 
     try {
         const response = await fetch(`${getRouterBaseUrl()}/session/bootstrap`, {
             method: 'POST',
+            credentials: 'include',
             headers: {
                 'Content-Type': 'application/json'
             },
@@ -203,6 +347,7 @@ export const bootstrapRouterSession = async (username: string): Promise<RouterBo
         const payload = await response.json() as {
             ok?: unknown;
             error?: unknown;
+            error_code?: unknown;
             session_id?: unknown;
             username?: unknown;
             current_room_id?: unknown;
@@ -235,7 +380,7 @@ export const bootstrapRouterSession = async (username: string): Promise<RouterBo
         console.warn('[Network] Failed to bootstrap router session', error);
         return {
             ok: false,
-            error: 'Unable to reach matchmaking router.',
+            error: 'Failed to connect to server.',
         };
     }
 };
@@ -252,12 +397,13 @@ export const loginRouterSession = async (username: string): Promise<AuthSessionR
 
     const existingSessionId =
         typeof window !== 'undefined'
-            ? window.sessionStorage.getItem(ROUTER_SESSION_ID_STORAGE_KEY)
+            ? readRouterSessionIdFromStorage()
             : null;
 
     try {
         const response = await fetch(`${getRouterBaseUrl()}/api/v1/auth/login`, {
             method: 'POST',
+            credentials: 'include',
             headers: {
                 'Content-Type': 'application/json'
             },
@@ -272,6 +418,7 @@ export const loginRouterSession = async (username: string): Promise<AuthSessionR
         const payload = await response.json() as {
             ok?: unknown;
             error?: unknown;
+            error_code?: unknown;
             session_id?: unknown;
             username?: unknown;
             current_room_id?: unknown;
@@ -304,7 +451,7 @@ export const loginRouterSession = async (username: string): Promise<AuthSessionR
         console.warn('[Network] Failed to login router session', error);
         return {
             ok: false,
-            error: 'Unable to reach matchmaking router.',
+            error: 'Failed to connect to server.',
         };
     }
 };
@@ -316,7 +463,7 @@ export const fetchRouterSession = async (sessionId?: string): Promise<AuthSessio
 
     const sessionFromStorage =
         typeof window !== 'undefined'
-            ? window.sessionStorage.getItem(ROUTER_SESSION_ID_STORAGE_KEY)
+            ? readRouterSessionIdFromStorage()
             : null;
     const resolvedSessionId = sessionId ?? (typeof sessionFromStorage === 'string' ? sessionFromStorage.trim() : '');
     if (!resolvedSessionId) {
@@ -329,11 +476,13 @@ export const fetchRouterSession = async (sessionId?: string): Promise<AuthSessio
 
         const response = await fetch(url.toString(), {
             method: 'GET',
+            credentials: 'include',
         });
 
         const payload = await response.json() as {
             ok?: unknown;
             error?: unknown;
+            error_code?: unknown;
             session_id?: unknown;
             username?: unknown;
             current_room_id?: unknown;
@@ -343,6 +492,7 @@ export const fetchRouterSession = async (sessionId?: string): Promise<AuthSessio
             return {
                 ok: false,
                 error: typeof payload.error === 'string' ? payload.error : 'Session lookup failed.',
+                errorCode: normalizeErrorCode(payload.error_code),
             };
         }
 
@@ -367,7 +517,61 @@ export const fetchRouterSession = async (sessionId?: string): Promise<AuthSessio
         console.warn('[Network] Failed to fetch router session', error);
         return {
             ok: false,
-            error: 'Unable to reach matchmaking router.',
+            error: 'Failed to connect to server.',
+        };
+    }
+};
+
+export const fetchRouterSessionFromCookie = async (): Promise<AuthSessionResult> => {
+    if (typeof fetch !== 'function') {
+        return { ok: false, error: 'Fetch API is unavailable.' };
+    }
+
+    try {
+        const response = await fetch(`${getRouterBaseUrl()}/api/v1/auth/session`, {
+            method: 'GET',
+            credentials: 'include',
+        });
+
+        const payload = await response.json() as {
+            ok?: unknown;
+            error?: unknown;
+            error_code?: unknown;
+            session_id?: unknown;
+            username?: unknown;
+            current_room_id?: unknown;
+        };
+
+        if (!response.ok || payload.ok !== true) {
+            return {
+                ok: false,
+                error: typeof payload.error === 'string' ? payload.error : 'Session lookup failed.',
+                errorCode: normalizeErrorCode(payload.error_code),
+            };
+        }
+
+        const nextSessionId = typeof payload.session_id === 'string' ? payload.session_id.trim() : '';
+        const nextUsername = typeof payload.username === 'string' ? payload.username.trim() : '';
+
+        if (!nextSessionId || !nextUsername) {
+            return {
+                ok: false,
+                error: 'Session response missing required fields.',
+            };
+        }
+
+        return {
+            ok: true,
+            sessionId: nextSessionId,
+            username: nextUsername,
+            currentRoomId: typeof payload.current_room_id === 'string' ? payload.current_room_id : null,
+        };
+    }
+    catch (error) {
+        console.warn('[Network] Failed to fetch router session from cookie', error);
+        return {
+            ok: false,
+            error: 'Failed to connect to server.',
         };
     }
 };
@@ -379,7 +583,7 @@ export const logoutRouterSession = async (sessionId?: string): Promise<{ ok: boo
 
     const sessionFromStorage =
         typeof window !== 'undefined'
-            ? window.sessionStorage.getItem(ROUTER_SESSION_ID_STORAGE_KEY)
+            ? readRouterSessionIdFromStorage()
             : null;
     const resolvedSessionId = sessionId ?? (typeof sessionFromStorage === 'string' ? sessionFromStorage.trim() : '');
     if (!resolvedSessionId) {
@@ -389,6 +593,7 @@ export const logoutRouterSession = async (sessionId?: string): Promise<{ ok: boo
     try {
         const response = await fetch(`${getRouterBaseUrl()}/api/v1/auth/logout`, {
             method: 'POST',
+            credentials: 'include',
             headers: {
                 'Content-Type': 'application/json'
             },
@@ -409,7 +614,7 @@ export const logoutRouterSession = async (sessionId?: string): Promise<{ ok: boo
         console.warn('[Network] Failed to logout router session', error);
         return {
             ok: false,
-            error: 'Unable to reach matchmaking router.',
+            error: 'Failed to connect to server.',
         };
     }
 };
@@ -456,7 +661,12 @@ const resolveSessionId = (sessionId?: string): string => {
     }
 
     const fromStorage = window.sessionStorage.getItem(ROUTER_SESSION_ID_STORAGE_KEY);
-    return typeof fromStorage === 'string' ? fromStorage.trim() : '';
+    if (typeof fromStorage === 'string' && fromStorage.trim().length > 0) {
+        return fromStorage.trim();
+    }
+
+    const fromLocalStorage = window.localStorage.getItem(ROUTER_SESSION_ID_STORAGE_KEY);
+    return typeof fromLocalStorage === 'string' ? fromLocalStorage.trim() : '';
 };
 
 export const fetchUserDecks = async (sessionId?: string): Promise<UserDecksResult> => {
@@ -496,7 +706,7 @@ export const fetchUserDecks = async (sessionId?: string): Promise<UserDecksResul
     }
     catch (error) {
         console.warn('[Network] Failed to fetch user decks', error);
-        return { ok: false, error: 'Unable to reach matchmaking router.' };
+        return { ok: false, error: 'Failed to connect to server.' };
     }
 };
 
@@ -538,7 +748,7 @@ export const createUserDeck = async (name: string, cards: string[], sessionId?: 
     }
     catch (error) {
         console.warn('[Network] Failed to create user deck', error);
-        return { ok: false, error: 'Unable to reach matchmaking router.' };
+        return { ok: false, error: 'Failed to connect to server.' };
     }
 };
 
@@ -580,7 +790,7 @@ export const updateUserDeck = async (deckId: string, name: string, cards: string
     }
     catch (error) {
         console.warn('[Network] Failed to update user deck', error);
-        return { ok: false, error: 'Unable to reach matchmaking router.' };
+        return { ok: false, error: 'Failed to connect to server.' };
     }
 };
 
@@ -616,7 +826,7 @@ export const selectUserDeck = async (deckId: string, sessionId?: string): Promis
     }
     catch (error) {
         console.warn('[Network] Failed to select user deck', error);
-        return { ok: false, error: 'Unable to reach matchmaking router.' };
+        return { ok: false, error: 'Failed to connect to server.' };
     }
 };
 
@@ -667,7 +877,7 @@ export const enqueueForMatchmaking = async (sessionId: string): Promise<RouterQu
         console.warn('[Network] Failed to enqueue matchmaking request', error);
         return {
             ok: false,
-            error: 'Unable to reach matchmaking router.',
+            error: 'Failed to connect to server.',
         };
     }
 };
@@ -713,7 +923,129 @@ export const fetchMatchmakingStatus = async (sessionId: string): Promise<RouterQ
         console.warn('[Network] Failed to fetch matchmaking status', error);
         return {
             ok: false,
-            error: 'Unable to reach matchmaking router.',
+            error: 'Failed to connect to server.',
+        };
+    }
+};
+
+export const rejoinAssignedRoom = async (
+    sessionId: string,
+    roomId?: string | null,
+): Promise<{ ok: boolean; room?: RouterAssignedRoom; error?: string }> => {
+    if (typeof fetch !== 'function') {
+        return { ok: false, error: 'Fetch API is unavailable.' };
+    }
+
+    const normalizedSessionId = sessionId.trim();
+    if (normalizedSessionId.length === 0) {
+        return { ok: false, error: 'session_id is required.' };
+    }
+
+    const normalizedRoomId = typeof roomId === 'string' && roomId.trim().length > 0
+        ? roomId.trim()
+        : undefined;
+
+    try {
+        const response = await fetch(`${getRouterBaseUrl()}/rooms/rejoin`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                session_id: normalizedSessionId,
+                room_id: normalizedRoomId,
+            }),
+        });
+
+        const payload = await response.json() as {
+            ok?: unknown;
+            error?: unknown;
+            room?: unknown;
+        };
+
+        if (!response.ok || payload.ok !== true) {
+            return {
+                ok: false,
+                error: typeof payload.error === 'string' ? payload.error : 'Failed to rejoin room.',
+            };
+        }
+
+        const room = parseAssignedRoom(payload.room);
+        if (!room) {
+            return {
+                ok: false,
+                error: 'Room data missing from rejoin response.',
+            };
+        }
+
+        return {
+            ok: true,
+            room,
+        };
+    }
+    catch (error) {
+        console.warn('[Network] Failed to rejoin assigned room', error);
+        return {
+            ok: false,
+            error: 'Failed to connect to server.',
+        };
+    }
+};
+
+export const leaveMatchmakingQueue = async (
+    sessionId: string,
+    bestEffort: boolean = false
+): Promise<{ ok: boolean; error?: string }> => {
+    if (!sessionId || sessionId.trim().length === 0) {
+        return { ok: false, error: 'session_id is required.' };
+    }
+
+    const payload = JSON.stringify({
+        action: 'leave',
+        session_id: sessionId.trim(),
+    });
+
+    if (bestEffort && typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
+        try {
+            const beaconBody = new Blob([payload], { type: 'application/json' });
+            if (navigator.sendBeacon(`${getRouterBaseUrl()}/matchmaking/queue`, beaconBody)) {
+                return { ok: true };
+            }
+        }
+        catch {
+            // Fallback to keepalive fetch below.
+        }
+    }
+
+    if (typeof fetch !== 'function') {
+        return { ok: false, error: 'Fetch API is unavailable.' };
+    }
+
+    try {
+        const response = await fetch(`${getRouterBaseUrl()}/matchmaking/queue`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: payload,
+            keepalive: bestEffort,
+        });
+
+        const body = await response.json() as { ok?: unknown; error?: unknown };
+        if (!response.ok || body.ok !== true) {
+            return {
+                ok: false,
+                error: typeof body.error === 'string' ? body.error : 'Failed to leave matchmaking queue.',
+            };
+        }
+
+        return { ok: true };
+    }
+    catch (error) {
+        console.warn('[Network] Failed to leave matchmaking queue', error);
+        return {
+            ok: false,
+            error: 'Failed to connect to server.',
         };
     }
 };
@@ -727,7 +1059,14 @@ export type BackendCardSetup = {
     AVGECardClass: string;
     hasAtk1: boolean;
     hasActive: boolean;
+    hasPassive?: boolean;
     hasAtk2: boolean;
+    atk1Name?: string | null;
+    activeName?: string | null;
+    atk2Name?: string | null;
+    atk1Cost?: number;
+    atk2Cost?: number;
+    retreatCost?: number;
     hp: number;
     maxHp: number;
     attachedToCardId: string | null;
@@ -736,7 +1075,7 @@ export type BackendCardSetup = {
 
 export type BackendEnergySetup = {
     id: string;
-    ownerId: 'p1' | 'p2';
+    ownerId: string;
     holderId: string;
     attachedToCardId: string | null;
 };
@@ -778,6 +1117,10 @@ const ALLOWED_CARD_HOLDER_IDS = new Set([
     'p2-deck',
     'stadium'
 ]);
+const ALLOWED_ENERGY_HOLDER_IDS = new Set([
+    'shared-energy',
+    'energy-discard'
+]);
 
 const isBackendCardSetup = (value: unknown): value is BackendCardSetup => {
     if (typeof value !== 'object' || value === null) {
@@ -787,6 +1130,13 @@ const isBackendCardSetup = (value: unknown): value is BackendCardSetup => {
     const card = value as Partial<BackendCardSetup>;
     const hasValidStatusEffect = typeof card.statusEffect === 'object' && card.statusEffect !== null &&
         Object.values(card.statusEffect as Record<string, unknown>).every((count) => Number.isInteger(count) && (count as number) >= 0);
+    const hasValidAtk1Name = card.atk1Name === undefined || typeof card.atk1Name === 'string' || card.atk1Name === null;
+    const hasValidActiveName = card.activeName === undefined || typeof card.activeName === 'string' || card.activeName === null;
+    const hasValidAtk2Name = card.atk2Name === undefined || typeof card.atk2Name === 'string' || card.atk2Name === null;
+    const hasValidAtk1Cost = card.atk1Cost === undefined || typeof card.atk1Cost === 'number';
+    const hasValidAtk2Cost = card.atk2Cost === undefined || typeof card.atk2Cost === 'number';
+    const hasValidHasPassive = card.hasPassive === undefined || typeof card.hasPassive === 'boolean';
+    const hasValidRetreatCost = card.retreatCost === undefined || typeof card.retreatCost === 'number';
 
     return typeof card.id === 'string' &&
         (card.ownerId === 'p1' || card.ownerId === 'p2') &&
@@ -798,7 +1148,14 @@ const isBackendCardSetup = (value: unknown): value is BackendCardSetup => {
         typeof card.AVGECardClass === 'string' &&
         typeof card.hasAtk1 === 'boolean' &&
         typeof card.hasActive === 'boolean' &&
+        hasValidHasPassive &&
         typeof card.hasAtk2 === 'boolean' &&
+        hasValidAtk1Name &&
+        hasValidActiveName &&
+        hasValidAtk2Name &&
+        hasValidAtk1Cost &&
+        hasValidAtk2Cost &&
+        hasValidRetreatCost &&
         typeof card.hp === 'number' &&
         typeof card.maxHp === 'number' &&
         (typeof card.attachedToCardId === 'string' || card.attachedToCardId === null) &&
@@ -812,14 +1169,16 @@ const isBackendEnergySetup = (value: unknown): value is BackendEnergySetup => {
 
     const token = value as Partial<BackendEnergySetup>;
     return typeof token.id === 'string' &&
-        (token.ownerId === 'p1' || token.ownerId === 'p2') &&
+        typeof token.ownerId === 'string' &&
+        token.ownerId.trim().length > 0 &&
         typeof token.holderId === 'string' &&
+        ALLOWED_ENERGY_HOLDER_IDS.has(token.holderId) &&
         (typeof token.attachedToCardId === 'string' || token.attachedToCardId === null);
 };
 
 export type FrontendProtocolPacket = {
     ACK: number;
-    PacketType: 'ready' | 'register_client' | 'update_frontend' | 'frontend_event';
+    PacketType: 'ready' | 'register_client' | 'init_setup_done' | 'request_environment' | 'update_frontend' | 'frontend_event';
     Body: Record<string, unknown>;
     client_id?: string;
     client_slot?: 'p1' | 'p2';
@@ -829,7 +1188,7 @@ export type FrontendProtocolPacket = {
 export type BackendProtocolPacket = {
     SEQ: number;
     IsResponse: boolean;
-    PacketType: 'environment' | 'command';
+    PacketType: 'environment' | 'command' | 'init_state';
     Body: Record<string, unknown>;
 };
 
@@ -839,7 +1198,39 @@ export type BackendProtocolResponse = {
     reconnectToken?: string;
     bothPlayersConnected?: boolean;
     waitingForOpponent?: boolean;
+    waitingForInit?: boolean;
     requestFailed?: boolean;
+};
+
+const isBackendCommandPacketBody = (value: unknown): value is {
+    command: string;
+    command_id?: number;
+    target_slots?: string[];
+    response_category: string;
+    response_payload?: Record<string, unknown>;
+} => {
+    if (typeof value !== 'object' || value === null) {
+        return false;
+    }
+
+    const body = value as {
+        command?: unknown;
+        command_id?: unknown;
+        target_slots?: unknown;
+        response_category?: unknown;
+        response_payload?: unknown;
+    };
+
+    if (typeof body.command !== 'string' || body.command.trim().length === 0) {
+        return false;
+    }
+
+    const hasValidCommandId = body.command_id === undefined || Number.isInteger(body.command_id);
+    const hasValidTargetSlots = body.target_slots === undefined || (Array.isArray(body.target_slots) && body.target_slots.every((slot) => typeof slot === 'string'));
+    const hasValidCategory = typeof body.response_category === 'string' && body.response_category.trim().length > 0;
+    const hasValidPayload = body.response_payload === undefined || (typeof body.response_payload === 'object' && body.response_payload !== null);
+
+    return hasValidCommandId && hasValidTargetSlots && hasValidCategory && hasValidPayload;
 };
 
 const isBackendProtocolPacket = (value: unknown): value is BackendProtocolPacket => {
@@ -848,11 +1239,21 @@ const isBackendProtocolPacket = (value: unknown): value is BackendProtocolPacket
     }
 
     const packet = value as Partial<BackendProtocolPacket>;
-    return Number.isInteger(packet.SEQ) &&
+    const hasPacketEnvelope = Number.isInteger(packet.SEQ) &&
         typeof packet.IsResponse === 'boolean' &&
-        (packet.PacketType === 'environment' || packet.PacketType === 'command') &&
+        (packet.PacketType === 'environment' || packet.PacketType === 'command' || packet.PacketType === 'init_state') &&
         typeof packet.Body === 'object' &&
         packet.Body !== null;
+
+    if (!hasPacketEnvelope) {
+        return false;
+    }
+
+    if (packet.PacketType === 'command') {
+        return isBackendCommandPacketBody(packet.Body);
+    }
+
+    return true;
 };
 
 export const sendFrontendProtocolPacket = async (
@@ -882,6 +1283,7 @@ export const sendFrontendProtocolPacket = async (
             reconnect_token?: unknown;
             both_players_connected?: unknown;
             waiting_for_opponent?: unknown;
+            waiting_for_init?: unknown;
         };
 
         const packets = Array.isArray(payload.packets)
@@ -904,12 +1306,17 @@ export const sendFrontendProtocolPacket = async (
             ? payload.waiting_for_opponent
             : undefined;
 
+        const waitingForInit = typeof payload.waiting_for_init === 'boolean'
+            ? payload.waiting_for_init
+            : undefined;
+
         return {
             packets,
             clientSlot,
             reconnectToken,
             bothPlayersConnected,
             waitingForOpponent,
+            waitingForInit,
             requestFailed: false,
         };
     }

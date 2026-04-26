@@ -1,4 +1,4 @@
-export const GAME_WIDTH = 1920 * 3;
+export const GAME_WIDTH = 1920 * 4;
 export const GAME_HEIGHT = GAME_WIDTH/1920 * 1080;
 
 export const GAME_CENTER_X = GAME_WIDTH / 2;
@@ -89,10 +89,11 @@ export const CARDHOLDER_SPACING_MULTIPLIERS = {
 export const CARDHOLDER_LAYOUT_SIDE_PADDING_MULTIPLIER = 0.35;
 
 export const ENERGYHOLDER_LAYOUT = {
-	widthMultiplier: 2.05,
-	heightMultiplier: 0.48,
+	widthMultiplier: 2,
+	heightMultiplier: 2,
 	xOffsetMultiplier: 2.25,
-	verticalSpreadMultiplier: 0.95
+	verticalSpreadMultiplier: 0.95,
+	stadiumClearanceWidthMultiplier: 0.2
 } as const;
 
 export const ENERGY_TOKEN_DEPTHS = {
@@ -166,20 +167,20 @@ export const GAME_COMMAND_TERMINAL_LAYOUT = {
 } as const;
 
 export const GAME_PREVIEW_LAYOUT = {
-	panelWidthBase: 240,
-	panelHeightBase: 300,
+	panelWidthBase: 200,
+	panelHeightBase: 360,
 	gapYBase: 20,
 	sideMarginBase: 24,
-	cardWidthMultiplier: 1.9,
-	cardHeightMultiplier: 1.9,
-	cardCenterYRatio: 0.34,
+	cardWidthMultiplier: 1.55,
+	cardHeightMultiplier: 1.55,
+	cardCenterYRatio: 0.285,
 	idYOffsetRatio: 0.16,
 	typeYOffsetRatio: 0.16,
 	hpOffsetXRatio: 0.06,
 	hpOffsetYRatio: 0.06,
-	paragraphXRatio: 0.08,
-	paragraphYRatio: 0.7,
-	paragraphWidthRatio: 0.84,
+	paragraphXRatio: 0.5,
+	paragraphYRatio: 0.54,
+	paragraphWidthRatio: 0.92,
 	panelFillColor: 0x101828,
 	panelFillAlpha: 0.92,
 	panelStrokeWidth: 2,
@@ -190,7 +191,7 @@ export const GAME_PREVIEW_LAYOUT = {
 	idFontSize: 16,
 	typeFontSize: 14,
 	hpFontSize: 11,
-	paragraphFontSize: 10,
+	paragraphFontSize: 12,
 	typeTint: 0xcde7ff,
 	paragraphTint: 0xe2e8f0
 } as const;
@@ -292,11 +293,6 @@ export const GAME_PLAYER_STATS_HUD_LAYOUT = {
 	depth: 315
 } as const;
 
-export const PLAYER_STARTING_ENERGY_TOKEN_IDS: Record<'p1' | 'p2', number[]> = {
-	p1: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
-	p2: [11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
-};
-
 export const GAME_LAYOUT = {
 	holderExtraHorizontalStepBase: 18,
 	selectionResyncDelayMs: 16,
@@ -312,9 +308,13 @@ export const GAME_LAYOUT = {
 	energyTokenZoneColGapRatio: 0.2,
 	energyTokenZoneMinGapPx: 2,
 	energyTokenZoneColumnsDefault: 5,
+	energyTokenZoneRowsPerColumn: 20,
+	energyTokenZoneColumnStepRatio: 1.2,
+	energyTokenZoneRowStepRatio: 0.6,
+	energyTokenZoneOverflowOffsetRatio: 0.05,
 	energyTokenZoneColumnsDiscard: 4,
 	energyTokenZonePileCount: 5,
-	energyTokenZonePileSidePaddingRatio: 0.14,
+	energyTokenZonePileSidePaddingRatio: 0.05,
 	energyTokenZonePileYRatio: 0.62,
 	energyTokenZonePileCountLabelYOffsetRatio: 0.7,
 	energyTokenRadiusMin: 10,
@@ -323,6 +323,12 @@ export const GAME_LAYOUT = {
 	energyTokenP1IdStart: 1,
 	energyTokenP2IdStart: 11,
 	energyStadiumOffsetMultiplier: 1.8
+} as const;
+
+export const GAME_HP_PULSE_ANIMATION = {
+	scaleMultiplier: 1.15,
+	durationMs: 500,
+	overlayAlpha: 0.8
 } as const;
 
 export const GAME_SHUFFLE_ANIMATION = {

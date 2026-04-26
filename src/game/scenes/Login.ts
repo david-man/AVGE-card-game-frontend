@@ -1,7 +1,12 @@
 import { Scene, GameObjects } from 'phaser';
 import { GAME_CENTER_X, GAME_HEIGHT, GAME_WIDTH, UI_SCALE } from '../config';
 import {
+    fetchMatchmakingStatus,
+    fetchRouterSession,
+    fetchRouterSessionFromCookie,
     loginRouterSession,
+    rejoinAssignedRoom,
+    ROOM_BACKEND_BASE_URL_STORAGE_KEY,
     ROUTER_SESSION_ID_STORAGE_KEY,
     ROUTER_USERNAME_STORAGE_KEY,
 } from '../Network';
@@ -131,6 +136,39 @@ export class Login extends Scene
         this.input.keyboard?.on('keydown-ENTER', () => {
             void this.submitLogin();
         });
+
+        void this.tryAutoContinueFromExistingSession();
+    }
+
+    private async tryAutoContinueFromExistingSession (): Promise<void>
+    {
+        if (this.submitting) {
+            return;
+        }
+
+        this.submitting = true;
+        this.setBusyState(true);
+        this.subtitle.setText('Checking existing sign-in...');
+
+        let sessionResult = await fetchRouterSessionFromCookie();
+        if (!sessionResult.ok) {
+            sessionResult = await fetchRouterSession();
+        }
+
+        if (sessionResult.ok && sessionResult.sessionId && sessionResult.username) {
+            if (typeof window !== 'undefined') {
+                window.sessionStorage.setItem(ROUTER_SESSION_ID_STORAGE_KEY, sessionResult.sessionId);
+                window.localStorage.setItem(ROUTER_SESSION_ID_STORAGE_KEY, sessionResult.sessionId);
+                window.localStorage.setItem(ROUTER_USERNAME_STORAGE_KEY, sessionResult.username);
+            }
+
+            await this.resumeAssignedRoomOrOpenMenu(sessionResult.sessionId, sessionResult.currentRoomId ?? null);
+            return;
+        }
+
+        this.submitting = false;
+        this.setBusyState(false);
+        this.subtitle.setText('Choose your username to continue');
     }
 
     private async submitLogin (): Promise<void>
@@ -153,7 +191,41 @@ export class Login extends Scene
 
         if (typeof window !== 'undefined') {
             window.sessionStorage.setItem(ROUTER_SESSION_ID_STORAGE_KEY, result.sessionId);
+            window.localStorage.setItem(ROUTER_SESSION_ID_STORAGE_KEY, result.sessionId);
             window.localStorage.setItem(ROUTER_USERNAME_STORAGE_KEY, result.username);
+        }
+
+        await this.resumeAssignedRoomOrOpenMenu(result.sessionId, result.currentRoomId ?? null);
+    }
+
+    private async resumeAssignedRoomOrOpenMenu (sessionId: string, currentRoomId: string | null): Promise<void>
+    {
+        const status = await fetchMatchmakingStatus(sessionId);
+        if (status.ok && status.status === 'assigned' && status.room) {
+            if (typeof window !== 'undefined') {
+                window.sessionStorage.setItem(ROOM_BACKEND_BASE_URL_STORAGE_KEY, status.room.endpointUrl);
+            }
+
+            this.cameras.main.fadeOut(180, 0, 0, 0);
+            this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
+                this.scene.start('Game');
+            });
+            return;
+        }
+
+        if (typeof currentRoomId === 'string' && currentRoomId.trim().length > 0) {
+            const rejoin = await rejoinAssignedRoom(sessionId, currentRoomId);
+            if (rejoin.ok && rejoin.room) {
+                if (typeof window !== 'undefined') {
+                    window.sessionStorage.setItem(ROOM_BACKEND_BASE_URL_STORAGE_KEY, rejoin.room.endpointUrl);
+                }
+
+                this.cameras.main.fadeOut(180, 0, 0, 0);
+                this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
+                    this.scene.start('Game');
+                });
+                return;
+            }
         }
 
         this.cameras.main.fadeOut(220, 0, 0, 0);
