@@ -46,9 +46,6 @@
       "atk2Description": "Power Chord: 90\nDiscard 2 (X) from this character.",
       "flavorText": "Antong channels his Lucky Star-inspired moe by donning his possessions with otaku stickers."
     },
-    "Arranger": {
-      "abilityDescription": "Whenever this character takes damage or has a tool discarded from it, you may shuffle a random card from your discard pile into your deck."
-    },
     "Ashley Toby": {
       "atk1Description": "Code Gyu: Seal Attack 40",
       "abilityName": "Instagram Viral",
@@ -226,9 +223,6 @@
       "abilityDescription": "The first time each game this character has 60 health or less, you may instantly deal 70 damage to one random opposing character.",
       "flavorText": "Legend says that adding 48 and 19 will summon Gabe instantly, even from miles away."
     },
-    "Goon": {
-      "abilityDescription": "This character gains 20 health, and each music stand used grants this character +10 damage, but their retreat cost is increased by 1"
-    },
     "Grace Zhao": {
       "atk1Description": "Feedback Loop: 50\nEach of your Benched Guitar type characters take 10 damage.",
       "abilityName": "Royalties:",
@@ -378,9 +372,6 @@
       "abilityName": "Midday Nap",
       "abilityDescription": "At the beginning of your turn, you may heal 10 damage from this character.",
       "flavorText": "Maggie's red Uniqlo scarf is so comfy, it puts its wearer to sleep immediately. When not sleeping, she moonlights as Lion Dance's social media chair."
-    },
-    "Maid": {
-      "abilityDescription": "This character is immune to all attacks of 10 base damage or less (before debuffs, but after super effective bonus)."
     },
     "Maid Outfit": {
       "abilityDescription": "Forced Recruitment: Attached character gains Maid status while holding this tool."

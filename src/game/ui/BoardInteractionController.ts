@@ -20,7 +20,27 @@ export class BoardInteractionController
             if (!g.boardInputEnabled) {
                 return;
             }
+
+            const previewVisible = Boolean(g.cardPreviewController?.isVisible?.());
+            const clickInsidePreview = previewVisible
+                ? Boolean(g.cardPreviewController.containsPoint(_pointer.worldX, _pointer.worldY))
+                : false;
             const clickedCard = currentlyOver.some((gameObject) => gameObject instanceof Phaser.GameObjects.Rectangle && g.cardByBody.has(gameObject as Phaser.GameObjects.Rectangle));
+            if (!clickedCard && previewVisible && !clickInsidePreview) {
+                if (g.selectedCard) {
+                    g.clearCardSelection();
+                }
+                else {
+                    g.overlayPreviewContext = null;
+                    g.hideCardPreview();
+                }
+                return;
+            }
+
+            if (!clickedCard && previewVisible && clickInsidePreview) {
+                return;
+            }
+
             if (!clickedCard) {
                 g.clearCardSelection();
             }

@@ -3,6 +3,7 @@ import { PlayerId } from '../entities';
 import {
     BASE_HEIGHT,
     BASE_WIDTH,
+    PHASE_HUD_TEXT_LAYOUT,
     UI_SCALE
 } from '../config';
 import { fitBitmapTextToSingleLine } from './overlays/bitmapTextFit';
@@ -56,7 +57,7 @@ export class PhaseHudController
     {
         this.rightMargin = Math.round((16 / BASE_WIDTH) * this.scene.scale.width);
         this.topMargin = Math.round((36 / BASE_HEIGHT) * this.scene.scale.height);
-        const fontSize = Math.max(10, Math.round(18 * UI_SCALE));
+        const fontSize = Math.max(PHASE_HUD_TEXT_LAYOUT.fontSizeMin, Math.round(PHASE_HUD_TEXT_LAYOUT.fontSizeBase * UI_SCALE));
 
         const background = this.scene.add.rectangle(0, 0, 10, 10, 0x0b132b, 0.88)
             .setOrigin(1, 0)

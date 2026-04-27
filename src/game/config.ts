@@ -1,4 +1,4 @@
-export const GAME_WIDTH = 1920 * 4;
+export const GAME_WIDTH = 1920;
 export const GAME_HEIGHT = GAME_WIDTH/1920 * 1080;
 
 export const GAME_CENTER_X = GAME_WIDTH / 2;
@@ -7,7 +7,7 @@ export const GAME_CENTER_Y = GAME_HEIGHT / 2;
 export const UI_BASE_WIDTH = 1920;
 export const UI_BASE_HEIGHT = 1080;
 export const UI_SCALE = Math.min(GAME_WIDTH / UI_BASE_WIDTH, GAME_HEIGHT / UI_BASE_HEIGHT);
-export const UI_MIN_FONT_SIZE = 30;
+export const UI_MIN_FONT_SIZE = 8;
 export const UI_FONT_FAMILY = 'MinecraftRegular, serif';
 export const UI_TEXT_RENDER_MODE: 'bitmap' | 'vector' = 'bitmap';
 
@@ -17,10 +17,10 @@ export const BASE_HEIGHT = 720;
 
 export const BOARD_SCALE = 0.8;
 
-export const CARD_BASE_WIDTH = 60;
-export const CARD_BASE_HEIGHT = 108;
-export const CARD_BORDER_WIDTH = 8;
-export const CARD_SELECTED_BORDER_WIDTH = 12;
+export const CARD_BASE_WIDTH = 72;
+export const CARD_BASE_HEIGHT = 120;
+export const CARD_BORDER_WIDTH = 2;
+export const CARD_SELECTED_BORDER_WIDTH = 6;
 
 export const AVGE_CARD_TYPES = ['NONE', 'WW', 'PERC', 'PIANO', 'STRING', 'GUITAR', 'CHOIR', 'BRASS'] as const;
 export type AVGECardType = typeof AVGE_CARD_TYPES[number];
@@ -70,6 +70,24 @@ export const CARD_TEXT_LAYOUT = {
 	classTwoLineTypeGap: 10,
 	classTwoLineYOffsetBoost: 6,
 	hpPadding: 2,
+	classFitMinSizeFloor: 6,
+	classFitMinSizeRatio: 0.56,
+	classFitMaxWidthRatio: 0.95,
+	classFitMaxWidthMin: 10,
+	classFitMaxLines: 3,
+	typeFitMinSizeRatio: 0.72,
+	typeFitMaxWidthRatio: 0.9,
+	typeFitMaxWidthMin: 10,
+	hpFitMinSizeRatio: 0.75,
+	hpFitMaxWidthRatio: 0.56,
+	hpFitMaxWidthMin: 10,
+	statusBaseSizeRatioToHp: 0.95,
+	statusFitMinSizeRatio: 0.75,
+	statusFitMaxWidthRatio: 0.8,
+	statusFitMaxWidthMin: 10,
+	statusGapFromHpRatio: 0.7,
+	statusGapFromHpMin: 1,
+	labelDepthOffset: 0.01,
 	minIdFontSize: 10,
 	minTypeFontSize: 8,
 	minHpFontSize: 10,
@@ -91,10 +109,10 @@ export const CARD_SELECTION_SCALE_MULTIPLIERS = {
 export const CARDHOLDER_BASE_WIDTH = {
 	hand: 640,
 	bench: 420,
-	active: 80,
-	discard: 90,
-	deck: 90,
-	stadium: 90
+	active: 96,
+	discard: 108,
+	deck: 108,
+	stadium: 108
 } as const;
 export const MAX_BENCH_CARDS = 3;
 export const CARDHOLDER_HEIGHT_MULTIPLIER = 1.2;
@@ -111,8 +129,8 @@ export const CARDHOLDER_LAYOUT_SIDE_PADDING_MULTIPLIER = 0.35;
 
 export const ENERGYHOLDER_LAYOUT = {
 	widthMultiplier: 2,
-	heightMultiplier: 2,
-	xOffsetMultiplier: 2.25,
+	heightMultiplier: 2.25,
+	xOffsetMultiplier: 1.875,
 	verticalSpreadMultiplier: 0.95,
 	stadiumClearanceWidthMultiplier: 0.2
 } as const;
@@ -188,20 +206,20 @@ export const GAME_COMMAND_TERMINAL_LAYOUT = {
 } as const;
 
 export const GAME_PREVIEW_LAYOUT = {
-	panelWidthBase: 200,
-	panelHeightBase: 360,
-	gapYBase: 20,
-	sideMarginBase: 24,
+	panelWidthBase: 225,
+	panelHeightBase: 450,
+	gapYBase: 0,
+	sideMarginBase: 0,
 	cardWidthMultiplier: 1.55,
 	cardHeightMultiplier: 1.55,
-	cardCenterYRatio: 0.285,
+	cardCenterYRatio: 0.2,
 	idYOffsetRatio: 0.16,
 	typeYOffsetRatio: 0.16,
 	hpOffsetXRatio: 0.06,
 	hpOffsetYRatio: 0.06,
 	paragraphXRatio: 0.5,
-	paragraphYRatio: 0.54,
-	paragraphWidthRatio: 0.92,
+	paragraphYRatio: 0.4,
+	paragraphWidthRatio: 0.95,
 	panelFillColor: 0x101828,
 	panelFillAlpha: 0.92,
 	panelStrokeWidth: 2,
@@ -212,19 +230,19 @@ export const GAME_PREVIEW_LAYOUT = {
 	idFontSize: 16,
 	idFontSizeMin: 14,
 	typeFontSize: 14,
-	typeFontSizeMin: 12,
+	typeFontSizeMin: 14,
 	hpFontSize: 11,
 	hpFontSizeMin: 10,
-	paragraphFontSize: 12,
-	paragraphFontSizeMin: 9,
+	paragraphFontSize: 16,
+	paragraphFontSizeMin: 14,
 	flavorFontSizeDelta: -1,
-	flavorFontSizeMin: 8,
+	flavorFontSizeMin: 14,
 	fitIdMinSize: 10,
-	fitIdSizeRatio: 0.72,
+	fitIdSizeRatio: 0.75,
 	fitIdWidthRatio: 0.9,
 	fitIdWidthMin: 12,
 	fitTypeMinSize: 9,
-	fitTypeSizeRatio: 0.72,
+	fitTypeSizeRatio: 0.75,
 	fitTypeWidthRatio: 0.9,
 	fitTypeWidthMin: 12,
 	fitHpMinSize: 8,
@@ -237,21 +255,112 @@ export const GAME_PREVIEW_LAYOUT = {
 	paragraphTint: 0xe2e8f0
 } as const;
 
+export const LOGIN_TEXT_LAYOUT = {
+	titleFontSizeBase: 54,
+	titleFontSizeMin: 28,
+	subtitleFontSizeBase: 20,
+	subtitleFontSizeMin: 12,
+	usernameFontSizeBase: 28,
+	usernameFontSizeMin: 16,
+	continueFontSizeBase: 28,
+	continueFontSizeMin: 16,
+	changeNameFontSizeBase: 24,
+	changeNameFontSizeMin: 14
+} as const;
+
+export const MAIN_MENU_TEXT_LAYOUT = {
+	titleFontSizeBase: 64,
+	titleFontSizeMin: 32,
+	subtitleFontSizeBase: 24,
+	subtitleFontSizeMin: 14,
+	accountFontSizeBase: 30,
+	accountFontSizeMin: 9,
+	startFontSizeBase: 36,
+	startFontSizeMin: 20,
+	deckBuilderFontSizeBase: 30,
+	deckBuilderFontSizeMin: 18,
+	disconnectTitleFontSizeBase: 34,
+	disconnectTitleFontSizeMin: 18,
+	disconnectContinueFontSizeBase: 26,
+	disconnectContinueFontSizeMin: 16
+} as const;
+
+export const DECK_BUILDER_TEXT_LAYOUT = {
+	titleFontSizeBase: 40,
+	titleFontSizeMin: 20,
+	subtitleFontSizeBase: 20,
+	subtitleFontSizeMin: 12,
+	pageIndicatorFontSizeBase: 16,
+	pageIndicatorFontSizeMin: 10,
+	pageNavFontSizeBase: 16,
+	pageNavFontSizeMin: 10,
+	actionFontSizeBase: 20,
+	actionFontSizeMin: 12,
+	slotTitleFontSizeBase: 16,
+	slotTitleFontSizeMin: 10,
+	slotLabelFontSizeBase: 13,
+	slotLabelFontSizeMin: 9,
+	categoryFontSizeBase: 12,
+	categoryFontSizeMin: 8,
+	characterTypeFontSizeBase: 10,
+	characterTypeFontSizeMin: 7,
+	rowIconFontSizeBase: 12,
+	rowIconFontSizeMin: 8,
+	rowCardNameFontSizeBase: 18,
+	rowCardNameFontSizeMin: 10,
+	rowAdjustFontSizeBase: 24,
+	rowAdjustFontSizeMin: 14,
+	rowCountFontSizeBase: 20,
+	rowCountFontSizeMin: 12,
+	searchTitleFontSizeBase: 24,
+	searchTitleFontSizeMin: 12,
+	searchHintFontSizeBase: 12,
+	searchHintFontSizeMin: 8,
+	searchQueryFontSizeBase: 15,
+	searchQueryFontSizeMin: 9,
+	searchButtonFontSizeBase: 12,
+	searchButtonFontSizeMin: 8,
+	searchRowNameFontSizeBase: 13,
+	searchRowNameFontSizeMin: 8,
+	searchRowMetaFontSizeBase: 10,
+	searchRowMetaFontSizeMin: 7,
+	searchRowAdjustFontSizeBase: 20,
+	searchRowAdjustFontSizeMin: 12,
+	searchRowCountFontSizeBase: 15,
+	searchRowCountFontSizeMin: 9,
+	searchPagerFontSizeBase: 13,
+	searchPagerFontSizeMin: 8
+} as const;
+
+export const GAME_STATUS_TEXT_LAYOUT = {
+	opponentDisconnectFontSizeBase: 16,
+	opponentDisconnectFontSizeMin: 14,
+	phaseStateActionFontSizeBase: 16,
+	phaseStateActionFontSizeMin: 10,
+	phaseStateActionFitFontSizeBase: 16,
+	phaseStateActionFitFontSizeMin: 9
+} as const;
+
+export const PHASE_HUD_TEXT_LAYOUT = {
+	fontSizeBase: 18,
+	fontSizeMin: 10
+} as const;
+
 export const DECK_BUILDER_CURRENT_DECK_PREVIEW_TEXT_LAYOUT = {
 	titleFontSizeBase: 18,
-	titleFontSizeMin: 10,
-	hintFontSizeBase: 11,
-	hintFontSizeMin: 8,
+	titleFontSizeMin: 12,
+	hintFontSizeBase: 18,
+	hintFontSizeMin: 12,
 	emptyStateFontSizeBase: 12,
-	emptyStateFontSizeMin: 8,
+	emptyStateFontSizeMin: 12,
 	sectionHeaderFontSizeBase: 12,
-	sectionHeaderFontSizeMin: 8,
-	tileIconFontSizeBase: 18,
-	tileIconFontSizeMin: 14,
-	tileNameFontSizeBase: 10,
-	tileNameFontSizeMin: 10,
-	tileCountFontSizeBase: 10,
-	tileCountFontSizeMin: 7
+	sectionHeaderFontSizeMin: 12,
+	tileIconFontSizeBase: 12,
+	tileIconFontSizeMin: 12,
+	tileNameFontSizeBase: 12,
+	tileNameFontSizeMin: 12,
+	tileCountFontSizeBase: 12,
+	tileCountFontSizeMin: 12
 } as const;
 
 export const DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT = {

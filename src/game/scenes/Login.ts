@@ -1,5 +1,5 @@
 import { Scene, GameObjects } from 'phaser';
-import { GAME_CENTER_X, GAME_HEIGHT, GAME_WIDTH, UI_SCALE } from '../config';
+import { GAME_CENTER_X, GAME_HEIGHT, GAME_WIDTH, LOGIN_TEXT_LAYOUT, UI_SCALE } from '../config';
 import {
     fetchMatchmakingStatus,
     fetchRouterSession,
@@ -55,7 +55,7 @@ export class Login extends Scene
             Math.round(GAME_HEIGHT * 0.24),
             'minogram',
             'LOGIN',
-            Math.max(28, Math.round(54 * UI_SCALE))
+            Math.max(LOGIN_TEXT_LAYOUT.titleFontSizeMin, Math.round(LOGIN_TEXT_LAYOUT.titleFontSizeBase * UI_SCALE))
         )
             .setOrigin(0.5)
             .setTint(0xffffff);
@@ -65,7 +65,7 @@ export class Login extends Scene
             Math.round(GAME_HEIGHT * 0.36),
             'minogram',
             'Choose your username to continue',
-            Math.max(12, Math.round(20 * UI_SCALE))
+            Math.max(LOGIN_TEXT_LAYOUT.subtitleFontSizeMin, Math.round(LOGIN_TEXT_LAYOUT.subtitleFontSizeBase * UI_SCALE))
         )
             .setOrigin(0.5)
             .setTint(0xcbd5e1);
@@ -75,7 +75,7 @@ export class Login extends Scene
             Math.round(GAME_HEIGHT * 0.46),
             'minogram',
             this.selectedUsername.toUpperCase(),
-            Math.max(16, Math.round(28 * UI_SCALE))
+            Math.max(LOGIN_TEXT_LAYOUT.usernameFontSizeMin, Math.round(LOGIN_TEXT_LAYOUT.usernameFontSizeBase * UI_SCALE))
         )
             .setOrigin(0.5)
             .setTint(0xffffff);
@@ -99,7 +99,7 @@ export class Login extends Scene
             Math.round(GAME_HEIGHT * 0.63),
             'minogram',
             'CONTINUE',
-            Math.max(16, Math.round(28 * UI_SCALE))
+            Math.max(LOGIN_TEXT_LAYOUT.continueFontSizeMin, Math.round(LOGIN_TEXT_LAYOUT.continueFontSizeBase * UI_SCALE))
         )
             .setOrigin(0.5)
             .setTint(0xffffff);
@@ -120,7 +120,7 @@ export class Login extends Scene
             Math.round(GAME_HEIGHT * 0.76),
             'minogram',
             'CHANGE NAME',
-            Math.max(14, Math.round(24 * UI_SCALE))
+            Math.max(LOGIN_TEXT_LAYOUT.changeNameFontSizeMin, Math.round(LOGIN_TEXT_LAYOUT.changeNameFontSizeBase * UI_SCALE))
         )
             .setOrigin(0.5)
             .setTint(0xffffff);

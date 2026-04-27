@@ -8,6 +8,7 @@ import {
     DECK_BUILDER_CATEGORY_FILL_COLORS,
     DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT,
     DECK_BUILDER_CURRENT_DECK_PREVIEW_TEXT_LAYOUT,
+    DECK_BUILDER_TEXT_LAYOUT,
     GAME_CENTER_X,
     GAME_HEIGHT,
     GAME_WIDTH,
@@ -27,6 +28,7 @@ import {
     UserDeck,
 } from '../Network';
 import { CardPreviewController } from '../ui/CardPreviewController';
+import { fitBitmapTextToMultiLine } from '../ui/overlays/bitmapTextFit';
 
 type DeckBuilderState = {
     deckId: string | null;
@@ -240,7 +242,7 @@ export class DeckBuilder extends Scene
             Math.round(GAME_HEIGHT * 0.09),
             'minogram',
             'DECK BUILDER',
-            Math.max(20, Math.round(40 * UI_SCALE))
+            Math.max(DECK_BUILDER_TEXT_LAYOUT.titleFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.titleFontSizeBase * UI_SCALE))
         )
             .setOrigin(0.5)
             .setTint(0xffffff);
@@ -250,7 +252,7 @@ export class DeckBuilder extends Scene
             Math.round(GAME_HEIGHT * 0.15),
             'minogram',
             'Loading deck...',
-            Math.max(12, Math.round(20 * UI_SCALE))
+            Math.max(DECK_BUILDER_TEXT_LAYOUT.subtitleFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.subtitleFontSizeBase * UI_SCALE))
         )
             .setOrigin(0.5)
             .setTint(0xe2e8f0);
@@ -260,7 +262,7 @@ export class DeckBuilder extends Scene
             Math.round(GAME_HEIGHT * 0.84),
             'minogram',
             '',
-            Math.max(10, Math.round(16 * UI_SCALE))
+            Math.max(DECK_BUILDER_TEXT_LAYOUT.pageIndicatorFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.pageIndicatorFontSizeBase * UI_SCALE))
         )
             .setOrigin(0.5)
             .setTint(0xcbd5e1);
@@ -276,7 +278,13 @@ export class DeckBuilder extends Scene
             .setStrokeStyle(2, 0xffffff, 0.75)
             .setInteractive({ useHandCursor: true });
 
-        this.add.bitmapText(this.prevPageButton.x, this.prevPageButton.y, 'minogram', 'PREV', Math.max(10, Math.round(16 * UI_SCALE)))
+        this.add.bitmapText(
+            this.prevPageButton.x,
+            this.prevPageButton.y,
+            'minogram',
+            'PREV',
+            Math.max(DECK_BUILDER_TEXT_LAYOUT.pageNavFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.pageNavFontSizeBase * UI_SCALE))
+        )
             .setOrigin(0.5)
             .setTint(0xffffff);
 
@@ -291,7 +299,13 @@ export class DeckBuilder extends Scene
             .setStrokeStyle(2, 0xffffff, 0.75)
             .setInteractive({ useHandCursor: true });
 
-        this.add.bitmapText(this.nextPageButton.x, this.nextPageButton.y, 'minogram', 'NEXT', Math.max(10, Math.round(16 * UI_SCALE)))
+        this.add.bitmapText(
+            this.nextPageButton.x,
+            this.nextPageButton.y,
+            'minogram',
+            'NEXT',
+            Math.max(DECK_BUILDER_TEXT_LAYOUT.pageNavFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.pageNavFontSizeBase * UI_SCALE))
+        )
             .setOrigin(0.5)
             .setTint(0xffffff);
 
@@ -311,7 +325,7 @@ export class DeckBuilder extends Scene
             this.saveButton.y,
             'minogram',
             'SAVE',
-            Math.max(12, Math.round(20 * UI_SCALE))
+            Math.max(DECK_BUILDER_TEXT_LAYOUT.actionFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.actionFontSizeBase * UI_SCALE))
         )
             .setOrigin(0.5)
             .setTint(0xffffff);
@@ -332,7 +346,7 @@ export class DeckBuilder extends Scene
             this.backButton.y,
             'minogram',
             'BACK',
-            Math.max(12, Math.round(20 * UI_SCALE))
+            Math.max(DECK_BUILDER_TEXT_LAYOUT.actionFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.actionFontSizeBase * UI_SCALE))
         )
             .setOrigin(0.5)
             .setTint(0xffffff);
@@ -353,7 +367,7 @@ export class DeckBuilder extends Scene
             this.renameButton.y,
             'minogram',
             'RENAME',
-            Math.max(12, Math.round(20 * UI_SCALE))
+            Math.max(DECK_BUILDER_TEXT_LAYOUT.actionFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.actionFontSizeBase * UI_SCALE))
         )
             .setOrigin(0.5)
             .setTint(0xffffff);
@@ -374,7 +388,7 @@ export class DeckBuilder extends Scene
             this.searchButton.y,
             'minogram',
             'SEARCH',
-            Math.max(12, Math.round(20 * UI_SCALE))
+            Math.max(DECK_BUILDER_TEXT_LAYOUT.actionFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.actionFontSizeBase * UI_SCALE))
         )
             .setOrigin(0.5)
             .setTint(0xffffff);
@@ -450,8 +464,8 @@ export class DeckBuilder extends Scene
         const spacing = Math.round(64 * UI_SCALE);
         const width = Math.round(180 * UI_SCALE);
         const height = Math.round(50 * UI_SCALE);
-        const titleSize = Math.max(10, Math.round(16 * UI_SCALE));
-        const labelSize = Math.max(9, Math.round(13 * UI_SCALE));
+        const titleSize = Math.max(DECK_BUILDER_TEXT_LAYOUT.slotTitleFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.slotTitleFontSizeBase * UI_SCALE));
+        const labelSize = Math.max(DECK_BUILDER_TEXT_LAYOUT.slotLabelFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.slotLabelFontSizeBase * UI_SCALE));
 
         this.add.bitmapText(panelX, Math.round(startY - 58 * UI_SCALE), 'minogram', 'SAVED DECKS', titleSize)
             .setOrigin(0.5)
@@ -483,7 +497,6 @@ export class DeckBuilder extends Scene
             { category: 'supporter', label: 'SUP' },
             { category: 'stadium', label: 'STA' },
             { category: 'tool', label: 'TOOL' },
-            { category: 'status_effect', label: 'STATUS' },
         ];
 
         const startX = Math.round(GAME_CENTER_X - (categories.length - 1) * 68 * UI_SCALE * 0.5);
@@ -491,7 +504,7 @@ export class DeckBuilder extends Scene
         const width = Math.round(64 * UI_SCALE);
         const height = Math.round(34 * UI_SCALE);
         const spacing = Math.round(68 * UI_SCALE);
-        const fontSize = Math.max(8, Math.round(12 * UI_SCALE));
+        const fontSize = Math.max(DECK_BUILDER_TEXT_LAYOUT.categoryFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.categoryFontSizeBase * UI_SCALE));
 
         for (let i = 0; i < categories.length; i += 1) {
             const def = categories[i];
@@ -542,7 +555,7 @@ export class DeckBuilder extends Scene
         const width = Math.round(50 * UI_SCALE);
         const height = Math.round(30 * UI_SCALE);
         const spacing = Math.round(53 * UI_SCALE);
-        const fontSize = Math.max(7, Math.round(10 * UI_SCALE));
+        const fontSize = Math.max(DECK_BUILDER_TEXT_LAYOUT.characterTypeFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.characterTypeFontSizeBase * UI_SCALE));
 
         for (let i = 0; i < types.length; i += 1) {
             const def = types[i];
@@ -601,7 +614,7 @@ export class DeckBuilder extends Scene
                 iconBody.y,
                 'minogram',
                 '',
-                Math.max(8, Math.round(12 * UI_SCALE))
+                Math.max(DECK_BUILDER_TEXT_LAYOUT.rowIconFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.rowIconFontSizeBase * UI_SCALE))
             )
                 .setOrigin(0.5)
                 .setTint(0xffffff)
@@ -612,7 +625,7 @@ export class DeckBuilder extends Scene
                 y,
                 'minogram',
                 '',
-                Math.max(10, Math.round(18 * UI_SCALE))
+                Math.max(DECK_BUILDER_TEXT_LAYOUT.rowCardNameFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.rowCardNameFontSizeBase * UI_SCALE))
             )
                 .setOrigin(0, 0.5)
                 .setTint(0xffffff);
@@ -628,7 +641,13 @@ export class DeckBuilder extends Scene
                 .setStrokeStyle(2, 0xffffff, 0.75)
                 .setInteractive({ useHandCursor: true });
 
-            const minusLabel = this.add.bitmapText(minusButton.x, minusButton.y, 'minogram', '-', Math.max(14, Math.round(24 * UI_SCALE)))
+            const minusLabel = this.add.bitmapText(
+                minusButton.x,
+                minusButton.y,
+                'minogram',
+                '-',
+                Math.max(DECK_BUILDER_TEXT_LAYOUT.rowAdjustFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.rowAdjustFontSizeBase * UI_SCALE))
+            )
                 .setOrigin(0.5)
                 .setTint(0xffffff);
 
@@ -637,7 +656,7 @@ export class DeckBuilder extends Scene
                 y,
                 'minogram',
                 '0',
-                Math.max(12, Math.round(20 * UI_SCALE))
+                Math.max(DECK_BUILDER_TEXT_LAYOUT.rowCountFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.rowCountFontSizeBase * UI_SCALE))
             )
                 .setOrigin(0.5)
                 .setTint(0xffffff);
@@ -653,7 +672,13 @@ export class DeckBuilder extends Scene
                 .setStrokeStyle(2, 0xffffff, 0.75)
                 .setInteractive({ useHandCursor: true });
 
-            const plusLabel = this.add.bitmapText(plusButton.x, plusButton.y, 'minogram', '+', Math.max(14, Math.round(24 * UI_SCALE)))
+            const plusLabel = this.add.bitmapText(
+                plusButton.x,
+                plusButton.y,
+                'minogram',
+                '+',
+                Math.max(DECK_BUILDER_TEXT_LAYOUT.rowAdjustFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.rowAdjustFontSizeBase * UI_SCALE))
+            )
                 .setOrigin(0.5)
                 .setTint(0xffffff);
 
@@ -915,14 +940,26 @@ export class DeckBuilder extends Scene
                     x - Math.round(tileWidth * DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.nameOffsetXRatio),
                     y + Math.round(tileHeight * DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.nameOffsetYRatio),
                     'minogram',
-                    card.label.toUpperCase(),
+                    '',
                     nameFontSize
                 )
                     .setOrigin(0, 0.5)
-                    .setMaxWidth(Math.round(tileWidth * DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.tileNameMaxWidthRatio))
                     .setTint(0xf8fafc)
                     .setDepth(12)
                     .setInteractive({ useHandCursor: true });
+
+                const tileNameMaxWidth = Math.round(tileWidth * DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.tileNameMaxWidthRatio);
+                const tileNameFit = fitBitmapTextToMultiLine({
+                    scene: this,
+                    font: 'minogram',
+                    text: card.label.toUpperCase(),
+                    preferredSize: nameFontSize,
+                    minSize: Math.max(7, Math.round(nameFontSize * 0.7)),
+                    maxWidth: Math.max(10, tileNameMaxWidth),
+                    maxLines: 3
+                });
+                name.setText(tileNameFit.text);
+                name.setFontSize(tileNameFit.fontSize);
 
                 const countBadge = this.add.rectangle(
                     x + Math.round(tileWidth * DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.countBadgeOffsetXRatio),
@@ -1140,7 +1177,7 @@ export class DeckBuilder extends Scene
             panelTop + Math.round(30 * UI_SCALE),
             'minogram',
             'CARD SEARCH',
-            Math.max(12, Math.round(24 * UI_SCALE))
+            Math.max(DECK_BUILDER_TEXT_LAYOUT.searchTitleFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.searchTitleFontSizeBase * UI_SCALE))
         )
             .setOrigin(0.5)
             .setTint(0xffffff)
@@ -1151,7 +1188,7 @@ export class DeckBuilder extends Scene
             panelTop + Math.round(58 * UI_SCALE),
             'minogram',
             'Type to search all cards. Enter = add first result. Esc = close.',
-            Math.max(8, Math.round(12 * UI_SCALE))
+            Math.max(DECK_BUILDER_TEXT_LAYOUT.searchHintFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.searchHintFontSizeBase * UI_SCALE))
         )
             .setOrigin(0.5)
             .setTint(0xcbd5e1)
@@ -1162,7 +1199,7 @@ export class DeckBuilder extends Scene
             panelTop + Math.round(88 * UI_SCALE),
             'minogram',
             '',
-            Math.max(9, Math.round(15 * UI_SCALE))
+            Math.max(DECK_BUILDER_TEXT_LAYOUT.searchQueryFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.searchQueryFontSizeBase * UI_SCALE))
         )
             .setOrigin(0, 0.5)
             .setTint(0xf8fafc)
@@ -1185,7 +1222,7 @@ export class DeckBuilder extends Scene
             this.searchSaveButton.y,
             'minogram',
             'SAVE',
-            Math.max(8, Math.round(12 * UI_SCALE))
+            Math.max(DECK_BUILDER_TEXT_LAYOUT.searchButtonFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.searchButtonFontSizeBase * UI_SCALE))
         )
             .setOrigin(0.5)
             .setTint(0xffffff)
@@ -1208,7 +1245,7 @@ export class DeckBuilder extends Scene
             this.searchClearButton.y,
             'minogram',
             'CLEAR',
-            Math.max(8, Math.round(12 * UI_SCALE))
+            Math.max(DECK_BUILDER_TEXT_LAYOUT.searchButtonFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.searchButtonFontSizeBase * UI_SCALE))
         )
             .setOrigin(0.5)
             .setTint(0xffffff)
@@ -1231,7 +1268,7 @@ export class DeckBuilder extends Scene
             this.searchCloseButton.y,
             'minogram',
             'CLOSE',
-            Math.max(8, Math.round(12 * UI_SCALE))
+            Math.max(DECK_BUILDER_TEXT_LAYOUT.searchButtonFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.searchButtonFontSizeBase * UI_SCALE))
         )
             .setOrigin(0.5)
             .setTint(0xffffff)
@@ -1266,7 +1303,7 @@ export class DeckBuilder extends Scene
                 y - Math.round(7 * UI_SCALE),
                 'minogram',
                 '',
-                Math.max(8, Math.round(13 * UI_SCALE))
+                Math.max(DECK_BUILDER_TEXT_LAYOUT.searchRowNameFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.searchRowNameFontSizeBase * UI_SCALE))
             )
                 .setOrigin(0, 0.5)
                 .setTint(0xffffff)
@@ -1277,7 +1314,7 @@ export class DeckBuilder extends Scene
                 y + Math.round(9 * UI_SCALE),
                 'minogram',
                 '',
-                Math.max(7, Math.round(10 * UI_SCALE))
+                Math.max(DECK_BUILDER_TEXT_LAYOUT.searchRowMetaFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.searchRowMetaFontSizeBase * UI_SCALE))
             )
                 .setOrigin(0, 0.5)
                 .setTint(0xcbd5e1)
@@ -1300,7 +1337,7 @@ export class DeckBuilder extends Scene
                 minusButton.y,
                 'minogram',
                 '-',
-                Math.max(12, Math.round(20 * UI_SCALE))
+                Math.max(DECK_BUILDER_TEXT_LAYOUT.searchRowAdjustFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.searchRowAdjustFontSizeBase * UI_SCALE))
             )
                 .setOrigin(0.5)
                 .setTint(0xffffff)
@@ -1311,7 +1348,7 @@ export class DeckBuilder extends Scene
                 y,
                 'minogram',
                 '0',
-                Math.max(9, Math.round(15 * UI_SCALE))
+                Math.max(DECK_BUILDER_TEXT_LAYOUT.searchRowCountFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.searchRowCountFontSizeBase * UI_SCALE))
             )
                 .setOrigin(0.5)
                 .setTint(0xffffff)
@@ -1334,7 +1371,7 @@ export class DeckBuilder extends Scene
                 plusButton.y,
                 'minogram',
                 '+',
-                Math.max(12, Math.round(20 * UI_SCALE))
+                Math.max(DECK_BUILDER_TEXT_LAYOUT.searchRowAdjustFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.searchRowAdjustFontSizeBase * UI_SCALE))
             )
                 .setOrigin(0.5)
                 .setTint(0xffffff)
@@ -1388,7 +1425,7 @@ export class DeckBuilder extends Scene
             this.searchPrevButton.y,
             'minogram',
             'PREV',
-            Math.max(8, Math.round(13 * UI_SCALE))
+            Math.max(DECK_BUILDER_TEXT_LAYOUT.searchPagerFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.searchPagerFontSizeBase * UI_SCALE))
         )
             .setOrigin(0.5)
             .setTint(0xffffff)
@@ -1411,7 +1448,7 @@ export class DeckBuilder extends Scene
             this.searchNextButton.y,
             'minogram',
             'NEXT',
-            Math.max(8, Math.round(13 * UI_SCALE))
+            Math.max(DECK_BUILDER_TEXT_LAYOUT.searchPagerFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.searchPagerFontSizeBase * UI_SCALE))
         )
             .setOrigin(0.5)
             .setTint(0xffffff)

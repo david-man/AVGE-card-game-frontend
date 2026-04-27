@@ -147,7 +147,4 @@ export const CARD_CATALOG: CardCatalogEntry[] = [
     { id: 'KikisHeadband', label: 'Kikis Headband', category: 'tool', iconFallback: 'KIK' },
     { id: 'MaidOutfit', label: 'Maid Outfit', category: 'tool', iconFallback: 'MAI' },
     { id: 'MusescoreSubscription', label: 'Musescore Subscription', category: 'tool', iconFallback: 'MUS' },
-    { id: 'Arranger', label: 'Arranger', category: 'status_effect', iconFallback: 'ARR' },
-    { id: 'Goon', label: 'Goon', category: 'status_effect', iconFallback: 'GOO' },
-    { id: 'Maid', label: 'Maid', category: 'status_effect', iconFallback: 'MAI' },
 ];

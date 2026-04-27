@@ -10,7 +10,7 @@ import {
     CARD_VISUALS,
     UI_SCALE
 } from '../config';
-import { fitBitmapTextToSingleLine, fitBitmapTextToTwoLines } from '../ui/overlays/bitmapTextFit';
+import { fitBitmapTextToMultiLine, fitBitmapTextToSingleLine } from '../ui/overlays/bitmapTextFit';
 
 export type CardType = 'character' | 'tool' | 'item' | 'stadium' | 'supporter';
 export type PlayerId = 'p1' | 'p2';
@@ -580,7 +580,7 @@ export class Card
         const bounds = this.body.getBounds();
         const hpPadding = Math.max(CARD_TEXT_LAYOUT.hpPadding, Math.round(CARD_TEXT_LAYOUT.hpPadding * this.body.scaleY));
 
-        const classFit = fitBitmapTextToTwoLines({
+        const classFit = fitBitmapTextToMultiLine({
             scene: this.scene,
             font: 'minogram',
             text: this.cardClass,
@@ -588,11 +588,12 @@ export class Card
             // Long card names (for example "Steinert Practice Room") need a
             // lower font-size floor and slightly narrower width budget to stay
             // inside the card border at all scales.
-            minSize: Math.max(6, Math.round(idFontSize * 0.56)),
-            maxWidth: Math.max(10, Math.round(bounds.width * 0.82))
+            minSize: Math.max(CARD_TEXT_LAYOUT.classFitMinSizeFloor, Math.round(idFontSize * CARD_TEXT_LAYOUT.classFitMinSizeRatio)),
+            maxWidth: Math.max(CARD_TEXT_LAYOUT.classFitMaxWidthMin, Math.round(bounds.width * CARD_TEXT_LAYOUT.classFitMaxWidthRatio)),
+            maxLines: CARD_TEXT_LAYOUT.classFitMaxLines
         });
 
-        const classLineCount = classFit.text.includes('\n') ? 2 : 1;
+        const classLineCount = classFit.lineCount > 0 ? classFit.lineCount : 1;
         const yOffset = (CARD_TEXT_LAYOUT.idYOffset + (classLineCount > 1 ? CARD_TEXT_LAYOUT.classTwoLineYOffsetBoost : 0)) * this.body.scaleY;
         const bottomTypePadding = CARD_TEXT_LAYOUT.typeYOffset * this.body.scaleY;
 
@@ -610,8 +611,8 @@ export class Card
             font: 'minogram',
             text: this.typeLabel.text,
             preferredSize: typeFontSize,
-            minSize: Math.max(Math.round(CARD_TEXT_LAYOUT.minTypeFontSize * UI_SCALE), Math.round(typeFontSize * 0.72)),
-            maxWidth: Math.max(10, Math.round(bounds.width * 0.9))
+            minSize: Math.max(Math.round(CARD_TEXT_LAYOUT.minTypeFontSize * UI_SCALE), Math.round(typeFontSize * CARD_TEXT_LAYOUT.typeFitMinSizeRatio)),
+            maxWidth: Math.max(CARD_TEXT_LAYOUT.typeFitMaxWidthMin, Math.round(bounds.width * CARD_TEXT_LAYOUT.typeFitMaxWidthRatio))
         }));
 
         this.hpLabel.setScale(1);
@@ -621,30 +622,30 @@ export class Card
             font: 'minogram',
             text: this.hpLabel.text,
             preferredSize: hpFontSize,
-            minSize: Math.max(Math.round(CARD_TEXT_LAYOUT.minHpFontSize * UI_SCALE), Math.round(hpFontSize * 0.75)),
-            maxWidth: Math.max(10, Math.round(bounds.width * 0.56))
+            minSize: Math.max(Math.round(CARD_TEXT_LAYOUT.minHpFontSize * UI_SCALE), Math.round(hpFontSize * CARD_TEXT_LAYOUT.hpFitMinSizeRatio)),
+            maxWidth: Math.max(CARD_TEXT_LAYOUT.hpFitMaxWidthMin, Math.round(bounds.width * CARD_TEXT_LAYOUT.hpFitMaxWidthRatio))
         }));
         this.hpLabel.setPosition(Math.round(bounds.left + hpPadding), Math.round(bounds.top + hpPadding));
 
         this.statusLabel.setScale(1);
-        this.statusLabel.setFontSize(Math.max(Math.round(CARD_TEXT_LAYOUT.minTypeFontSize * UI_SCALE), Math.round(hpFontSize * 0.92)));
+        this.statusLabel.setFontSize(Math.max(Math.round(CARD_TEXT_LAYOUT.minTypeFontSize * UI_SCALE), Math.round(hpFontSize * CARD_TEXT_LAYOUT.statusBaseSizeRatioToHp)));
         this.statusLabel.setFontSize(fitBitmapTextToSingleLine({
             scene: this.scene,
             font: 'minogram',
             text: this.statusLabel.text,
             preferredSize: this.statusLabel.fontSize,
-            minSize: Math.max(Math.round(CARD_TEXT_LAYOUT.minTypeFontSize * UI_SCALE), Math.round(this.statusLabel.fontSize * 0.75)),
-            maxWidth: Math.max(10, Math.round(bounds.width * 0.8))
+            minSize: Math.max(Math.round(CARD_TEXT_LAYOUT.minTypeFontSize * UI_SCALE), Math.round(this.statusLabel.fontSize * CARD_TEXT_LAYOUT.statusFitMinSizeRatio)),
+            maxWidth: Math.max(CARD_TEXT_LAYOUT.statusFitMaxWidthMin, Math.round(bounds.width * CARD_TEXT_LAYOUT.statusFitMaxWidthRatio))
         }));
         this.statusLabel.setPosition(
             Math.round(bounds.left + hpPadding),
-            Math.round(this.hpLabel.y + this.hpLabel.height + Math.max(1, Math.round(hpPadding * 0.7)))
+            Math.round(this.hpLabel.y + this.hpLabel.height + Math.max(CARD_TEXT_LAYOUT.statusGapFromHpMin, Math.round(hpPadding * CARD_TEXT_LAYOUT.statusGapFromHpRatio)))
         );
 
-        this.idLabel.setDepth(this.body.depth + 0.01);
-        this.typeLabel.setDepth(this.body.depth + 0.01);
-        this.hpLabel.setDepth(this.body.depth + 0.01);
-        this.statusLabel.setDepth(this.body.depth + 0.01);
+        this.idLabel.setDepth(this.body.depth + CARD_TEXT_LAYOUT.labelDepthOffset);
+        this.typeLabel.setDepth(this.body.depth + CARD_TEXT_LAYOUT.labelDepthOffset);
+        this.hpLabel.setDepth(this.body.depth + CARD_TEXT_LAYOUT.labelDepthOffset);
+        this.statusLabel.setDepth(this.body.depth + CARD_TEXT_LAYOUT.labelDepthOffset);
     }
 
     private applyFaceState (): void

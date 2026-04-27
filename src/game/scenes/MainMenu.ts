@@ -1,5 +1,5 @@
 import { Scene, GameObjects } from 'phaser';
-import { GAME_CENTER_X, GAME_CENTER_Y, GAME_HEIGHT, GAME_WIDTH, UI_SCALE } from '../config';
+import { GAME_CENTER_X, GAME_CENTER_Y, GAME_HEIGHT, GAME_WIDTH, MAIN_MENU_TEXT_LAYOUT, UI_SCALE } from '../config';
 import {
     clearClientSessionState,
     fetchRouterSession,
@@ -88,7 +88,7 @@ export class MainMenu extends Scene
             Math.round(GAME_HEIGHT * 0.34),
             'minogram',
             'AVGE CARD GAME',
-            Math.max(32, Math.round(64 * UI_SCALE))
+            Math.max(MAIN_MENU_TEXT_LAYOUT.titleFontSizeMin, Math.round(MAIN_MENU_TEXT_LAYOUT.titleFontSizeBase * UI_SCALE))
         )
             .setOrigin(0.5)
             .setTint(0xffffff);
@@ -98,7 +98,7 @@ export class MainMenu extends Scene
             Math.round(GAME_HEIGHT * 0.47),
             'minogram',
             'Admin Visual Game Environment',
-            Math.max(14, Math.round(24 * UI_SCALE))
+            Math.max(MAIN_MENU_TEXT_LAYOUT.subtitleFontSizeMin, Math.round(MAIN_MENU_TEXT_LAYOUT.subtitleFontSizeBase * UI_SCALE))
         )
             .setOrigin(0.5)
             .setTint(0xcbd5e1);
@@ -118,7 +118,7 @@ export class MainMenu extends Scene
             accountTop,
             'minogram',
             this.formatUsernameIndicator(persistedUsername),
-            Math.max(9, Math.round(30 * UI_SCALE))
+            Math.max(MAIN_MENU_TEXT_LAYOUT.accountFontSizeMin, Math.round(MAIN_MENU_TEXT_LAYOUT.accountFontSizeBase * UI_SCALE))
         )
             .setOrigin(1, 0)
             .setTint(0xe2e8f0)
@@ -142,7 +142,7 @@ export class MainMenu extends Scene
             this.logoutButton.y,
             'minogram',
             'LOG OUT',
-            Math.max(9, Math.round(30 * UI_SCALE))
+            Math.max(MAIN_MENU_TEXT_LAYOUT.accountFontSizeMin, Math.round(MAIN_MENU_TEXT_LAYOUT.accountFontSizeBase * UI_SCALE))
         )
             .setOrigin(0.5)
             .setTint(0xffffff)
@@ -185,7 +185,7 @@ export class MainMenu extends Scene
             buttonY,
             'minogram',
             'START',
-            Math.max(20, Math.round(36 * UI_SCALE))
+            Math.max(MAIN_MENU_TEXT_LAYOUT.startFontSizeMin, Math.round(MAIN_MENU_TEXT_LAYOUT.startFontSizeBase * UI_SCALE))
         )
             .setOrigin(0.5)
             .setTint(0xffffff);
@@ -206,7 +206,7 @@ export class MainMenu extends Scene
             Math.round(buttonY - (96 * UI_SCALE)),
             'minogram',
             'DECK BUILDER',
-            Math.max(18, Math.round(30 * UI_SCALE))
+            Math.max(MAIN_MENU_TEXT_LAYOUT.deckBuilderFontSizeMin, Math.round(MAIN_MENU_TEXT_LAYOUT.deckBuilderFontSizeBase * UI_SCALE))
         )
             .setOrigin(0.5)
             .setTint(0xffffff);
@@ -448,7 +448,7 @@ export class MainMenu extends Scene
             Math.round(GAME_HEIGHT * 0.45),
             'minogram',
             titleText,
-            Math.max(18, Math.round(34 * UI_SCALE))
+            Math.max(MAIN_MENU_TEXT_LAYOUT.disconnectTitleFontSizeMin, Math.round(MAIN_MENU_TEXT_LAYOUT.disconnectTitleFontSizeBase * UI_SCALE))
         )
             .setOrigin(0.5)
             .setTint(0xffffff)
@@ -471,7 +471,7 @@ export class MainMenu extends Scene
             buttonY,
             'minogram',
             'CONTINUE',
-            Math.max(16, Math.round(26 * UI_SCALE))
+            Math.max(MAIN_MENU_TEXT_LAYOUT.disconnectContinueFontSizeMin, Math.round(MAIN_MENU_TEXT_LAYOUT.disconnectContinueFontSizeBase * UI_SCALE))
         )
             .setOrigin(0.5)
             .setTint(0xffffff)

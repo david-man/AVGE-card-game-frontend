@@ -12,7 +12,7 @@ import {
     GAME_WIDTH,
     UI_SCALE
 } from '../config';
-import { fitBitmapTextToSingleLine } from './overlays/bitmapTextFit';
+import { fitBitmapTextToMultiLine, fitBitmapTextToSingleLine } from './overlays/bitmapTextFit';
 
 type CardPreviewDescriptionEntry = {
     atk1Description?: string;
@@ -59,6 +59,13 @@ const readMultiLineField = (value: unknown, fallback: string): string => {
 
     const collapsed = normalizedLines.join('\n').trim();
     return collapsed.length > 0 ? collapsed : fallback;
+};
+
+const normalizeCardClassDisplayLabel = (value: string): string => {
+    return value
+        .replace(/[_-]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
 };
 
 const cardPreviewDescriptionCatalog = cardPreviewDescriptionsJson as CardPreviewDescriptionCatalog;
@@ -181,6 +188,7 @@ export class CardPreviewController
             Math.max(GAME_PREVIEW_LAYOUT.idFontSizeMin, Math.round(GAME_PREVIEW_LAYOUT.idFontSize * UI_SCALE))
         )
             .setOrigin(0.5)
+            .setCenterAlign()
             .setTint(GAME_PREVIEW_LAYOUT.panelStrokeColor)
             .setDepth(GAME_DEPTHS.previewText)
             .setVisible(false);
@@ -193,6 +201,7 @@ export class CardPreviewController
             Math.max(GAME_PREVIEW_LAYOUT.typeFontSizeMin, Math.round(GAME_PREVIEW_LAYOUT.typeFontSize * UI_SCALE))
         )
             .setOrigin(0.5)
+            .setCenterAlign()
             .setTint(GAME_PREVIEW_LAYOUT.typeTint)
             .setDepth(GAME_DEPTHS.previewText)
             .setVisible(false);
@@ -259,15 +268,18 @@ export class CardPreviewController
             .setFillStyle(renderAsFaceDown ? CARD_VISUALS.faceDownFillColor : card.baseColor, 1)
             .setStrokeStyle(CARD_BORDER_WIDTH, card.getBorderColor(), 1);
 
-        this.idText.setVisible(true).setText(card.getCardClass());
-        this.idText.setFontSize(fitBitmapTextToSingleLine({
+        this.idText.setVisible(true).setText(normalizeCardClassDisplayLabel(card.getCardClass()));
+        const previewIdFit = fitBitmapTextToMultiLine({
             scene: this.scene,
             font: 'minogram',
             text: this.idText.text,
             preferredSize: this.idText.fontSize,
             minSize: Math.max(GAME_PREVIEW_LAYOUT.fitIdMinSize, Math.round(this.idText.fontSize * GAME_PREVIEW_LAYOUT.fitIdSizeRatio)),
-            maxWidth: Math.max(GAME_PREVIEW_LAYOUT.fitIdWidthMin, Math.round(this.body.width * GAME_PREVIEW_LAYOUT.fitIdWidthRatio))
-        }));
+            maxWidth: Math.max(GAME_PREVIEW_LAYOUT.fitIdWidthMin, Math.round(this.body.width * GAME_PREVIEW_LAYOUT.fitIdWidthRatio)),
+            maxLines: 3
+        });
+        this.idText.setText(previewIdFit.text);
+        this.idText.setFontSize(previewIdFit.fontSize);
         const previewTypeText = card.getCardType() === 'character'
             ? (String(card.getAVGECardType() ?? '').trim().toUpperCase() || 'NONE')
             : card.getCardType().toUpperCase();
@@ -326,7 +338,8 @@ export class CardPreviewController
 
         const characterDescription = resolveCharacterCardDescription(card.getCardClass());
         const headerLines = [
-            `Owner: ${ownerUsername}, Type: ${this.formatCharacterType(card)}`,
+            `Owner: ${ownerUsername}`,
+            `Type: ${this.formatCharacterType(card)}`,
             `Statuses: ${this.formatCharacterStatuses(card)}`,
             `Retreat Cost: ${card.getRetreatCost()}`,
         ];
@@ -348,7 +361,9 @@ export class CardPreviewController
             ));
         }
 
-        if (card.hasActiveAbility() || card.hasPassiveAbility()) {
+        const hasCatalogAbilityName = characterDescription.abilityName !== characterDefaultDescription.abilityName;
+        const hasCatalogAbilityDescription = characterDescription.abilityDescription !== characterDefaultDescription.abilityDescription;
+        if (card.hasActiveAbility() || card.hasPassiveAbility() || hasCatalogAbilityName || hasCatalogAbilityDescription) {
             const fallbackAbilityName = card.getActiveAbilityName()
                 ?? (card.hasPassiveAbility() ? 'Passive Ability' : 'Ability');
             const abilityName = readSingleLineField(characterDescription.abilityName, fallbackAbilityName);

@@ -43,6 +43,7 @@ import {
     GAME_SHUFFLE_ANIMATION,
     ENERGY_TOKEN_DEPTHS,
     CARDHOLDER_BASE_WIDTH,
+    GAME_STATUS_TEXT_LAYOUT,
     MAX_BENCH_CARDS,
     CARDHOLDER_HEIGHT_MULTIPLIER,
     ENERGYHOLDER_LAYOUT,
@@ -241,7 +242,10 @@ export class Game extends Scene
             GAME_CENTER_Y,
             'minogram',
             'Other player disconnected. Waiting for reconnection...',
-            Math.max(14, Math.round(16 * UI_SCALE))
+            Math.max(
+                GAME_STATUS_TEXT_LAYOUT.opponentDisconnectFontSizeMin,
+                Math.round(GAME_STATUS_TEXT_LAYOUT.opponentDisconnectFontSizeBase * UI_SCALE)
+            )
         )
             .setOrigin(0.5)
             .setCenterAlign()
@@ -1678,7 +1682,10 @@ export class Game extends Scene
 
     private createPhaseStateActionButton (): void
     {
-        const fontSize = Math.max(10, Math.round(16 * UI_SCALE));
+        const fontSize = Math.max(
+            GAME_STATUS_TEXT_LAYOUT.phaseStateActionFontSizeMin,
+            Math.round(GAME_STATUS_TEXT_LAYOUT.phaseStateActionFontSizeBase * UI_SCALE)
+        );
         const body = this.add.rectangle(0, 0, 10, 10, 0x0b132b, 0.9)
             .setOrigin(1, 0)
             .setStrokeStyle(2, 0xffffff, 0.5)
@@ -1875,8 +1882,14 @@ export class Game extends Scene
         const yPadding = Math.max(8, Math.round(8 * UI_SCALE));
         const minWidth = Math.max(120, Math.round(120 * UI_SCALE));
         const maxWidth = Math.max(minWidth, Math.round(panelBounds.width));
-        const textPreferred = Math.max(10, Math.round(16 * UI_SCALE));
-        const textMin = Math.max(9, Math.round(textPreferred * 0.72));
+        const textPreferred = Math.max(
+            GAME_STATUS_TEXT_LAYOUT.phaseStateActionFontSizeMin,
+            Math.round(GAME_STATUS_TEXT_LAYOUT.phaseStateActionFitFontSizeBase * UI_SCALE)
+        );
+        const textMin = Math.max(
+            GAME_STATUS_TEXT_LAYOUT.phaseStateActionFitFontSizeMin,
+            Math.round(textPreferred * 0.72)
+        );
         const maxTextWidth = Math.max(24, maxWidth - (xPadding * 2));
         const fittedSize = fitBitmapTextToSingleLine({
             scene: this,

@@ -113,6 +113,14 @@ export class DisplayInputOverlay
         graphics.strokePath();
     }
 
+    private normalizeOverlayLabel (value: string): string
+    {
+        return value
+            .replace(/[_-]+/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
     startNotifyOverlay (
         playerLabel: string,
         message: string,
@@ -216,16 +224,32 @@ export class DisplayInputOverlay
         const height = this.scene.scale.height;
         const overlayDepth = this.inputLockOverlay.depth + 5;
         const panelWidth = Math.max(380, Math.round(width * 0.72));
-        const panelHeight = Math.max(260, Math.round(height * 0.56));
+        const panelHeight = Math.max(440, Math.round(height * 0.78));
         const panelX = Math.round(width / 2);
         const panelY = Math.round(height / 2);
-        const closeButtonSize = Math.max(28, Math.round(Math.min(panelWidth, panelHeight) * 0.12));
+        const closeButtonSize = Math.max(28, Math.round(panelWidth * 0.08));
         const titleFontSize = Math.max(30, Math.round(panelWidth * 0.06));
         const messageFontSize = Math.max(18, Math.round(panelWidth * 0.03));
         const cardLabelFontSize = Math.max(14, Math.round(panelWidth * 0.022));
         const cardSubLabelFontSize = Math.max(12, Math.round(panelWidth * 0.018));
         const closeFontSize = Math.max(20, Math.round(closeButtonSize * 0.7));
         const revealMessage = (message ?? '').trim();
+        const revealTitle = `REVEAL -> ${playerLabel}`;
+        const panelTop = panelY - Math.round(panelHeight / 2);
+        const panelBottom = panelY + Math.round(panelHeight / 2);
+        const panelInnerPaddingX = Math.max(16, Math.round(panelWidth * 0.07));
+        const panelTopPadding = Math.max(closeButtonSize + 10, Math.round(panelWidth * 0.12));
+        const panelBottomPadding = Math.max(16, Math.round(panelWidth * 0.05));
+        const sectionGap = Math.max(10, Math.round(panelWidth * 0.03));
+        const titleMaxWidth = Math.round(panelWidth * 0.86);
+        const messageMaxWidth = Math.round(panelWidth * 0.84);
+        const availableWidth = Math.max(1, panelWidth - (panelInnerPaddingX * 2));
+        const titleY = panelTop + panelTopPadding;
+        const messageTopY = titleY + Math.max(titleFontSize, Math.round(titleFontSize * 1.15)) + sectionGap;
+        const gridTopY = revealMessage
+            ? messageTopY + Math.max(messageFontSize, Math.round(messageFontSize * 1.2)) + sectionGap
+            : titleY + Math.max(titleFontSize, Math.round(titleFontSize * 1.15)) + sectionGap;
+        const gridBottomY = panelBottom - panelBottomPadding;
 
         const clickBackdrop = this.scene.add.rectangle(
             this.scene.scale.width / 2,
@@ -248,119 +272,60 @@ export class DisplayInputOverlay
             .setStrokeStyle(3, 0xffffff, 0.8)
             .setDepth(overlayDepth);
 
-        const title = this.scene.add.bitmapText(panelX, panelY - Math.round(panelHeight * 0.4), 'minogram', `REVEAL -> ${playerLabel}`, titleFontSize)
+        const title = this.scene.add.bitmapText(panelX, titleY, 'minogram', revealTitle, titleFontSize)
             .setOrigin(0.5)
             .setDepth(overlayDepth + 1)
-            .setMaxWidth(Math.round(panelWidth * 0.86));
+            .setMaxWidth(titleMaxWidth);
 
         const messageText = revealMessage
             ? this.scene.add.bitmapText(
-                panelX - Math.round(panelWidth * 0.42),
-                panelY - Math.round(panelHeight * 0.28),
+                panelX - Math.round(messageMaxWidth / 2),
+                messageTopY,
                 'minogram',
                 revealMessage,
                 messageFontSize,
             )
                 .setOrigin(0, 0)
                 .setDepth(overlayDepth + 1)
-                .setMaxWidth(Math.round(panelWidth * 0.84))
+                .setMaxWidth(messageMaxWidth)
             : null;
 
-        const gridTopY = panelY - Math.round(panelHeight * (revealMessage ? 0.14 : 0.26));
-        const gridBottomY = panelY + Math.round(panelHeight * 0.35);
-        const gridLeftX = panelX - Math.round(panelWidth * 0.43);
-        const gridRightX = panelX + Math.round(panelWidth * 0.43);
-        const availableWidth = Math.max(1, gridRightX - gridLeftX);
         const availableHeight = Math.max(1, gridBottomY - gridTopY);
 
         if (cards.length === 0) {
             const emptyText = this.scene.add.bitmapText(panelX, panelY, 'minogram', '(NO CARDS)', Math.max(22, Math.round(panelWidth * 0.04)))
                 .setOrigin(0.5)
                 .setDepth(overlayDepth + 1);
+            emptyText.setY(Math.round(gridTopY + (availableHeight / 2)));
             this.activeObjects.push(clickBackdrop, panel, title, emptyText);
             if (messageText) {
                 this.activeObjects.push(messageText);
             }
         }
         else {
-            const preferredCardWidth = Math.max(
+            const desiredCardWidth = Math.max(
                 GAME_INPUT_SELECTION_OVERLAY.cardWidthMin,
                 Math.round(this.scene.scale.width * GAME_INPUT_SELECTION_OVERLAY.cardWidthRatio)
             );
-            const desiredHorizontalGap = Math.max(
-                GAME_INPUT_SELECTION_OVERLAY.rowSpacingMin,
-                Math.round(this.scene.scale.width * GAME_INPUT_SELECTION_OVERLAY.rowSpacingRatio)
+            const horizontalGap = Math.max(
+                4,
+                Math.max(
+                    GAME_INPUT_SELECTION_OVERLAY.rowSpacingMin,
+                    Math.round(this.scene.scale.width * GAME_INPUT_SELECTION_OVERLAY.rowSpacingRatio)
+                )
             );
-            const desiredVerticalGap = Math.max(
-                GAME_INPUT_SELECTION_OVERLAY.rowGapMin,
-                Math.round(this.scene.scale.height * GAME_INPUT_SELECTION_OVERLAY.rowGapRatio)
+            const verticalGap = Math.max(
+                4,
+                Math.max(
+                    GAME_INPUT_SELECTION_OVERLAY.rowGapMin,
+                    Math.round(this.scene.scale.height * GAME_INPUT_SELECTION_OVERLAY.rowGapRatio)
+                )
             );
-            const minimumReadableCardWidth = 64;
-
-            type GridCandidate = {
-                columnCount: number;
-                rowCount: number;
-                horizontalGap: number;
-                verticalGap: number;
-                cardWidth: number;
-                cardHeight: number;
-            };
-
-            let preferredCandidate: GridCandidate | null = null;
-            let fallbackCandidate: GridCandidate | null = null;
-
-            for (let candidateColumns = 1; candidateColumns <= cards.length; candidateColumns += 1) {
-                const candidateRows = Math.max(1, Math.ceil(cards.length / candidateColumns));
-                const candidateHorizontalGap = Math.max(
-                    4,
-                    Math.min(desiredHorizontalGap, Math.floor(availableWidth / Math.max(1, candidateColumns * 3)))
-                );
-                const candidateVerticalGap = Math.max(
-                    4,
-                    Math.min(desiredVerticalGap, Math.floor(availableHeight / Math.max(1, candidateRows * 3)))
-                );
-
-                const maxCardWidthByGrid = Math.floor((availableWidth - ((candidateColumns - 1) * candidateHorizontalGap)) / candidateColumns);
-                const maxCardHeightByGrid = Math.floor((availableHeight - ((candidateRows - 1) * candidateVerticalGap)) / candidateRows);
-
-                if (maxCardWidthByGrid <= 0 || maxCardHeightByGrid <= 0) {
-                    continue;
-                }
-
-                const widthFromHeightConstraint = Math.floor(maxCardHeightByGrid / GAME_INPUT_SELECTION_OVERLAY.cardHeightRatio);
-                const fittedCardWidth = Math.floor(Math.min(preferredCardWidth, maxCardWidthByGrid, widthFromHeightConstraint));
-
-                if (fittedCardWidth <= 0) {
-                    continue;
-                }
-
-                const candidate: GridCandidate = {
-                    columnCount: candidateColumns,
-                    rowCount: candidateRows,
-                    horizontalGap: candidateHorizontalGap,
-                    verticalGap: candidateVerticalGap,
-                    cardWidth: fittedCardWidth,
-                    cardHeight: Math.max(1, Math.round(fittedCardWidth * GAME_INPUT_SELECTION_OVERLAY.cardHeightRatio))
-                };
-
-                if (!fallbackCandidate || candidate.cardWidth > fallbackCandidate.cardWidth || (candidate.cardWidth === fallbackCandidate.cardWidth && candidate.rowCount > fallbackCandidate.rowCount)) {
-                    fallbackCandidate = candidate;
-                }
-
-                // Candidate columns are evaluated from low to high, so the
-                // first readable fit naturally prioritizes adding rows.
-                if (!preferredCandidate && candidate.cardWidth >= minimumReadableCardWidth) {
-                    preferredCandidate = candidate;
-                }
-            }
-
-            const chosenCandidate = preferredCandidate ?? fallbackCandidate;
-            const columnCount = chosenCandidate?.columnCount ?? 1;
-            const rowCount = chosenCandidate?.rowCount ?? cards.length;
-            const horizontalGap = chosenCandidate?.horizontalGap ?? 4;
-            const verticalGap = chosenCandidate?.verticalGap ?? 4;
-            const cardWidth = chosenCandidate?.cardWidth ?? Math.max(1, Math.floor(availableWidth));
-            const cardHeight = chosenCandidate?.cardHeight ?? Math.max(1, Math.floor(cardWidth * GAME_INPUT_SELECTION_OVERLAY.cardHeightRatio));
+            const maxColumnsByWidth = Math.max(1, Math.floor((availableWidth + horizontalGap) / (desiredCardWidth + horizontalGap)));
+            const columnCount = Math.max(1, Math.min(cards.length, maxColumnsByWidth));
+            const cardWidth = Math.max(1, Math.floor((availableWidth - ((columnCount - 1) * horizontalGap)) / columnCount));
+            const cardHeight = Math.max(1, Math.round(cardWidth * GAME_INPUT_SELECTION_OVERLAY.cardHeightRatio));
+            const rowCount = Math.max(1, Math.ceil(cards.length / columnCount));
             const itemTextMaxWidth = Math.max(12, cardWidth - 8);
             const itemLabelPreferredSize = Math.max(8, Math.round(cardWidth * GAME_INPUT_SELECTION_OVERLAY.itemLabelFontSizeRatio));
             const itemSubLabelPreferredSize = Math.max(7, Math.round(cardWidth * GAME_INPUT_SELECTION_OVERLAY.itemSubLabelFontSizeRatio));
@@ -375,6 +340,8 @@ export class DisplayInputOverlay
                 const col = index % columnCount;
                 const x = startX + (col * (cardWidth + horizontalGap));
                 const y = startY + (row * (cardHeight + verticalGap));
+                const normalizedClassLabel = this.normalizeOverlayLabel(card.cardClassLabel);
+                const normalizedTypeLabel = this.normalizeOverlayLabel(card.cardTypeLabel);
 
                 const body = this.scene.add.rectangle(0, 0, cardWidth, cardHeight, card.cardColor, 1)
                     .setStrokeStyle(3, 0xffffff, 0.95);
@@ -382,7 +349,7 @@ export class DisplayInputOverlay
                 const classLabelLayout = fitBitmapTextToMultiLine({
                     scene: this.scene,
                     font: 'minogram',
-                    text: card.cardClassLabel,
+                    text: normalizedClassLabel,
                     preferredSize: Math.min(cardLabelFontSize, itemLabelPreferredSize),
                     minSize: 7,
                     maxWidth: itemTextMaxWidth,
@@ -394,12 +361,12 @@ export class DisplayInputOverlay
                     'minogram',
                     classLabelLayout.text,
                     classLabelLayout.fontSize
-                ).setOrigin(0.5);
+                ).setOrigin(0.5).setCenterAlign();
 
                 const typeLabelLayout = fitBitmapTextToMultiLine({
                     scene: this.scene,
                     font: 'minogram',
-                    text: card.cardTypeLabel,
+                    text: normalizedTypeLabel,
                     preferredSize: Math.min(cardSubLabelFontSize, itemSubLabelPreferredSize),
                     minSize: 6,
                     maxWidth: itemTextMaxWidth,
@@ -411,7 +378,7 @@ export class DisplayInputOverlay
                     'minogram',
                     typeLabelLayout.text,
                     typeLabelLayout.fontSize
-                ).setOrigin(0.5);
+                ).setOrigin(0.5).setCenterAlign();
 
                 const cardContainer = this.scene.add.container(x, y, [body, idText, typeText])
                     .setDepth(overlayDepth + 1);
