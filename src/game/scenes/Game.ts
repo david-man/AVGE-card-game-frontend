@@ -27,13 +27,13 @@ import { SurrenderController } from '../ui/SurrenderController';
 import { fitBitmapTextToTwoLines } from '../ui/overlays/bitmapTextFit';
 import { fitBitmapTextToSingleLine } from '../ui/overlays/bitmapTextFit';
 import {
-    AVGECardType,
     BASE_HEIGHT,
     BASE_WIDTH,
     BOARD_SCALE,
     CARD_BASE_HEIGHT,
     CARD_BASE_WIDTH,
     ENTITY_VISUALS,
+    GAME_CARD_TYPE_FILL_COLORS,
     GAME_CARD_ACTION_BUTTON_LAYOUT,
     GAME_DEPTHS,
     GAME_EXPLOSION,
@@ -43,6 +43,7 @@ import {
     GAME_SHUFFLE_ANIMATION,
     ENERGY_TOKEN_DEPTHS,
     CARDHOLDER_BASE_WIDTH,
+    MAX_BENCH_CARDS,
     CARDHOLDER_HEIGHT_MULTIPLIER,
     ENERGYHOLDER_LAYOUT,
     CARDHOLDER_SPACING_MULTIPLIERS,
@@ -152,6 +153,7 @@ export class Game extends Scene
     inputAcknowledged: boolean;
     pendingInputCommand: string | null;
     pendingNotifyCommand: string | null;
+    pendingNotifyCommandQueue: string[];
     awaitingRemoteNotifyAck: boolean;
     remoteInputLockActive: boolean;
     opponentDisconnected: boolean;
@@ -166,6 +168,9 @@ export class Game extends Scene
     hasRedirectedToMainMenu: boolean;
     authSessionUnsubscribe: (() => void) | null;
     matchEndedAwaitingExit: boolean;
+    pageHideHandler: ((event: Event) => void) | null;
+    beforeUnloadHandler: ((event: Event) => void) | null;
+    clientUnloadSignalSent: boolean;
 
     cardActionButtons: Array<{
         key: CardActionKey;
@@ -271,7 +276,8 @@ export class Game extends Scene
                 this.emitBackendEvent('surrender_timeout', {
                     view_mode: this.getViewModeLabel(this.activeViewMode)
                 });
-            }
+            },
+            canInteract: () => this.boardInputEnabled,
         });
         this.playerStatsHudController = new PlayerStatsHudController(this);
         this.phaseHudController = new PhaseHudController(this);
@@ -292,6 +298,7 @@ export class Game extends Scene
         this.inputAcknowledged = false;
         this.pendingInputCommand = null;
         this.pendingNotifyCommand = null;
+        this.pendingNotifyCommandQueue = [];
         this.awaitingRemoteNotifyAck = false;
         this.remoteInputLockActive = false;
         this.opponentDisconnected = false;
@@ -306,6 +313,9 @@ export class Game extends Scene
         this.hasRedirectedToMainMenu = false;
         this.authSessionUnsubscribe = null;
         this.matchEndedAwaitingExit = false;
+        this.pageHideHandler = null;
+        this.beforeUnloadHandler = null;
+        this.clientUnloadSignalSent = false;
 
         if (this.routerSessionId) {
             this.startAuthSessionPush(this.routerSessionId);
@@ -381,12 +391,14 @@ export class Game extends Scene
         this.createPhaseHud();
 
         void this.initializeProtocolSession();
+        this.registerWindowUnloadSignals();
         this.startServiceHealthMonitor();
 
         this.events.once('shutdown', () => {
             this.clearAllCardHpPulseAnimations();
             this.stopServiceHealthMonitor();
             this.stopAuthSessionPush();
+            this.unregisterWindowUnloadSignals();
             if (this.protocolSocket) {
                 this.protocolSocket.removeAllListeners();
                 this.protocolSocket.disconnect();
@@ -709,6 +721,64 @@ export class Game extends Scene
         }
     }
 
+    private emitClientUnloadingSignal (): void
+    {
+        if (this.clientUnloadSignalSent) {
+            return;
+        }
+
+        const socket = this.protocolSocket;
+        if (socket === null || socket.connected !== true) {
+            return;
+        }
+
+        this.clientUnloadSignalSent = true;
+        socket.emit('client_unloading', {
+            requested_slot: this.protocolClientSlot,
+            reconnect_token: this.protocolReconnectToken,
+            session_id: this.routerSessionId,
+        });
+    }
+
+    private registerWindowUnloadSignals (): void
+    {
+        if (typeof window === 'undefined') {
+            return;
+        }
+
+        if (this.pageHideHandler !== null || this.beforeUnloadHandler !== null) {
+            return;
+        }
+
+        this.pageHideHandler = (_event: Event) => {
+            this.emitClientUnloadingSignal();
+        };
+
+        this.beforeUnloadHandler = (_event: Event) => {
+            this.emitClientUnloadingSignal();
+        };
+
+        window.addEventListener('pagehide', this.pageHideHandler);
+        window.addEventListener('beforeunload', this.beforeUnloadHandler);
+    }
+
+    private unregisterWindowUnloadSignals (): void
+    {
+        if (typeof window === 'undefined') {
+            return;
+        }
+
+        if (this.pageHideHandler !== null) {
+            window.removeEventListener('pagehide', this.pageHideHandler);
+            this.pageHideHandler = null;
+        }
+
+        if (this.beforeUnloadHandler !== null) {
+            window.removeEventListener('beforeunload', this.beforeUnloadHandler);
+            this.beforeUnloadHandler = null;
+        }
+    }
+
     private initializeProtocolSocket (): boolean
     {
         if (this.protocolSocketFallbackToHttp) {
@@ -720,13 +790,16 @@ export class Game extends Scene
         }
 
         const socket = io(getBackendSocketUrl(), {
-            transports: ['websocket'],
+            // Polling is more stable with the local Flask/Werkzeug room server.
+            transports: ['polling'],
+            upgrade: false,
             reconnection: false,
         });
 
         this.protocolSocket = socket;
 
         socket.on('connect', () => {
+            this.clientUnloadSignalSent = false;
             this.enqueueProtocolPacket('register_client', {
                 requested_slot: this.protocolClientSlot,
                 reconnect_token: this.protocolReconnectToken,
@@ -784,22 +857,58 @@ export class Game extends Scene
 
         socket.on('protocol_packets', (payload: unknown) => {
             const data = typeof payload === 'object' && payload !== null
-                ? payload as { packets?: unknown }
+                ? payload as {
+                    packets?: unknown;
+                    blocked_pending_peer_ack?: unknown;
+                }
                 : {};
 
             const packets = Array.isArray(data.packets)
                 ? data.packets as BackendProtocolPacket[]
                 : [];
 
-            if (packets.length === 0) {
-                this.setInputAcknowledged(true);
-            }
+            const blockedPendingPeerAck = data.blocked_pending_peer_ack === true;
 
             this.processBackendProtocolPackets(packets);
+
+            if (blockedPendingPeerAck) {
+                this.setInputAcknowledged(false);
+            }
+            else if (packets.length === 0) {
+                this.setInputAcknowledged(true);
+            }
         });
 
         socket.on('protocol_error', (payload: unknown) => {
+            const data = typeof payload === 'object' && payload !== null
+                ? payload as {
+                    error?: unknown;
+                    packet_type?: unknown;
+                    status?: unknown;
+                }
+                : {};
+
+            const errorMessage = typeof data.error === 'string' && data.error.trim().length > 0
+                ? data.error.trim()
+                : 'Protocol request failed.';
+            const packetType = typeof data.packet_type === 'string' ? data.packet_type.trim() : '';
+            const statusCode = typeof data.status === 'number' && Number.isFinite(data.status)
+                ? Math.trunc(data.status)
+                : null;
+
             console.warn('[Protocol] protocol_error', payload);
+
+            const packetLabel = packetType.length > 0 ? packetType : 'request';
+            const statusSuffix = statusCode !== null ? ` (${statusCode})` : '';
+            this.appendTerminalLine(`Server rejected ${packetLabel}${statusSuffix}: ${errorMessage}`);
+
+            this.setInputAcknowledged(true);
+
+            if (packetType === 'init_setup_done') {
+                this.appendTerminalLine('Refreshing init state from server...');
+                this.enqueueProtocolPacket('request_environment', {});
+                this.enqueueProtocolPacket('ready', {});
+            }
         });
 
         socket.on('opponent_disconnected', (payload: unknown) => {
@@ -925,7 +1034,14 @@ export class Game extends Scene
 
     private setInputAcknowledged (acknowledged: boolean): void
     {
-        if (acknowledged && (this.awaitingRemoteNotifyAck || this.remoteInputLockActive || this.opponentDisconnected)) {
+        const allowInitInteractionWhileDisconnected = this.canInteractDuringInitOpponentDisconnect();
+        if (acknowledged && (
+            this.awaitingRemoteNotifyAck
+            || this.pendingNotifyCommand !== null
+            || this.pendingNotifyCommandQueue.length > 0
+            || this.remoteInputLockActive
+            || (this.opponentDisconnected && !allowInitInteractionWhileDisconnected)
+        )) {
             acknowledged = false;
         }
 
@@ -1005,7 +1121,10 @@ export class Game extends Scene
 
                 this.processBackendProtocolPackets(response.packets);
 
-                if (response.packets.length === 0) {
+                if (response.blockedPendingPeerAck) {
+                    this.setInputAcknowledged(false);
+                }
+                else if (response.packets.length === 0) {
                     this.setInputAcknowledged(true);
                 }
             })
@@ -1043,7 +1162,7 @@ export class Game extends Scene
                     this.resetBoardEntitiesForAuthoritativeEnvironment();
                 }
                 this.applyBackendEntitySetup(setup);
-                if (this.pendingNotifyCommand || this.pendingInputCommand) {
+                if (this.pendingNotifyCommand || this.pendingInputCommand || this.pendingNotifyCommandQueue.length > 0) {
                     this.setInputAcknowledged(false);
                 }
                 else {
@@ -1062,9 +1181,8 @@ export class Game extends Scene
         }
     }
 
-    private applyBackendCommandPacket (packet: Extract<ParsedBackendProtocolPacket, { kind: 'command' }>): void
+    private executeBackendReplayCommand (command: string): string | null
     {
-        const command = packet.command;
         let replayError: string | null = null;
         this.scannerCommandInProgress = true;
         this.setInputAcknowledged(false);
@@ -1076,39 +1194,62 @@ export class Game extends Scene
             console.error('[Protocol] command execution failed', {
                 command,
                 error: replayError,
-                category: packet.category,
-                commandId: packet.commandId,
             });
         }
         finally {
             this.scannerCommandInProgress = false;
         }
 
-        if (packet.category === 'query_input') {
-            this.pendingInputCommand = command;
-            this.setInputAcknowledged(true);
+        return replayError;
+    }
+
+    private drainQueuedNotifyCommands (): void
+    {
+        while (
+            this.pendingNotifyCommandQueue.length > 0
+            && this.pendingNotifyCommand === null
+            && !this.awaitingRemoteNotifyAck
+            && !this.inputOverlayController.hasActiveOverlay()
+        ) {
+            const nextCommand = this.pendingNotifyCommandQueue.shift();
+            if (!nextCommand) {
+                continue;
+            }
+
+            const replayError = this.executeBackendReplayCommand(nextCommand);
+            this.awaitingRemoteNotifyAck = true;
+
+            if (this.inputOverlayController.hasActiveOverlay()) {
+                this.pendingNotifyCommand = nextCommand;
+                this.setInputAcknowledged(false);
+                return;
+            }
+
+            this.awaitingRemoteNotifyAck = false;
+            this.setInputAcknowledged(false);
+            this.emitBackendEvent('terminal_log', {
+                line: 'ACK backend_update_processed',
+                command: nextCommand,
+                apply_error: replayError,
+            });
+        }
+    }
+
+    private applyBackendCommandPacket (packet: Extract<ParsedBackendProtocolPacket, { kind: 'command' }>): void
+    {
+        const command = packet.command;
+        if (packet.category === 'query_notify') {
+            this.pendingNotifyCommandQueue.push(command);
+            this.setInputAcknowledged(false);
+            this.drainQueuedNotifyCommands();
             return;
         }
 
-        if (packet.category === 'query_notify') {
-            this.awaitingRemoteNotifyAck = true;
-            if (this.inputOverlayController.hasActiveOverlay()) {
-                // Hold command completion ACK for notify until the notify
-                // overlay is dismissed and emits its notify frontend event.
-                this.pendingNotifyCommand = command;
-                this.setInputAcknowledged(false);
-            }
-            else {
-                this.awaitingRemoteNotifyAck = false;
-                this.setInputAcknowledged(false);
-                // Failsafe: if notify overlay did not become active, ACK
-                // immediately to prevent protocol deadlock.
-                this.emitBackendEvent('terminal_log', {
-                    line: 'ACK backend_update_processed',
-                    command,
-                    apply_error: replayError,
-                });
-            }
+        const replayError = this.executeBackendReplayCommand(command);
+
+        if (packet.category === 'query_input') {
+            this.pendingInputCommand = command;
+            this.setInputAcknowledged(true);
             return;
         }
 
@@ -1198,6 +1339,13 @@ export class Game extends Scene
         this.protocolRecoveryInProgress = false;
     }
 
+    private canInteractDuringInitOpponentDisconnect (): boolean
+    {
+        return this.opponentDisconnected
+            && this.isPregameInitActive()
+            && !this.initSetupConfirmed;
+    }
+
     private setOpponentDisconnectedState (disconnected: boolean, message?: string, graceSeconds = 0): void
     {
         this.opponentDisconnected = disconnected;
@@ -1220,7 +1368,7 @@ export class Game extends Scene
             if (graceSeconds > 0) {
                 this.startOpponentDisconnectCountdown(label, graceSeconds);
             }
-            this.setInputAcknowledged(false);
+            this.setInputAcknowledged(this.canInteractDuringInitOpponentDisconnect());
             return;
         }
 
@@ -1307,14 +1455,6 @@ export class Game extends Scene
 
         this.applyBackendPlayerSetup(setup);
 
-        const cardTypeColors: Record<'character' | 'tool' | 'item' | 'stadium' | 'supporter', number> = {
-            character: 0xe76f51,
-            tool: 0x457b9d,
-            item: 0x2a9d8f,
-            stadium: 0x6d597a,
-            supporter: 0xb45309
-        };
-
         const sortedCards = setup.cards.slice().sort((a, b) => {
             const aAttached = a.attachedToCardId ? 1 : 0;
             const bAttached = b.attachedToCardId ? 1 : 0;
@@ -1327,7 +1467,7 @@ export class Game extends Scene
                 ownerId: cardDef.ownerId,
                 cardType: cardDef.cardType,
                 holderId: cardDef.holderId,
-                color: cardTypeColors[cardDef.cardType],
+                color: GAME_CARD_TYPE_FILL_COLORS[cardDef.cardType],
                 AVGECardType: cardDef.AVGECardType,
                 AVGECardClass: cardDef.AVGECardClass,
                 hasAtk1: cardDef.hasAtk1,
@@ -1830,10 +1970,13 @@ export class Game extends Scene
             .filter((card) => card.getCardType() === 'character')
             .map((card) => card.id);
 
-        if (benchCharacterIds.length > 3) {
-            this.appendTerminalLine('Init setup allows up to 3 bench characters.');
+        if (benchCharacterIds.length > MAX_BENCH_CARDS) {
+            this.appendTerminalLine(`Init setup allows up to ${MAX_BENCH_CARDS} bench characters.`);
             return;
         }
+
+        this.appendTerminalLine('Submitting init setup...');
+        this.setInputAcknowledged(false);
 
         this.enqueueProtocolPacket('init_setup_done', {
             active_card_id: activeCharacters[0].id,
@@ -2193,13 +2336,14 @@ export class Game extends Scene
                 context,
             });
             this.pendingInputCommand = null;
+            this.drainQueuedNotifyCommands();
             return;
         }
 
         if (eventType === 'notify') {
             const notifyCommand =
-                this.pendingNotifyCommand
-                ?? (typeof responseData.command === 'string' && responseData.command.trim().length > 0 ? responseData.command : null);
+                (typeof responseData.command === 'string' && responseData.command.trim().length > 0 ? responseData.command : null)
+                ?? this.pendingNotifyCommand;
 
             if (!notifyCommand) {
                 return;
@@ -2213,13 +2357,14 @@ export class Game extends Scene
                 context,
             });
             this.pendingNotifyCommand = null;
+            this.drainQueuedNotifyCommands();
             return;
         }
 
         if (eventType === 'reveal') {
             const revealCommand =
-                this.pendingNotifyCommand
-                ?? (typeof responseData.command === 'string' && responseData.command.trim().length > 0 ? responseData.command : null);
+                (typeof responseData.command === 'string' && responseData.command.trim().length > 0 ? responseData.command : null)
+                ?? this.pendingNotifyCommand;
 
             if (revealCommand) {
                 this.awaitingRemoteNotifyAck = false;
@@ -2230,6 +2375,7 @@ export class Game extends Scene
                     context,
                 });
                 this.pendingNotifyCommand = null;
+                this.drainQueuedNotifyCommands();
                 return;
             }
         }
@@ -2794,7 +2940,7 @@ export class Game extends Scene
         cardType: 'character' | 'tool' | 'item' | 'stadium' | 'supporter';
         holderId: string;
         color: number;
-        AVGECardType: AVGECardType;
+        AVGECardType: string;
         AVGECardClass: string;
         hasAtk1: boolean;
         hasActive: boolean;
@@ -3154,7 +3300,7 @@ export class Game extends Scene
             .setOrigin(0.5)
             .setDepth(card.depth + 0.02)
             .setBlendMode(Phaser.BlendModes.ADD)
-            .setAlpha(0);
+            .setAlpha(0.8);
 
         const syncOverlayToCard = () => {
             const bounds = card.getBounds();

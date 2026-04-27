@@ -98,7 +98,12 @@ export class NumericalEntryInputOverlay
             minSize: 10,
             maxWidth: Math.round(panelWidth * 0.86)
         });
-        const hintFontSize = Math.max(GAME_INPUT_SELECTION_OVERLAY.hintFontSizeMin, Math.round(panelWidth * GAME_INPUT_SELECTION_OVERLAY.hintFontSizeRatio));
+        const hintFontSize = Math.max(
+            GAME_INPUT_OVERLAY_HEADER_LAYOUT.hintFontSizeMin,
+            Math.round(this.scene.scale.width * GAME_INPUT_OVERLAY_HEADER_LAYOUT.hintFontSizeRatio),
+            GAME_INPUT_SELECTION_OVERLAY.hintFontSizeMin,
+            Math.round(panelWidth * GAME_INPUT_SELECTION_OVERLAY.hintFontSizeRatio)
+        );
         const valueFontSize = Math.max(28, Math.round(panelWidth * 0.08));
         const hintMessage = 'Type a number and press Enter or Submit';
         const fittedHintFontSize = fitBitmapTextToSingleLine({
@@ -106,7 +111,7 @@ export class NumericalEntryInputOverlay
             font: 'minogram',
             text: hintMessage,
             preferredSize: hintFontSize,
-            minSize: 10,
+            minSize: GAME_INPUT_OVERLAY_HEADER_LAYOUT.hintFitMinSize,
             maxWidth: Math.round(panelWidth * 0.86)
         });
 

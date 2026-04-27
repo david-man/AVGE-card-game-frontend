@@ -7,6 +7,9 @@ export const GAME_CENTER_Y = GAME_HEIGHT / 2;
 export const UI_BASE_WIDTH = 1920;
 export const UI_BASE_HEIGHT = 1080;
 export const UI_SCALE = Math.min(GAME_WIDTH / UI_BASE_WIDTH, GAME_HEIGHT / UI_BASE_HEIGHT);
+export const UI_MIN_FONT_SIZE = 30;
+export const UI_FONT_FAMILY = 'MinecraftRegular, serif';
+export const UI_TEXT_RENDER_MODE: 'bitmap' | 'vector' = 'bitmap';
 
 // Reference size used for scene layout constants before scaling.
 export const BASE_WIDTH = 1280;
@@ -31,6 +34,23 @@ export const AVGE_CARD_TYPE_BORDER_COLORS: Record<AVGECardType, number> = {
 	GUITAR: 0xff9f1c,
 	CHOIR: 0xd62828,
 	BRASS: 0xc19a00
+} as const;
+
+export const GAME_CARD_TYPE_FILL_COLORS: Record<'character' | 'tool' | 'item' | 'stadium' | 'supporter', number> = {
+	character: 0xe76f51,
+	tool: 0x457b9d,
+	item: 0x2a9d8f,
+	stadium: 0x6d597a,
+	supporter: 0xb45309
+} as const;
+
+export const DECK_BUILDER_CATEGORY_FILL_COLORS: Record<'character' | 'item' | 'supporter' | 'stadium' | 'tool' | 'status_effect', number> = {
+	character: GAME_CARD_TYPE_FILL_COLORS.character,
+	item: GAME_CARD_TYPE_FILL_COLORS.item,
+	supporter: GAME_CARD_TYPE_FILL_COLORS.supporter,
+	stadium: GAME_CARD_TYPE_FILL_COLORS.stadium,
+	tool: GAME_CARD_TYPE_FILL_COLORS.tool,
+	status_effect: GAME_CARD_TYPE_FILL_COLORS.item
 } as const;
 
 export const CARD_DEFAULTS = {
@@ -76,6 +96,7 @@ export const CARDHOLDER_BASE_WIDTH = {
 	deck: 90,
 	stadium: 90
 } as const;
+export const MAX_BENCH_CARDS = 3;
 export const CARDHOLDER_HEIGHT_MULTIPLIER = 1.2;
 
 export const CARDHOLDER_SPACING_MULTIPLIERS = {
@@ -189,11 +210,74 @@ export const GAME_PREVIEW_LAYOUT = {
 	cardFillColor: 0x1f2937,
 	cardFillAlpha: 1,
 	idFontSize: 16,
+	idFontSizeMin: 14,
 	typeFontSize: 14,
+	typeFontSizeMin: 12,
 	hpFontSize: 11,
+	hpFontSizeMin: 10,
 	paragraphFontSize: 12,
+	paragraphFontSizeMin: 9,
+	flavorFontSizeDelta: -1,
+	flavorFontSizeMin: 8,
+	fitIdMinSize: 10,
+	fitIdSizeRatio: 0.72,
+	fitIdWidthRatio: 0.9,
+	fitIdWidthMin: 12,
+	fitTypeMinSize: 9,
+	fitTypeSizeRatio: 0.72,
+	fitTypeWidthRatio: 0.9,
+	fitTypeWidthMin: 12,
+	fitHpMinSize: 8,
+	fitHpSizeRatio: 0.75,
+	fitHpWidthRatio: 0.6,
+	fitHpWidthMin: 10,
+	flavorTopGapBase: 6,
+	flavorTopGapMin: 8,
 	typeTint: 0xcde7ff,
 	paragraphTint: 0xe2e8f0
+} as const;
+
+export const DECK_BUILDER_CURRENT_DECK_PREVIEW_TEXT_LAYOUT = {
+	titleFontSizeBase: 18,
+	titleFontSizeMin: 10,
+	hintFontSizeBase: 11,
+	hintFontSizeMin: 8,
+	emptyStateFontSizeBase: 12,
+	emptyStateFontSizeMin: 8,
+	sectionHeaderFontSizeBase: 12,
+	sectionHeaderFontSizeMin: 8,
+	tileIconFontSizeBase: 18,
+	tileIconFontSizeMin: 14,
+	tileNameFontSizeBase: 10,
+	tileNameFontSizeMin: 10,
+	tileCountFontSizeBase: 10,
+	tileCountFontSizeMin: 7
+} as const;
+
+export const DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT = {
+	panelWidthBase: 480,
+	panelHeightBase: 960,
+	rightInsetBase: 0,
+	titleOffsetYBase: 26,
+	hintOffsetYBase: 50,
+	innerPaddingXBase: 14,
+	bottomPaddingBase: 16,
+	tileWidthBase: 82,
+	tileHeightBase: 88,
+	tileGapXBase: 10,
+	tileGapYBase: 12,
+	sectionGapBase: 14,
+	listTopOffsetBase: 24,
+	emptyOffsetYBase: 20,
+	sectionHeaderAdvanceYBase: 20,
+	iconOffsetYRatio: 0.28,
+	nameOffsetXRatio: 0.42,
+	nameOffsetYRatio: 0.05,
+	tileNameMaxWidthRatio: 0.84,
+	countBadgeOffsetXRatio: 0.32,
+	countBadgeOffsetYRatio: 0.36,
+	countBadgeWidthBase: 22,
+	countBadgeHeightBase: 18
 } as const;
 
 export const GAME_CARD_ACTION_BUTTON_LAYOUT = {
@@ -272,7 +356,10 @@ export const GAME_INPUT_OVERLAY_HEADER_LAYOUT = {
 	messageGapRatio: 0.032,
 	messageGapMin: 22,
 	titleFontSizeRatio: 0.018,
-	titleFontSizeMin: 20
+	titleFontSizeMin: 20,
+	hintFontSizeRatio: 0.014,
+	hintFontSizeMin: 14,
+	hintFitMinSize: 10
 } as const;
 
 export const PLAYER_TURN_ATTRIBUTE_DEFAULTS = {
@@ -327,7 +414,7 @@ export const GAME_LAYOUT = {
 
 export const GAME_HP_PULSE_ANIMATION = {
 	scaleMultiplier: 1.15,
-	durationMs: 500,
+	durationMs: 250,
 	overlayAlpha: 0.8
 } as const;
 

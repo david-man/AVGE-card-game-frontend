@@ -1,6 +1,6 @@
 import { Scene } from 'phaser';
 import { GAME_INPUT_OVERLAY_HEADER_LAYOUT, GAME_INPUT_SELECTION_OVERLAY } from '../../config';
-import { fitBitmapTextToSingleLine } from './bitmapTextFit';
+import { fitBitmapTextToMultiLine, fitBitmapTextToSingleLine } from './bitmapTextFit';
 
 type SelectionSubmitCallback = (orderedSelections: string[]) => void;
 type SelectionCardClickCallback = (cardId: string) => void;
@@ -42,7 +42,6 @@ export class SelectionInputOverlay
     private selectionDirectSingleMode: boolean;
     private activeExpandedItemContainer: Phaser.GameObjects.Container | null;
     private allowRepeat: boolean;
-    private allowNone: boolean;
     private onSelectionSubmit: SelectionSubmitCallback | null;
     private onSelectionCardClick: SelectionCardClickCallback | null;
     private onSelectionBackgroundClick: SelectionBackgroundClickCallback | null;
@@ -64,12 +63,13 @@ export class SelectionInputOverlay
         this.selectionDirectSingleMode = false;
         this.activeExpandedItemContainer = null;
         this.allowRepeat = false;
-        this.allowNone = false;
         this.onSelectionSubmit = null;
         this.onSelectionCardClick = null;
         this.onSelectionBackgroundClick = null;
-        this.hintPreferredFontSize = GAME_INPUT_SELECTION_OVERLAY.hintFontSizeMin;
-        this.hintPreferredFontSize = GAME_INPUT_SELECTION_OVERLAY.hintFontSizeMin;
+        this.hintPreferredFontSize = Math.max(
+            GAME_INPUT_OVERLAY_HEADER_LAYOUT.hintFontSizeMin,
+            GAME_INPUT_SELECTION_OVERLAY.hintFontSizeMin
+        );
     }
 
     hasActiveOverlay (): boolean
@@ -118,7 +118,6 @@ export class SelectionInputOverlay
         this.selectionDirectSingleMode = false;
         this.activeExpandedItemContainer = null;
         this.allowRepeat = false;
-        this.allowNone = false;
         this.onSelectionSubmit = null;
         this.onSelectionCardClick = null;
         this.onSelectionBackgroundClick = null;
@@ -138,7 +137,6 @@ export class SelectionInputOverlay
         this.stopActiveOverlay();
 
         this.allowRepeat = allowRepeat;
-        this.allowNone = allowNone;
         this.selectionByIndex = Array.from({ length: numberOfSelections }, () => null);
         this.selectionDirectSingleMode = numberOfSelections === 1;
         this.onSelectionSubmit = onSubmit;
@@ -176,8 +174,13 @@ export class SelectionInputOverlay
             minSize: 10,
             maxWidth: Math.round(this.scene.scale.width * 0.92)
         });
-        const hintFontSize = Math.max(GAME_INPUT_SELECTION_OVERLAY.hintFontSizeMin, Math.round(cardWidth * GAME_INPUT_SELECTION_OVERLAY.hintFontSizeRatio));
-            this.hintPreferredFontSize = hintFontSize;
+        const hintFontSize = Math.max(
+            GAME_INPUT_OVERLAY_HEADER_LAYOUT.hintFontSizeMin,
+            Math.round(this.scene.scale.width * GAME_INPUT_OVERLAY_HEADER_LAYOUT.hintFontSizeRatio),
+            GAME_INPUT_SELECTION_OVERLAY.hintFontSizeMin,
+            Math.round(cardWidth * GAME_INPUT_SELECTION_OVERLAY.hintFontSizeRatio)
+        );
+        this.hintPreferredFontSize = hintFontSize;
         const itemLabelFontSize = Math.max(GAME_INPUT_SELECTION_OVERLAY.itemLabelFontSizeMin, Math.round(cardWidth * GAME_INPUT_SELECTION_OVERLAY.itemLabelFontSizeRatio));
         const itemSubLabelFontSize = Math.max(GAME_INPUT_SELECTION_OVERLAY.itemSubLabelFontSizeMin, Math.round(cardWidth * GAME_INPUT_SELECTION_OVERLAY.itemSubLabelFontSizeRatio));
         const assignmentFontSize = Math.max(GAME_INPUT_SELECTION_OVERLAY.assignmentFontSizeMin, Math.round(cardWidth * GAME_INPUT_SELECTION_OVERLAY.assignmentFontSizeRatio));
@@ -192,7 +195,7 @@ export class SelectionInputOverlay
             font: 'minogram',
             text: hintMessage,
             preferredSize: hintFontSize,
-            minSize: 10,
+            minSize: GAME_INPUT_OVERLAY_HEADER_LAYOUT.hintFitMinSize,
             maxWidth: Math.round(this.scene.scale.width * 0.92)
         });
         const startY = Math.round(this.scene.scale.height * GAME_INPUT_SELECTION_OVERLAY.startYRatio);
@@ -202,8 +205,26 @@ export class SelectionInputOverlay
         );
         const rowGap = Math.max(GAME_INPUT_SELECTION_OVERLAY.rowGapMin, Math.round(this.scene.scale.height * GAME_INPUT_SELECTION_OVERLAY.rowGapRatio));
         const rowSpacing = Math.max(GAME_INPUT_SELECTION_OVERLAY.rowSpacingMin, Math.round(this.scene.scale.width * GAME_INPUT_SELECTION_OVERLAY.rowSpacingRatio));
-        const totalWidth = (items.length * cardWidth) + (Math.max(0, items.length - 1) * rowSpacing);
-        const startX = Math.round((this.scene.scale.width - totalWidth) / 2) + Math.round(cardWidth / 2);
+
+        const displayItems = items.map((item) => {
+            const isNoneLabel = item.id.trim().toLowerCase() === 'none';
+            if (allowNone && isNoneLabel && !item.selectable) {
+                return {
+                    ...item,
+                    selectable: true
+                };
+            }
+
+            return item;
+        });
+        const hasExplicitNoneOption = displayItems.some((item) => item.id.trim().toLowerCase() === 'none');
+        if (allowNone && !hasExplicitNoneOption) {
+            displayItems.push({ id: 'none', isCard: false, selectable: true });
+        }
+
+        const maxColumnsByWidth = Math.max(1, Math.floor((this.scene.scale.width + rowSpacing) / (cardWidth + rowSpacing)));
+        const columnCount = Math.max(1, Math.min(displayItems.length, maxColumnsByWidth));
+        const rowCount = Math.max(1, Math.ceil(displayItems.length / columnCount));
         const displayRowY = startY;
 
         this.selectionTitleText = this.scene.add.bitmapText(
@@ -231,43 +252,51 @@ export class SelectionInputOverlay
                 .setStrokeStyle(3, 0xffffff, 1)
                 .setInteractive({ useHandCursor: item.selectable });
 
-            const primaryLabel = item.isCard ? (item.cardClassLabel ?? item.id) : item.id;
-            const label = this.scene.add.bitmapText(0, -Math.round(cardHeight * GAME_INPUT_SELECTION_OVERLAY.itemLabelYOffsetRatio), 'minogram', primaryLabel, itemLabelFontSize)
-                .setOrigin(0.5)
-                .setMaxWidth(itemTextMaxWidth);
-            label.setFontSize(fitBitmapTextToSingleLine({
+            const isNoneOption = !item.isCard && item.id.trim().toLowerCase() === 'none';
+            const primaryLabel = isNoneOption
+                ? 'None'
+                : (item.isCard ? (item.cardClassLabel ?? item.id) : item.id);
+            const primaryLabelLayout = fitBitmapTextToMultiLine({
                 scene: this.scene,
                 font: 'minogram',
                 text: primaryLabel,
                 preferredSize: itemLabelFontSize,
                 minSize: 9,
-                maxWidth: itemTextMaxWidth
-            }));
+                maxWidth: itemTextMaxWidth,
+                maxLines: item.isCard ? 3 : (isNoneOption ? 1 : 5)
+            });
+            const label = this.scene.add.bitmapText(
+                0,
+                -Math.round(cardHeight * GAME_INPUT_SELECTION_OVERLAY.itemLabelYOffsetRatio),
+                'minogram',
+                primaryLabelLayout.text,
+                primaryLabelLayout.fontSize
+            )
+                .setOrigin(0.5);
             if (!item.selectable) {
                 label.setTint(0xcbd5e1);
             }
 
+            const subLabelText = `${item.cardTypeLabel ?? 'CARD'} | ${item.id}`;
+            const subLabelLayout = fitBitmapTextToMultiLine({
+                scene: this.scene,
+                font: 'minogram',
+                text: subLabelText,
+                preferredSize: itemSubLabelFontSize,
+                minSize: 8,
+                maxWidth: itemTextMaxWidth,
+                maxLines: 3
+            });
             const subLabel = item.isCard
                 ? this.scene.add.bitmapText(
                     0,
                     Math.round(cardHeight * GAME_INPUT_SELECTION_OVERLAY.itemSubLabelYOffsetRatio),
                     'minogram',
-                    `${item.cardTypeLabel ?? 'CARD'} | ${item.id}`,
-                    itemSubLabelFontSize
+                    subLabelLayout.text,
+                    subLabelLayout.fontSize
                 )
                     .setOrigin(0.5)
-                    .setMaxWidth(itemTextMaxWidth)
                 : undefined;
-            if (subLabel) {
-                subLabel.setFontSize(fitBitmapTextToSingleLine({
-                    scene: this.scene,
-                    font: 'minogram',
-                    text: `${item.cardTypeLabel ?? 'CARD'} | ${item.id}`,
-                    preferredSize: itemSubLabelFontSize,
-                    minSize: 8,
-                    maxWidth: itemTextMaxWidth
-                }));
-            }
             if (subLabel && !item.selectable) {
                 subLabel.setTint(0xcbd5e1);
             }
@@ -309,25 +338,23 @@ export class SelectionInputOverlay
             };
         };
 
-        items.forEach((item, index) => {
-            const x = startX + (index * (cardWidth + rowSpacing));
-            this.selectionItemsUi.push(makeItemUi(item, x, displayRowY));
+        displayItems.forEach((item, index) => {
+            const row = Math.floor(index / columnCount);
+            const col = index % columnCount;
+            const rowStartIndex = row * columnCount;
+            const remainingInRow = displayItems.length - rowStartIndex;
+            const itemsInRow = Math.min(columnCount, remainingInRow);
+            const rowWidth = (itemsInRow * cardWidth) + (Math.max(0, itemsInRow - 1) * rowSpacing);
+            const rowStartX = Math.round((this.scene.scale.width - rowWidth) / 2) + Math.round(cardWidth / 2);
+            const x = rowStartX + (col * (cardWidth + rowSpacing));
+            const y = displayRowY + (row * (cardHeight + rowGap));
+            this.selectionItemsUi.push(makeItemUi(item, x, y));
         });
 
-        let nextRowY = displayRowY + cardHeight + (rowGap * GAME_INPUT_SELECTION_OVERLAY.noneRowGapMultiplier);
+        this.selectionNoneUi = null;
 
-        if (allowNone) {
-            this.selectionNoneUi = makeItemUi(
-                { id: 'none', isCard: false, selectable: true },
-                this.scene.scale.width / 2,
-                nextRowY
-            );
-            this.selectionNoneUi.label.setText('NONE');
-            nextRowY += cardHeight + (rowGap * GAME_INPUT_SELECTION_OVERLAY.numbersRowGapMultiplier);
-        }
-        else {
-            nextRowY += rowGap * GAME_INPUT_SELECTION_OVERLAY.numbersRowGapMultiplier;
-        }
+        const gridBottomY = displayRowY + ((rowCount - 1) * (cardHeight + rowGap)) + Math.round(cardHeight / 2);
+        let nextRowY = gridBottomY + Math.round(cardHeight / 2) + (rowGap * GAME_INPUT_SELECTION_OVERLAY.numbersRowGapMultiplier);
 
         this.selectionHintText = this.scene.add.bitmapText(
             this.scene.scale.width / 2,
@@ -436,11 +463,9 @@ export class SelectionInputOverlay
             return;
         }
 
-        if (!this.allowNone && targetId === 'none') {
-            return;
-        }
+        const isNoneTarget = targetId.trim().toLowerCase() === 'none';
 
-        if (!this.allowRepeat) {
+        if (!this.allowRepeat && !isNoneTarget) {
             const selectedElsewhere = this.selectionByIndex.some((entry, index) => entry === targetId && index !== this.activeSelectionIndex);
             if (selectedElsewhere) {
                 this.setHintText('Repeat not allowed for this selection');
@@ -526,7 +551,7 @@ export class SelectionInputOverlay
             font: 'minogram',
             text,
             preferredSize: this.hintPreferredFontSize,
-            minSize: 10,
+            minSize: GAME_INPUT_OVERLAY_HEADER_LAYOUT.hintFitMinSize,
             maxWidth: Math.round(this.scene.scale.width * 0.92)
         });
         this.selectionHintText.setFontSize(fittedSize);

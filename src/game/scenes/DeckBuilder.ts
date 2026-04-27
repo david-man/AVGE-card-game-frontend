@@ -1,6 +1,20 @@
 import { Scene, GameObjects } from 'phaser';
-import { GAME_CENTER_X, GAME_HEIGHT, GAME_WIDTH, UI_SCALE } from '../config';
+import {
+    BASE_HEIGHT,
+    BASE_WIDTH,
+    BOARD_SCALE,
+    CARD_BASE_HEIGHT,
+    CARD_BASE_WIDTH,
+    DECK_BUILDER_CATEGORY_FILL_COLORS,
+    DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT,
+    DECK_BUILDER_CURRENT_DECK_PREVIEW_TEXT_LAYOUT,
+    GAME_CENTER_X,
+    GAME_HEIGHT,
+    GAME_WIDTH,
+    UI_SCALE
+} from '../config';
 import { CARD_CATALOG, CardCatalogEntry, CardCatalogCategory, CharacterCardType } from '../data/cardCatalog';
+import { Card, CardType } from '../entities';
 import {
     clearClientSessionState,
     createUserDeck,
@@ -12,6 +26,7 @@ import {
     ROUTER_SESSION_ID_STORAGE_KEY,
     UserDeck,
 } from '../Network';
+import { CardPreviewController } from '../ui/CardPreviewController';
 
 type DeckBuilderState = {
     deckId: string | null;
@@ -30,6 +45,7 @@ type DeckDraft = {
 };
 
 const CARDS_PER_PAGE = 8;
+const SEARCH_RESULTS_PER_PAGE = 8;
 const FIXED_DECK_SLOT_COUNT = 5;
 const DECK_SLOT_IDS_STORAGE_KEY = 'avge_deck_slot_ids';
 const DECK_REQUIRED_CARD_COUNT = 20;
@@ -50,6 +66,8 @@ export class DeckBuilder extends Scene
     backLabel: GameObjects.BitmapText;
     renameButton: GameObjects.Rectangle;
     renameLabel: GameObjects.BitmapText;
+    searchButton: GameObjects.Rectangle;
+    searchLabel: GameObjects.BitmapText;
     nextPageButton: GameObjects.Rectangle;
     prevPageButton: GameObjects.Rectangle;
     categoryButtons: Array<{
@@ -86,6 +104,46 @@ export class DeckBuilder extends Scene
     private authSessionUnsubscribe: (() => void) | null;
     private draftByDeckId: Map<string, DeckDraft>;
     private activeDeckId: string | null;
+    private searchMenuVisible: boolean;
+    private searchQuery: string;
+    private searchPageIndex: number;
+    private searchMenuObjects: Array<GameObjects.Rectangle | GameObjects.BitmapText | Phaser.GameObjects.Container>;
+    private searchBackdrop: GameObjects.Rectangle;
+    private searchPanel: GameObjects.Rectangle;
+    private searchTitle: GameObjects.BitmapText;
+    private searchHint: GameObjects.BitmapText;
+    private searchQueryLabel: GameObjects.BitmapText;
+    private searchSaveButton: GameObjects.Rectangle;
+    private searchSaveLabel: GameObjects.BitmapText;
+    private searchCloseButton: GameObjects.Rectangle;
+    private searchCloseLabel: GameObjects.BitmapText;
+    private searchClearButton: GameObjects.Rectangle;
+    private searchClearLabel: GameObjects.BitmapText;
+    private searchPrevButton: GameObjects.Rectangle;
+    private searchPrevLabel: GameObjects.BitmapText;
+    private searchNextButton: GameObjects.Rectangle;
+    private searchNextLabel: GameObjects.BitmapText;
+    private searchRows: Array<{
+        container: Phaser.GameObjects.Container;
+        cardName: GameObjects.BitmapText;
+        cardMeta: GameObjects.BitmapText;
+        countLabel: GameObjects.BitmapText;
+        plusButton: GameObjects.Rectangle;
+        plusLabel: GameObjects.BitmapText;
+        minusButton: GameObjects.Rectangle;
+        minusLabel: GameObjects.BitmapText;
+        card: CardCatalogEntry | null;
+    }>;
+    private currentDeckPanel: GameObjects.Rectangle;
+    private currentDeckHint: GameObjects.BitmapText;
+    private currentDeckCardObjects: Phaser.GameObjects.GameObject[];
+    private deckCardPreviewController: CardPreviewController;
+    private deckPreviewProxyCard: Card | null;
+    private deckPreviewObjectWidth: number;
+    private deckPreviewObjectHeight: number;
+    private deckPreviewSuppressOutsideClose: boolean;
+    private keyboardKeydownHandler: ((event: KeyboardEvent) => void) | null;
+    private pointerDownHandler: ((pointer: Phaser.Input.Pointer) => void) | null;
 
     constructor ()
     {
@@ -107,6 +165,19 @@ export class DeckBuilder extends Scene
         this.draftByDeckId = new Map<string, DeckDraft>();
         this.activeDeckId = null;
         this.authSessionUnsubscribe = null;
+        this.searchMenuVisible = false;
+        this.searchQuery = '';
+        this.searchPageIndex = 0;
+        this.searchMenuObjects = [];
+        this.searchRows = [];
+        this.currentDeckCardObjects = [];
+        this.deckCardPreviewController = new CardPreviewController(this);
+        this.deckPreviewProxyCard = null;
+        this.deckPreviewObjectWidth = 0;
+        this.deckPreviewObjectHeight = 0;
+        this.deckPreviewSuppressOutsideClose = false;
+        this.keyboardKeydownHandler = null;
+        this.pointerDownHandler = null;
     }
 
     preload (): void
@@ -133,9 +204,29 @@ export class DeckBuilder extends Scene
         this.slotDecks = [];
         this.draftByDeckId = new Map<string, DeckDraft>();
         this.activeDeckId = null;
+        this.searchMenuVisible = false;
+        this.searchQuery = '';
+        this.searchPageIndex = 0;
+        this.searchMenuObjects = [];
+        this.searchRows = [];
+        this.currentDeckCardObjects = [];
+        this.deckPreviewSuppressOutsideClose = false;
 
         this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
             this.stopAuthSessionPush();
+            this.hideDeckCardPreview();
+            if (this.deckPreviewProxyCard) {
+                this.deckPreviewProxyCard.destroy();
+                this.deckPreviewProxyCard = null;
+            }
+            if (this.keyboardKeydownHandler && this.input.keyboard) {
+                this.input.keyboard.off('keydown', this.keyboardKeydownHandler);
+                this.keyboardKeydownHandler = null;
+            }
+            if (this.pointerDownHandler) {
+                this.input.off('pointerdown', this.pointerDownHandler);
+                this.pointerDownHandler = null;
+            }
         });
 
         this.cameras.main.fadeIn(180, 0, 0, 0);
@@ -267,11 +358,38 @@ export class DeckBuilder extends Scene
             .setOrigin(0.5)
             .setTint(0xffffff);
 
+        this.searchButton = this.add.rectangle(
+            Math.round(GAME_CENTER_X + 95 * UI_SCALE),
+            Math.round(GAME_HEIGHT * 0.93),
+            Math.round(140 * UI_SCALE),
+            Math.round(48 * UI_SCALE),
+            0x14532d,
+            0.95
+        )
+            .setStrokeStyle(2, 0xffffff, 0.75)
+            .setInteractive({ useHandCursor: true });
+
+        this.searchLabel = this.add.bitmapText(
+            this.searchButton.x,
+            this.searchButton.y,
+            'minogram',
+            'SEARCH',
+            Math.max(12, Math.round(20 * UI_SCALE))
+        )
+            .setOrigin(0.5)
+            .setTint(0xffffff);
+
         this.buildDeckSlotButtons();
         this.buildCategoryButtons();
         this.buildCharacterTypeButtons();
         this.buildRows();
+        this.buildCurrentDeckPanel();
+        this.buildDeckPreviewPanel();
+        this.buildSearchMenu();
         this.renderRows();
+        this.renderSearchMenu();
+        this.setSearchMenuVisible(false);
+        this.hideDeckCardPreview();
         this.updateSummaryText();
 
         this.prevPageButton.on('pointerdown', () => {
@@ -299,11 +417,25 @@ export class DeckBuilder extends Scene
             this.renameCurrentDeck();
         });
 
+        this.searchButton.on('pointerdown', () => {
+            this.toggleSearchMenu(!this.searchMenuVisible);
+        });
+
         this.backButton.on('pointerdown', () => {
             this.scene.start('MainMenu');
         });
 
         void this.loadDeck();
+
+        this.keyboardKeydownHandler = (event: KeyboardEvent) => {
+            this.handleSearchKeydown(event);
+        };
+        this.input.keyboard?.on('keydown', this.keyboardKeydownHandler);
+
+        this.pointerDownHandler = (pointer: Phaser.Input.Pointer) => {
+            this.handleGlobalPointerDown(pointer);
+        };
+        this.input.on('pointerdown', this.pointerDownHandler);
 
         const sessionId = this.getStoredSessionId();
         if (sessionId) {
@@ -460,7 +592,9 @@ export class DeckBuilder extends Scene
                 Math.round(56 * UI_SCALE),
                 0x1e293b,
                 0.95
-            ).setStrokeStyle(2, 0xffffff, 0.7);
+            )
+                .setStrokeStyle(2, 0xffffff, 0.7)
+                .setInteractive({ useHandCursor: true });
 
             const iconLabel = this.add.bitmapText(
                 iconBody.x,
@@ -470,7 +604,8 @@ export class DeckBuilder extends Scene
                 Math.max(8, Math.round(12 * UI_SCALE))
             )
                 .setOrigin(0.5)
-                .setTint(0xffffff);
+                .setTint(0xffffff)
+                .setInteractive({ useHandCursor: true });
 
             const cardName = this.add.bitmapText(
                 Math.round(GAME_CENTER_X - 190 * UI_SCALE),
@@ -541,48 +676,1011 @@ export class DeckBuilder extends Scene
                 if (this.busy || !row.card) {
                     return;
                 }
-
-                const totalCards = this.collectCards().length;
-                if (totalCards >= DECK_REQUIRED_CARD_COUNT) {
-                    this.subtitle.setText(`Deck must contain exactly ${DECK_REQUIRED_CARD_COUNT} cards.`);
-                    return;
-                }
-
-                const current = this.state.countsByCardId.get(row.card.id) ?? 0;
-                const maxCopies = this.getMaxCopiesForCard(row.card);
-                if (current >= maxCopies) {
-                    this.subtitle.setText(
-                        maxCopies === DECK_MAX_ITEM_OR_TOOL_COPIES
-                            ? `${row.card.label.toUpperCase()} max copies: ${DECK_MAX_ITEM_OR_TOOL_COPIES}.`
-                            : `${row.card.label.toUpperCase()} max copies: ${DECK_MAX_OTHER_COPIES}.`
-                    );
-                    return;
-                }
-
-                this.state.countsByCardId.set(row.card.id, current + 1);
-                this.persistCurrentDeckDraft();
-                this.refreshDeckSlotButtons();
-                this.renderRows();
-                this.updateSummaryText();
+                this.tryAddCardToDeck(row.card);
             });
 
             minusButton.on('pointerdown', () => {
                 if (this.busy || !row.card) {
                     return;
                 }
-                const current = this.state.countsByCardId.get(row.card.id) ?? 0;
-                if (current <= 0) {
+                this.tryRemoveCardFromDeck(row.card);
+            });
+
+            const showPreview = (pointer?: Phaser.Input.Pointer) => {
+                if (!row.card) {
                     return;
                 }
-                this.state.countsByCardId.set(row.card.id, current - 1);
-                this.persistCurrentDeckDraft();
-                this.refreshDeckSlotButtons();
-                this.renderRows();
-                this.updateSummaryText();
+                this.showDeckCardPreview(row.card, pointer);
+            };
+
+            iconBody.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+                showPreview(pointer);
+            });
+
+            iconLabel.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+                showPreview(pointer);
             });
 
             this.rows.push(row);
         }
+    }
+
+    private buildCurrentDeckPanel (): void
+    {
+        const panelWidth = Math.round(DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.panelWidthBase * UI_SCALE);
+        const panelHeight = Math.round(DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.panelHeightBase * UI_SCALE);
+        const panelX = Math.round(GAME_WIDTH - (panelWidth * 0.5) - Math.round(DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.rightInsetBase * UI_SCALE));
+        const panelY = Math.round(GAME_HEIGHT * 0.5);
+
+        this.currentDeckPanel = this.add.rectangle(panelX, panelY, panelWidth, panelHeight, 0x0f172a, 0.92)
+            .setStrokeStyle(2, 0xffffff, 0.8)
+            .setDepth(10);
+
+        this.add.bitmapText(
+            panelX,
+            panelY - Math.round(panelHeight * 0.5) + Math.round(DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.titleOffsetYBase * UI_SCALE),
+            'minogram',
+            'CURRENT DECK',
+            Math.max(
+                DECK_BUILDER_CURRENT_DECK_PREVIEW_TEXT_LAYOUT.titleFontSizeMin,
+                Math.round(DECK_BUILDER_CURRENT_DECK_PREVIEW_TEXT_LAYOUT.titleFontSizeBase * UI_SCALE)
+            )
+        )
+            .setOrigin(0.5)
+            .setTint(0xffffff)
+            .setDepth(11);
+
+        this.currentDeckHint = this.add.bitmapText(
+            panelX,
+            panelY - Math.round(panelHeight * 0.5) + Math.round(DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.hintOffsetYBase * UI_SCALE),
+            'minogram',
+            '',
+            Math.max(
+                DECK_BUILDER_CURRENT_DECK_PREVIEW_TEXT_LAYOUT.hintFontSizeMin,
+                Math.round(DECK_BUILDER_CURRENT_DECK_PREVIEW_TEXT_LAYOUT.hintFontSizeBase * UI_SCALE)
+            )
+        )
+            .setOrigin(0.5)
+            .setTint(0xcbd5e1)
+            .setDepth(11);
+
+        this.currentDeckCardObjects = [];
+    }
+
+    private clearCurrentDeckCardObjects (): void
+    {
+        for (const object of this.currentDeckCardObjects) {
+            object.destroy();
+        }
+        this.currentDeckCardObjects = [];
+    }
+
+    private getCurrentDeckGroupedCards (): Array<{ category: CardCatalogCategory; cards: Array<{ card: CardCatalogEntry; count: number }> }>
+    {
+        const categoryOrder: CardCatalogCategory[] = ['character', 'item', 'supporter', 'stadium', 'tool', 'status_effect'];
+        const countByCategory = new Map<CardCatalogCategory, Array<{ card: CardCatalogEntry; count: number }>>();
+
+        for (const category of categoryOrder) {
+            countByCategory.set(category, []);
+        }
+
+        for (const [cardId, count] of this.state.countsByCardId.entries()) {
+            if (count <= 0) {
+                continue;
+            }
+
+            const card = CARD_BY_ID.get(cardId);
+            if (!card) {
+                continue;
+            }
+
+            countByCategory.get(card.category)?.push({ card, count });
+        }
+
+        const grouped: Array<{ category: CardCatalogCategory; cards: Array<{ card: CardCatalogEntry; count: number }> }> = [];
+        for (const category of categoryOrder) {
+            const cards = countByCategory.get(category) ?? [];
+            if (cards.length === 0) {
+                continue;
+            }
+
+            cards.sort((a, b) => a.card.label.localeCompare(b.card.label));
+            grouped.push({ category, cards });
+        }
+
+        return grouped;
+    }
+
+    private getCategoryColor (category: CardCatalogCategory): number
+    {
+        return DECK_BUILDER_CATEGORY_FILL_COLORS[category] ?? DECK_BUILDER_CATEGORY_FILL_COLORS.item;
+    }
+
+    private renderCurrentDeckPanel (): void
+    {
+        this.clearCurrentDeckCardObjects();
+
+        const grouped = this.getCurrentDeckGroupedCards();
+        const totalCards = this.collectCards().length;
+        this.currentDeckHint.setText(totalCards > 0 ? `Click a card to preview (${totalCards}/${DECK_REQUIRED_CARD_COUNT})` : '(EMPTY DECK)');
+
+        const panelLeft = this.currentDeckPanel.x - Math.round(this.currentDeckPanel.width * 0.5) + Math.round(DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.innerPaddingXBase * UI_SCALE);
+        const panelRight = this.currentDeckPanel.x + Math.round(this.currentDeckPanel.width * 0.5) - Math.round(DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.innerPaddingXBase * UI_SCALE);
+        const panelBottom = this.currentDeckPanel.y + Math.round(this.currentDeckPanel.height * 0.5) - Math.round(DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.bottomPaddingBase * UI_SCALE);
+
+        const tileWidth = Math.round(DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.tileWidthBase * UI_SCALE);
+        const tileHeight = Math.round(DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.tileHeightBase * UI_SCALE);
+        const tileGapX = Math.round(DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.tileGapXBase * UI_SCALE);
+        const tileGapY = Math.round(DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.tileGapYBase * UI_SCALE);
+        const sectionGap = Math.round(DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.sectionGapBase * UI_SCALE);
+        const headerFontSize = Math.max(
+            DECK_BUILDER_CURRENT_DECK_PREVIEW_TEXT_LAYOUT.sectionHeaderFontSizeMin,
+            Math.round(DECK_BUILDER_CURRENT_DECK_PREVIEW_TEXT_LAYOUT.sectionHeaderFontSizeBase * UI_SCALE)
+        );
+        const iconFontSize = Math.max(
+            DECK_BUILDER_CURRENT_DECK_PREVIEW_TEXT_LAYOUT.tileIconFontSizeMin,
+            Math.round(DECK_BUILDER_CURRENT_DECK_PREVIEW_TEXT_LAYOUT.tileIconFontSizeBase * UI_SCALE)
+        );
+        const nameFontSize = Math.max(
+            DECK_BUILDER_CURRENT_DECK_PREVIEW_TEXT_LAYOUT.tileNameFontSizeMin,
+            Math.round(DECK_BUILDER_CURRENT_DECK_PREVIEW_TEXT_LAYOUT.tileNameFontSizeBase * UI_SCALE)
+        );
+        const countFontSize = Math.max(
+            DECK_BUILDER_CURRENT_DECK_PREVIEW_TEXT_LAYOUT.tileCountFontSizeMin,
+            Math.round(DECK_BUILDER_CURRENT_DECK_PREVIEW_TEXT_LAYOUT.tileCountFontSizeBase * UI_SCALE)
+        );
+
+        let cursorY = this.currentDeckHint.y + Math.round(DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.listTopOffsetBase * UI_SCALE);
+
+        if (grouped.length === 0) {
+            const empty = this.add.bitmapText(
+                this.currentDeckPanel.x,
+                cursorY + Math.round(DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.emptyOffsetYBase * UI_SCALE),
+                'minogram',
+                'ADD CARDS USING +/-',
+                Math.max(
+                    DECK_BUILDER_CURRENT_DECK_PREVIEW_TEXT_LAYOUT.emptyStateFontSizeMin,
+                    Math.round(DECK_BUILDER_CURRENT_DECK_PREVIEW_TEXT_LAYOUT.emptyStateFontSizeBase * UI_SCALE)
+                )
+            )
+                .setOrigin(0.5)
+                .setTint(0x94a3b8)
+                .setDepth(11);
+
+            this.currentDeckCardObjects.push(empty);
+            return;
+        }
+
+        for (const group of grouped) {
+            if (cursorY >= panelBottom) {
+                break;
+            }
+
+            const sectionTitle = this.add.bitmapText(
+                panelLeft,
+                cursorY,
+                'minogram',
+                this.getCategoryLabel(group.category),
+                headerFontSize
+            )
+                .setOrigin(0, 0.5)
+                .setTint(0xf8fafc)
+                .setDepth(11);
+            this.currentDeckCardObjects.push(sectionTitle);
+
+            cursorY += Math.round(DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.sectionHeaderAdvanceYBase * UI_SCALE);
+
+            const innerWidth = panelRight - panelLeft;
+            const columns = Math.max(1, Math.floor((innerWidth + tileGapX) / (tileWidth + tileGapX)));
+            const sectionRows = Math.ceil(group.cards.length / columns);
+
+            for (let i = 0; i < group.cards.length; i += 1) {
+                const row = Math.floor(i / columns);
+                const col = i % columns;
+                const cardItem = group.cards[i];
+                const card = cardItem.card;
+                const count = cardItem.count;
+
+                const x = panelLeft + Math.round(tileWidth * 0.5) + (col * (tileWidth + tileGapX));
+                const y = cursorY + Math.round(tileHeight * 0.5) + (row * (tileHeight + tileGapY));
+                if (y + Math.round(tileHeight * 0.5) > panelBottom) {
+                    continue;
+                }
+
+                const body = this.add.rectangle(
+                    x,
+                    y,
+                    tileWidth,
+                    tileHeight,
+                    this.getCategoryColor(card.category),
+                    0.95
+                )
+                    .setStrokeStyle(2, 0xffffff, 0.82)
+                    .setDepth(11)
+                    .setInteractive({ useHandCursor: true });
+
+                const icon = this.add.bitmapText(
+                    x,
+                    y - Math.round(tileHeight * DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.iconOffsetYRatio),
+                    'minogram',
+                    card.iconFallback,
+                    iconFontSize
+                )
+                    .setOrigin(0.5)
+                    .setTint(0xffffff)
+                    .setDepth(12)
+                    .setInteractive({ useHandCursor: true });
+
+                const name = this.add.bitmapText(
+                    x - Math.round(tileWidth * DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.nameOffsetXRatio),
+                    y + Math.round(tileHeight * DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.nameOffsetYRatio),
+                    'minogram',
+                    card.label.toUpperCase(),
+                    nameFontSize
+                )
+                    .setOrigin(0, 0.5)
+                    .setMaxWidth(Math.round(tileWidth * DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.tileNameMaxWidthRatio))
+                    .setTint(0xf8fafc)
+                    .setDepth(12)
+                    .setInteractive({ useHandCursor: true });
+
+                const countBadge = this.add.rectangle(
+                    x + Math.round(tileWidth * DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.countBadgeOffsetXRatio),
+                    y + Math.round(tileHeight * DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.countBadgeOffsetYRatio),
+                    Math.round(DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.countBadgeWidthBase * UI_SCALE),
+                    Math.round(DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.countBadgeHeightBase * UI_SCALE),
+                    0x020617,
+                    0.95
+                )
+                    .setStrokeStyle(1, 0xffffff, 0.85)
+                    .setDepth(12);
+
+                const countText = this.add.bitmapText(
+                    countBadge.x,
+                    countBadge.y,
+                    'minogram',
+                    String(count),
+                    countFontSize
+                )
+                    .setOrigin(0.5)
+                    .setTint(0xffffff)
+                    .setDepth(13);
+
+                const openPreview = (pointer?: Phaser.Input.Pointer) => {
+                    this.showDeckCardPreview(card, pointer);
+                };
+                body.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+                    openPreview(pointer);
+                });
+                icon.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+                    openPreview(pointer);
+                });
+                name.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+                    openPreview(pointer);
+                });
+
+                this.currentDeckCardObjects.push(body, icon, name, countBadge, countText);
+            }
+
+            cursorY += (sectionRows * (tileHeight + tileGapY)) + sectionGap;
+        }
+    }
+
+    private buildDeckPreviewPanel (): void
+    {
+        const xRatio = GAME_WIDTH / BASE_WIDTH;
+        const yRatio = GAME_HEIGHT / BASE_HEIGHT;
+        this.deckPreviewObjectWidth = Math.round(CARD_BASE_WIDTH * xRatio * BOARD_SCALE);
+        this.deckPreviewObjectHeight = Math.round(CARD_BASE_HEIGHT * yRatio * BOARD_SCALE);
+
+        this.deckCardPreviewController = new CardPreviewController(this);
+        this.deckCardPreviewController.create(this.deckPreviewObjectWidth, this.deckPreviewObjectHeight, { side: 'left' });
+    }
+
+    private mapCatalogCategoryToCardType (category: CardCatalogCategory): CardType
+    {
+        switch (category) {
+        case 'character':
+            return 'character';
+        case 'item':
+            return 'item';
+        case 'supporter':
+            return 'supporter';
+        case 'stadium':
+            return 'stadium';
+        case 'tool':
+            return 'tool';
+        case 'status_effect':
+            return 'item';
+        default:
+            return 'item';
+        }
+    }
+
+    private mapCatalogCardTypeToAVGECardType (card: CardCatalogEntry): 'NONE' | 'WW' | 'PERC' | 'PIANO' | 'STRING' | 'GUITAR' | 'CHOIR' | 'BRASS'
+    {
+        if (card.category !== 'character') {
+            return 'NONE';
+        }
+
+        switch (card.cardType) {
+        case 'woodwinds':
+            return 'WW';
+        case 'percussion':
+            return 'PERC';
+        case 'pianos':
+            return 'PIANO';
+        case 'strings':
+            return 'STRING';
+        case 'guitars':
+            return 'GUITAR';
+        case 'choir':
+            return 'CHOIR';
+        case 'brass':
+            return 'BRASS';
+        default:
+            return 'NONE';
+        }
+    }
+
+    private createPreviewProxyCard (card: CardCatalogEntry): Card
+    {
+        const proxy = new Card(this, {
+            id: `deck_builder_preview_${card.id}_${Date.now()}`,
+            cardType: this.mapCatalogCategoryToCardType(card.category),
+            AVGECardType: this.mapCatalogCardTypeToAVGECardType(card),
+            AVGECardClass: card.id,
+            statusEffect: {},
+            ownerId: 'p1',
+            x: -10000,
+            y: -10000,
+            width: this.deckPreviewObjectWidth,
+            height: this.deckPreviewObjectHeight,
+            color: this.getCategoryColor(card.category),
+            zoneId: 'deck-preview',
+            has_atk_1: false,
+            has_atk_2: false,
+            has_active: false,
+            has_passive: false,
+            retreat_cost: 0,
+            atk_1_name: null,
+            atk_2_name: null,
+            active_name: null,
+            atk_1_cost: 0,
+            atk_2_cost: 0,
+        });
+
+        proxy.setVisibility(false);
+        proxy.body.disableInteractive();
+        return proxy;
+    }
+
+    private showDeckCardPreview (card: CardCatalogEntry, pointer?: Phaser.Input.Pointer): void
+    {
+        if (this.deckPreviewProxyCard) {
+            this.deckPreviewProxyCard.destroy();
+            this.deckPreviewProxyCard = null;
+        }
+
+        this.deckPreviewProxyCard = this.createPreviewProxyCard(card);
+        this.deckCardPreviewController.show(this.deckPreviewProxyCard, {
+            ownerUsername: 'Deck Builder',
+            forceFaceUp: true
+        });
+
+        if (pointer) {
+            this.deckPreviewSuppressOutsideClose = true;
+            this.time.delayedCall(0, () => {
+                this.deckPreviewSuppressOutsideClose = false;
+            });
+        }
+    }
+
+    private hideDeckCardPreview (): void
+    {
+        this.deckPreviewSuppressOutsideClose = false;
+        this.deckCardPreviewController.hide();
+        if (this.deckPreviewProxyCard) {
+            this.deckPreviewProxyCard.destroy();
+            this.deckPreviewProxyCard = null;
+        }
+    }
+
+    private isPointerInsideDeckPreview (pointer: Phaser.Input.Pointer): boolean
+    {
+        return this.deckCardPreviewController.containsPoint(pointer.worldX, pointer.worldY);
+    }
+
+    private handleGlobalPointerDown (pointer: Phaser.Input.Pointer): void
+    {
+        if (!this.deckCardPreviewController.isVisible() || this.deckPreviewSuppressOutsideClose) {
+            return;
+        }
+
+        if (this.isPointerInsideDeckPreview(pointer)) {
+            return;
+        }
+
+        this.hideDeckCardPreview();
+    }
+
+    private buildSearchMenu (): void
+    {
+        const panelWidth = Math.round(620 * UI_SCALE);
+        const panelHeight = Math.round(540 * UI_SCALE);
+        const panelX = GAME_CENTER_X;
+        const panelY = Math.round(GAME_HEIGHT * 0.5);
+        const panelTop = panelY - Math.round(panelHeight * 0.5);
+
+        this.searchBackdrop = this.add.rectangle(
+            GAME_CENTER_X,
+            Math.round(GAME_HEIGHT * 0.5),
+            GAME_WIDTH,
+            GAME_HEIGHT,
+            0x020617,
+            0.75
+        )
+            .setDepth(1200)
+            .setInteractive({ useHandCursor: true });
+
+        this.searchPanel = this.add.rectangle(
+            panelX,
+            panelY,
+            panelWidth,
+            panelHeight,
+            0x0f172a,
+            0.98
+        )
+            .setStrokeStyle(2, 0xffffff, 0.9)
+            .setDepth(1201)
+            .setInteractive({ useHandCursor: true });
+
+        this.searchTitle = this.add.bitmapText(
+            panelX,
+            panelTop + Math.round(30 * UI_SCALE),
+            'minogram',
+            'CARD SEARCH',
+            Math.max(12, Math.round(24 * UI_SCALE))
+        )
+            .setOrigin(0.5)
+            .setTint(0xffffff)
+            .setDepth(1202);
+
+        this.searchHint = this.add.bitmapText(
+            panelX,
+            panelTop + Math.round(58 * UI_SCALE),
+            'minogram',
+            'Type to search all cards. Enter = add first result. Esc = close.',
+            Math.max(8, Math.round(12 * UI_SCALE))
+        )
+            .setOrigin(0.5)
+            .setTint(0xcbd5e1)
+            .setDepth(1202);
+
+        this.searchQueryLabel = this.add.bitmapText(
+            panelX - Math.round(panelWidth * 0.5) + Math.round(22 * UI_SCALE),
+            panelTop + Math.round(88 * UI_SCALE),
+            'minogram',
+            '',
+            Math.max(9, Math.round(15 * UI_SCALE))
+        )
+            .setOrigin(0, 0.5)
+            .setTint(0xf8fafc)
+            .setDepth(1202);
+
+        this.searchSaveButton = this.add.rectangle(
+            panelX + Math.round(panelWidth * 0.5) - Math.round(214 * UI_SCALE),
+            panelTop + Math.round(88 * UI_SCALE),
+            Math.round(82 * UI_SCALE),
+            Math.round(34 * UI_SCALE),
+            0x14532d,
+            0.95
+        )
+            .setStrokeStyle(2, 0xffffff, 0.75)
+            .setDepth(1202)
+            .setInteractive({ useHandCursor: true });
+
+        this.searchSaveLabel = this.add.bitmapText(
+            this.searchSaveButton.x,
+            this.searchSaveButton.y,
+            'minogram',
+            'SAVE',
+            Math.max(8, Math.round(12 * UI_SCALE))
+        )
+            .setOrigin(0.5)
+            .setTint(0xffffff)
+            .setDepth(1203);
+
+        this.searchClearButton = this.add.rectangle(
+            panelX + Math.round(panelWidth * 0.5) - Math.round(124 * UI_SCALE),
+            panelTop + Math.round(88 * UI_SCALE),
+            Math.round(86 * UI_SCALE),
+            Math.round(34 * UI_SCALE),
+            0x334155,
+            0.95
+        )
+            .setStrokeStyle(2, 0xffffff, 0.75)
+            .setDepth(1202)
+            .setInteractive({ useHandCursor: true });
+
+        this.searchClearLabel = this.add.bitmapText(
+            this.searchClearButton.x,
+            this.searchClearButton.y,
+            'minogram',
+            'CLEAR',
+            Math.max(8, Math.round(12 * UI_SCALE))
+        )
+            .setOrigin(0.5)
+            .setTint(0xffffff)
+            .setDepth(1203);
+
+        this.searchCloseButton = this.add.rectangle(
+            panelX + Math.round(panelWidth * 0.5) - Math.round(42 * UI_SCALE),
+            panelTop + Math.round(88 * UI_SCALE),
+            Math.round(62 * UI_SCALE),
+            Math.round(34 * UI_SCALE),
+            0x7f1d1d,
+            0.95
+        )
+            .setStrokeStyle(2, 0xffffff, 0.75)
+            .setDepth(1202)
+            .setInteractive({ useHandCursor: true });
+
+        this.searchCloseLabel = this.add.bitmapText(
+            this.searchCloseButton.x,
+            this.searchCloseButton.y,
+            'minogram',
+            'CLOSE',
+            Math.max(8, Math.round(12 * UI_SCALE))
+        )
+            .setOrigin(0.5)
+            .setTint(0xffffff)
+            .setDepth(1203);
+
+        const rowsStartY = panelTop + Math.round(132 * UI_SCALE);
+        const rowsBottomY = panelTop + Math.round(458 * UI_SCALE);
+        const rowGap = Math.max(38, Math.floor((rowsBottomY - rowsStartY) / Math.max(1, SEARCH_RESULTS_PER_PAGE - 1)));
+
+        const nameX = panelX - Math.round(panelWidth * 0.5) + Math.round(26 * UI_SCALE);
+        const minusX = panelX + Math.round(panelWidth * 0.5) - Math.round(136 * UI_SCALE);
+        const countX = panelX + Math.round(panelWidth * 0.5) - Math.round(86 * UI_SCALE);
+        const plusX = panelX + Math.round(panelWidth * 0.5) - Math.round(36 * UI_SCALE);
+
+        for (let i = 0; i < SEARCH_RESULTS_PER_PAGE; i += 1) {
+            const y = rowsStartY + (i * rowGap);
+            const container = this.add.container(0, 0).setDepth(1202);
+
+            const rowBackground = this.add.rectangle(
+                panelX,
+                y,
+                panelWidth - Math.round(28 * UI_SCALE),
+                Math.round(36 * UI_SCALE),
+                0x1e293b,
+                0.45
+            )
+                .setStrokeStyle(1, 0xffffff, 0.18)
+                .setDepth(1202);
+
+            const cardName = this.add.bitmapText(
+                nameX,
+                y - Math.round(7 * UI_SCALE),
+                'minogram',
+                '',
+                Math.max(8, Math.round(13 * UI_SCALE))
+            )
+                .setOrigin(0, 0.5)
+                .setTint(0xffffff)
+                .setDepth(1203);
+
+            const cardMeta = this.add.bitmapText(
+                nameX,
+                y + Math.round(9 * UI_SCALE),
+                'minogram',
+                '',
+                Math.max(7, Math.round(10 * UI_SCALE))
+            )
+                .setOrigin(0, 0.5)
+                .setTint(0xcbd5e1)
+                .setDepth(1203);
+
+            const minusButton = this.add.rectangle(
+                minusX,
+                y,
+                Math.round(36 * UI_SCALE),
+                Math.round(30 * UI_SCALE),
+                0x334155,
+                0.95
+            )
+                .setStrokeStyle(2, 0xffffff, 0.75)
+                .setDepth(1203)
+                .setInteractive({ useHandCursor: true });
+
+            const minusLabel = this.add.bitmapText(
+                minusButton.x,
+                minusButton.y,
+                'minogram',
+                '-',
+                Math.max(12, Math.round(20 * UI_SCALE))
+            )
+                .setOrigin(0.5)
+                .setTint(0xffffff)
+                .setDepth(1204);
+
+            const countLabel = this.add.bitmapText(
+                countX,
+                y,
+                'minogram',
+                '0',
+                Math.max(9, Math.round(15 * UI_SCALE))
+            )
+                .setOrigin(0.5)
+                .setTint(0xffffff)
+                .setDepth(1204);
+
+            const plusButton = this.add.rectangle(
+                plusX,
+                y,
+                Math.round(36 * UI_SCALE),
+                Math.round(30 * UI_SCALE),
+                0x0f766e,
+                0.95
+            )
+                .setStrokeStyle(2, 0xffffff, 0.75)
+                .setDepth(1203)
+                .setInteractive({ useHandCursor: true });
+
+            const plusLabel = this.add.bitmapText(
+                plusButton.x,
+                plusButton.y,
+                'minogram',
+                '+',
+                Math.max(12, Math.round(20 * UI_SCALE))
+            )
+                .setOrigin(0.5)
+                .setTint(0xffffff)
+                .setDepth(1204);
+
+            container.add([rowBackground, cardName, cardMeta, minusButton, minusLabel, countLabel, plusButton, plusLabel]);
+
+            const row = {
+                container,
+                cardName,
+                cardMeta,
+                countLabel,
+                plusButton,
+                plusLabel,
+                minusButton,
+                minusLabel,
+                card: null as CardCatalogEntry | null,
+            };
+
+            plusButton.on('pointerdown', () => {
+                if (this.busy || !row.card) {
+                    return;
+                }
+                this.tryAddCardToDeck(row.card);
+            });
+
+            minusButton.on('pointerdown', () => {
+                if (this.busy || !row.card) {
+                    return;
+                }
+                this.tryRemoveCardFromDeck(row.card);
+            });
+
+            this.searchRows.push(row);
+        }
+
+        this.searchPrevButton = this.add.rectangle(
+            panelX - Math.round(96 * UI_SCALE),
+            panelTop + Math.round(500 * UI_SCALE),
+            Math.round(92 * UI_SCALE),
+            Math.round(36 * UI_SCALE),
+            0x0f172a,
+            0.95
+        )
+            .setStrokeStyle(2, 0xffffff, 0.75)
+            .setDepth(1202)
+            .setInteractive({ useHandCursor: true });
+
+        this.searchPrevLabel = this.add.bitmapText(
+            this.searchPrevButton.x,
+            this.searchPrevButton.y,
+            'minogram',
+            'PREV',
+            Math.max(8, Math.round(13 * UI_SCALE))
+        )
+            .setOrigin(0.5)
+            .setTint(0xffffff)
+            .setDepth(1203);
+
+        this.searchNextButton = this.add.rectangle(
+            panelX + Math.round(96 * UI_SCALE),
+            panelTop + Math.round(500 * UI_SCALE),
+            Math.round(92 * UI_SCALE),
+            Math.round(36 * UI_SCALE),
+            0x0f172a,
+            0.95
+        )
+            .setStrokeStyle(2, 0xffffff, 0.75)
+            .setDepth(1202)
+            .setInteractive({ useHandCursor: true });
+
+        this.searchNextLabel = this.add.bitmapText(
+            this.searchNextButton.x,
+            this.searchNextButton.y,
+            'minogram',
+            'NEXT',
+            Math.max(8, Math.round(13 * UI_SCALE))
+        )
+            .setOrigin(0.5)
+            .setTint(0xffffff)
+            .setDepth(1203);
+
+        this.searchBackdrop.on('pointerdown', () => {
+            this.toggleSearchMenu(false);
+        });
+
+        this.searchCloseButton.on('pointerdown', () => {
+            this.toggleSearchMenu(false);
+        });
+
+        this.searchSaveButton.on('pointerdown', () => {
+            void this.saveDeck();
+        });
+
+        this.searchClearButton.on('pointerdown', () => {
+            this.searchQuery = '';
+            this.searchPageIndex = 0;
+            this.renderSearchMenu();
+        });
+
+        this.searchPrevButton.on('pointerdown', () => {
+            if (this.searchPageIndex <= 0) {
+                return;
+            }
+            this.searchPageIndex -= 1;
+            this.renderSearchMenu();
+        });
+
+        this.searchNextButton.on('pointerdown', () => {
+            const maxPage = Math.max(0, Math.ceil(this.getSearchFilteredCards().length / SEARCH_RESULTS_PER_PAGE) - 1);
+            if (this.searchPageIndex >= maxPage) {
+                return;
+            }
+            this.searchPageIndex += 1;
+            this.renderSearchMenu();
+        });
+
+        this.searchMenuObjects = [
+            this.searchBackdrop,
+            this.searchPanel,
+            this.searchTitle,
+            this.searchHint,
+            this.searchQueryLabel,
+            this.searchSaveButton,
+            this.searchSaveLabel,
+            this.searchCloseButton,
+            this.searchCloseLabel,
+            this.searchClearButton,
+            this.searchClearLabel,
+            this.searchPrevButton,
+            this.searchPrevLabel,
+            this.searchNextButton,
+            this.searchNextLabel,
+            ...this.searchRows.flatMap((row) => [
+                row.container,
+                row.cardName,
+                row.cardMeta,
+                row.countLabel,
+                row.plusButton,
+                row.plusLabel,
+                row.minusButton,
+                row.minusLabel,
+            ]),
+        ];
+    }
+
+    private setSearchMenuVisible (visible: boolean): void
+    {
+        for (const object of this.searchMenuObjects) {
+            object.setVisible(visible);
+            const maybeInput = object as Phaser.GameObjects.GameObject & { input?: { enabled: boolean } };
+            if (maybeInput.input) {
+                maybeInput.input.enabled = visible;
+            }
+        }
+
+        this.searchMenuVisible = visible;
+        this.searchButton.setFillStyle(visible ? 0x166534 : 0x14532d, 0.95);
+    }
+
+    private toggleSearchMenu (visible: boolean): void
+    {
+        if (visible === this.searchMenuVisible) {
+            return;
+        }
+
+        if (visible) {
+            this.searchPageIndex = 0;
+            this.renderSearchMenu();
+        }
+
+        this.setSearchMenuVisible(visible);
+    }
+
+    private handleSearchKeydown (event: KeyboardEvent): void
+    {
+        if (!this.searchMenuVisible) {
+            return;
+        }
+
+        if (event.key === 'Escape') {
+            this.toggleSearchMenu(false);
+            return;
+        }
+
+        if (event.key === 'Enter') {
+            const results = this.getSearchFilteredCards();
+            const firstVisible = results[this.searchPageIndex * SEARCH_RESULTS_PER_PAGE] ?? null;
+            if (firstVisible) {
+                this.tryAddCardToDeck(firstVisible);
+            }
+            return;
+        }
+
+        if (event.key === 'Backspace') {
+            event.preventDefault();
+            if (this.searchQuery.length === 0) {
+                return;
+            }
+            this.searchQuery = this.searchQuery.slice(0, -1);
+            this.searchPageIndex = 0;
+            this.renderSearchMenu();
+            return;
+        }
+
+        if (event.key === 'Delete') {
+            this.searchQuery = '';
+            this.searchPageIndex = 0;
+            this.renderSearchMenu();
+            return;
+        }
+
+        if (event.ctrlKey || event.metaKey || event.altKey || event.key.length !== 1) {
+            return;
+        }
+
+        if (this.searchQuery.length >= 48) {
+            return;
+        }
+
+        this.searchQuery += event.key;
+        this.searchPageIndex = 0;
+        this.renderSearchMenu();
+    }
+
+    private getSearchFilteredCards (): CardCatalogEntry[]
+    {
+        const sorted = [...CARD_CATALOG].sort((a, b) => a.label.localeCompare(b.label));
+        const query = this.searchQuery.trim().toLowerCase();
+        if (query.length === 0) {
+            return sorted;
+        }
+
+        return sorted.filter((card) => {
+            const haystack = `${card.label} ${card.id} ${card.category} ${card.cardType ?? ''}`.toLowerCase();
+            return haystack.includes(query);
+        });
+    }
+
+    private renderSearchMenu (): void
+    {
+        if (this.searchRows.length === 0) {
+            return;
+        }
+
+        const filteredCards = this.getSearchFilteredCards();
+        const maxPage = Math.max(1, Math.ceil(filteredCards.length / SEARCH_RESULTS_PER_PAGE));
+        if (this.searchPageIndex > (maxPage - 1)) {
+            this.searchPageIndex = maxPage - 1;
+        }
+
+        const startIndex = this.searchPageIndex * SEARCH_RESULTS_PER_PAGE;
+        for (let i = 0; i < this.searchRows.length; i += 1) {
+            const row = this.searchRows[i];
+            const card = filteredCards[startIndex + i] ?? null;
+            row.card = card;
+
+            if (!card) {
+                row.container.setVisible(false);
+                continue;
+            }
+
+            row.container.setVisible(true);
+            row.cardName.setText(card.label.toUpperCase());
+            const categoryLabel = this.getCategoryLabel(card.category);
+            const typeLabel = card.cardType ? ` ${card.cardType.toUpperCase()}` : '';
+            row.cardMeta.setText(`${categoryLabel}${typeLabel}`);
+
+            const count = this.state.countsByCardId.get(card.id) ?? 0;
+            row.countLabel.setText(String(count));
+
+            const canRemove = count > 0;
+            row.minusButton.setAlpha(canRemove ? 1 : 0.45);
+            row.minusLabel.setAlpha(canRemove ? 1 : 0.45);
+
+            const maxCopies = this.getMaxCopiesForCard(card);
+            const totalCards = this.collectCards().length;
+            const canAdd = count < maxCopies && totalCards < DECK_REQUIRED_CARD_COUNT;
+            row.plusButton.setAlpha(canAdd ? 1 : 0.45);
+            row.plusLabel.setAlpha(canAdd ? 1 : 0.45);
+        }
+
+        this.searchQueryLabel.setText(`QUERY: ${this.searchQuery || '(ALL CARDS)'}`);
+
+        const hasPrevPage = this.searchPageIndex > 0;
+        const hasNextPage = this.searchPageIndex < (maxPage - 1);
+        this.searchPrevButton.setAlpha(hasPrevPage ? 1 : 0.45);
+        this.searchPrevLabel.setAlpha(hasPrevPage ? 1 : 0.45);
+        this.searchNextButton.setAlpha(hasNextPage ? 1 : 0.45);
+        this.searchNextLabel.setAlpha(hasNextPage ? 1 : 0.45);
+    }
+
+    private tryAddCardToDeck (card: CardCatalogEntry): boolean
+    {
+        if (this.busy) {
+            return false;
+        }
+
+        const totalCards = this.collectCards().length;
+        if (totalCards >= DECK_REQUIRED_CARD_COUNT) {
+            this.subtitle.setText(`Deck must contain exactly ${DECK_REQUIRED_CARD_COUNT} cards.`);
+            return false;
+        }
+
+        const current = this.state.countsByCardId.get(card.id) ?? 0;
+        const maxCopies = this.getMaxCopiesForCard(card);
+        if (current >= maxCopies) {
+            this.subtitle.setText(
+                maxCopies === DECK_MAX_ITEM_OR_TOOL_COPIES
+                    ? `${card.label.toUpperCase()} max copies: ${DECK_MAX_ITEM_OR_TOOL_COPIES}.`
+                    : `${card.label.toUpperCase()} max copies: ${DECK_MAX_OTHER_COPIES}.`
+            );
+            return false;
+        }
+
+        this.state.countsByCardId.set(card.id, current + 1);
+        this.persistCurrentDeckDraft();
+        this.refreshDeckSlotButtons();
+        this.renderRows();
+        this.updateSummaryText();
+        return true;
+    }
+
+    private tryRemoveCardFromDeck (card: CardCatalogEntry): boolean
+    {
+        if (this.busy) {
+            return false;
+        }
+
+        const current = this.state.countsByCardId.get(card.id) ?? 0;
+        if (current <= 0) {
+            return false;
+        }
+
+        if (current === 1) {
+            this.state.countsByCardId.delete(card.id);
+        }
+        else {
+            this.state.countsByCardId.set(card.id, current - 1);
+        }
+
+        this.persistCurrentDeckDraft();
+        this.refreshDeckSlotButtons();
+        this.renderRows();
+        this.updateSummaryText();
+        return true;
     }
 
     private async loadDeck (): Promise<void>
@@ -989,6 +2087,12 @@ export class DeckBuilder extends Scene
         }
 
         this.pageIndicator.setText(`Page ${this.state.pageIndex + 1}/${maxPage}`);
+
+        this.renderCurrentDeckPanel();
+
+        if (this.searchMenuVisible) {
+            this.renderSearchMenu();
+        }
     }
 
     private getActiveCategoryCards (): CardCatalogEntry[]

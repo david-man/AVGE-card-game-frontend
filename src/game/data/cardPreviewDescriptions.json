@@ -42,8 +42,8 @@
       "abilityDescription": "Opponent reveals their entire hand and you choose one card to discard. Choose a different card from their discard pile to return to their hand. (They must have a card in discard to play this)"
     },
     "Antong Chen": {
-      "atk1Description": "Fingerstyle:\nYou can only use this attack if this character did not use Power Chord during your last turn. Flip 5 coins and deal 20 damage for each heads.",
-      "atk2Description": "Power Chord: 90\nDiscard 2 Energy from this character.",
+      "atk1Description": "Fingerstyle:\nCan only be used if this character did not use Power Chord last turn. Flip 5 coins; +20 damage for each heads.",
+      "atk2Description": "Power Chord: 90\nDiscard 2 (X) from this character.",
       "flavorText": "Antong channels his Lucky Star-inspired moe by donning his possessions with otaku stickers."
     },
     "Arranger": {
@@ -69,12 +69,14 @@
     },
     "Barron Lee": {
       "atk1Description": "Embouchure: 20\nMove your energy among your characters any way you want.",
-      "abilityName": "Get Served: While In Play: Opposing characters cannot have >3 energy attached. When first played all existing excess energy from each.",
+      "abilityName": "Get Served:",
+      "abilityDescription": "Opposing characters cannot have >3 energy attached. When first played, remove all existing excess energy from each.",
       "flavorText": "Barron \"The Rock\" Lee is blunt, like the rocks he collects."
     },
     "Ben Jose Cherek III": {
-      "atk1Description": "Feedback Loop: 50\nEach of your benched guitars take 10 damage.",
-      "abilityName": "Loudmouth: When you play this character from your hand to your bench, you may switch him with your active character for free.",
+      "atk1Description": "Feedback Loop: 50\nEach of your Benched Guitar type characters take 10 damage.",
+      "abilityName": "Loudmouth:",
+      "abilityDescription": "When you play this character from your hand to your bench, you may switch him into your Active slot for free.",
       "flavorText": "Ben brings all the mischief and whimsy of being THE Florida man: he survived a category 5 hurricane, he was threatened at knifepoint in an attempted robbery outside V-Dub..."
     },
     "Betty Solomon": {
@@ -83,9 +85,9 @@
       "flavorText": "Betty loves talking to everyone, from Jesus to complete strangers, as seen through her many outreach and mentorship roles over the years."
     },
     "Bokai Bi": {
-      "atk1Description": "Rimshot:\nRoll a d6. If you roll 4 or less, do 60 damage.",
+      "atk1Description": "Rimshot:\nRoll a d6. If you roll a 4 or less, do 60 damage.",
       "abilityName": "Algorithm:",
-      "abilityDescription": "While Bokai is in play, if your opponent plays a card you have in your hand, you may reveal it and do 20 damage to their active character.",
+      "abilityDescription": "If your opponent plays a card you have in your hand, you may reveal it for 20 damage.",
       "flavorText": "Have you ever heard of Touhou Project?"
     },
     "Bucket": {
@@ -99,7 +101,8 @@
     },
     "Carolyn Zheng": {
       "atk1Description": "Blast: 70",
-      "abilityName": "Procrastinate: If this character did not attack during the previous turn, deal +30 damage. Does not stack.",
+      "abilityName": "Procrastinate:",
+      "abilityDescription": "If this character did not attack last turn, +30 damage.",
       "flavorText": "Carolyn puts off writing for the Seabird Writing Conference by writing angsty fanfic instead."
     },
     "Cast Reserve": {
@@ -112,17 +115,17 @@
     },
     "Cavin Xue": {
       "atk1Description": "Cymbal Crash 20",
-      "abilityName": "Wait no... I'm not into femboys-: Cavin deals +20 damage for each maid in play.",
+      "abilityName": "Wait no... I'm not into femboys-: Cavin deals +20 damage for each maid in play (excluding himself)",
       "flavorText": "Fueled by a diet of arugula, hojicha, and desserts, Cavin abandoned playing violin in BUO to pursue 100% completion of his next Zelda game."
     },
     "Christmas Kim": {
       "atk1Description": "Strum: 20",
-      "atk2Description": "Surprise Delivery: You may see the top 3 cards of your deck. Reveal all character cards, put them in your hand, and do 10 damage for each. Put the rest back in any order.",
+      "atk2Description": "Surprise Delivery: Look at the top 5 cards of your deck. Reveal all Guitar type character cards, put them in your hand, and do 20 damage for each. Put the rest back in any order.",
       "flavorText": "Christmas missed the North Pole so much after coming to Providence that she joined the Poler Bears to make up for it."
     },
     "Coco Zeng": {
       "atk1Description": "Glissando 50\nYou cannot use this attack next turn.",
-      "atk2Description": "Inventory Management\nFlip a coin for each card in your hand. For each heads, deal 30 damage.",
+      "atk2Description": "Inventory Management\nFlip a coin for each card in your hand. For each heads, +30 damage.",
       "flavorText": "Coco loves cubes, making the Lindemann her perfect home. She can even practice her opera piano transcriptions there!"
     },
     "Concert Program": {
@@ -138,9 +141,9 @@
       "abilityDescription": "Discard a tool from one of your characters. Search for any item card in your deck and put it in your hand."
     },
     "Daniel Yang": {
-      "atk1Description": "Eight Hands Piano: 50\nIf you have 3 Pianos characters on your bench, deal 30 damage to each of your opponent's benched characters.",
+      "atk1Description": "Eight Hands Piano: 50\nIf you have 3 Piano type characters on your bench, deal 30 damage to each of your opponent's benched characters.",
       "abilityName": "Delicate Ears:",
-      "abilityDescription": "If there are no Brass characters in play, this character's attacks deal +10 damage to opponent's active character.",
+      "abilityDescription": "If there are no Brass characters in play, this character's attacks deal +10 damage.",
       "flavorText": "Not much is known about Daniel other than his love for breathing and Wisconsin, and his weakness to French horns and cheese."
     },
     "Daniel Zhu": {
@@ -171,7 +174,7 @@
     },
     "Edward Wibowo": {
       "atk1Description": "Packet Loss:\nFlip a coin for each (X) attached to your opponent's active character. For each heads, remove one (X).",
-      "atk2Description": "Distortion: 40\nDuring your next turn, your guitars deal +40 damage.",
+      "atk2Description": "Distortion: 40\nNext turn, your Guitar type characters deal +40 damage.",
       "flavorText": "Never ask Edward to choose between Chipotle and Laufey."
     },
     "Emily Wang": {
@@ -186,7 +189,7 @@
     "Eugenia Ampofo": {
       "atk1Description": "Stick Trick 20\nYou may swap with a Benched character for free.",
       "abilityName": "Fermentation:",
-      "abilityDescription": "While Active: you may attach an additional (X) per turn to one to your benched characters.",
+      "abilityDescription": "While Active: You may attach one (X) to two different characters per turn.",
       "flavorText": "If you can speak Asante Twi with her, Eugenia might give you some extra pointers on your BIOL2555 homework."
     },
     "Evelyn Wu": {
@@ -201,8 +204,8 @@
       "flavorText": "Felix's COVID hobby involved going viral as a Genshin Impact/Danganronpa voice impressionist. Talk about an internet footprint..."
     },
     "Filip Kaminski": {
-      "atk1Description": "Heart of the Cards: Name a card, then draw the top card of your deck. If the two are the same, deal 60 damage.",
-      "atk2Description": "Intense Echo: 50\nDeal 10 damage to your opponent's benched characters.",
+      "atk1Description": "Heart of the Cards: Name a card, then draw the top card of your deck. If the two are the same, 50 damage.",
+      "atk2Description": "Intense Echo: 50\nIf the current stadium in play was placed by you, do 20 damage to each opposing benched character.",
       "flavorText": "Filip simply requests four minutes of your time."
     },
     "Fiona Li": {
@@ -227,19 +230,20 @@
       "abilityDescription": "This character gains 20 health, and each music stand used grants this character +10 damage, but their retreat cost is increased by 1"
     },
     "Grace Zhao": {
-      "atk1Description": "Feedback Loop: 50\nEach of your benched guitars take 10 damage.",
+      "atk1Description": "Feedback Loop: 50\nEach of your Benched Guitar type characters take 10 damage.",
       "abilityName": "Royalties:",
-      "abilityDescription": "At the end of your turn, deal 10 damage to an opposing character with an AVGE showcase sticker or t-shirt attached..",
+      "abilityDescription": "At the end of your turn, you may deal 10 damage to one opposing character with a Maid Outfit, AVGE Showcase Sticker, or AVGE T-Shirt attached.",
       "flavorText": "To cope with not yet being Connor's wife from Detroit: Become Human, Grace has become the go-to expert on Chinese brainrot."
     },
     "Hanlei Gao": {
       "atk1Description": "Stick Trick 20\nYou may swap with a Benched character for free.",
-      "atk2Description": "Tricky Rhythms\nEach opposing character in play with a tool attached to it takes 50 damage.",
+      "atk2Description": "Tricky Rhythms\nEach opposing character in play with a tool attached to it takes 50 damage. Opponent returns all tools in play to their hand.",
       "flavorText": "Hanlei, AVGE's Rhythm Game Champion, mostly speedruns Minecraft nowadays, but apparently he can still full combo 7* maps on a good day..."
     },
     "Happy Ruth Jara": {
-      "atk1Description": "SATB: For each of your Choir characters in play, choose one of your opponent's characters and deal 20 damage to it.",
-      "abilityName": "Leave Rehearsal Early: While Benched: Once per turn, if this character has no tools attached, you may move her to your hand.",
+      "atk1Description": "Coloratura: 30\nFlip 2 coins. If both are heads, +40 damage.",
+      "abilityName": "Leave Rehearsal Early:",
+      "abilityDescription": "While Benched: If you did not play this character from your hand this turn and she has no tools attached, you may move her to your hand.",
       "flavorText": "Happy exists only in three places: the education department building, Ten One, and rehearsal."
     },
     "Harper Aitken": {
@@ -263,8 +267,8 @@
     },
     "Iris Yang": {
       "atk1Description": "Open Strings 10\nDraw a card. If it is an item, you must immediately use it.",
-      "atk2Description": "Spike 30\nAfter attacking, you may switch the opponent's active character with one benched character.",
-      "flavorText": ",!"
+      "atk2Description": "Spike 30\nYou may switch your opponent's Active character with one of their Benched characters.",
+      "flavorText": "Ni ke neng cai bu dao, dan an ran qi hui shuo ying yu!"
     },
     "Izzy Chen": {
       "atk1Description": "Overblow 50\nThis character takes 10 damage.",
@@ -279,7 +283,7 @@
       "flavorText": "An avid fan of Magic: The Gathering, Jayden has found over 1000 four-leaf clovers in his life. One could say he has magic... for gathering."
     },
     "Jennie Wang": {
-      "atk1Description": "Small Ensemble Committee\nDeal 10 damage to each opposing character per other SE committee member in play, up to 30 damage each.",
+      "atk1Description": "Small Ensemble Committee\nDeal 10 damage to each opposing character per other SE Committee member in play, up to 30 damage each.",
       "atk2Description": "Grand Piano 60\n+20 damage if the stadium in play is a performance hall.",
       "flavorText": "Jennie has trained for years in the Barbour basement, ready to go to war for her Hetalia faves via ping-pong tournaments."
     },
@@ -298,14 +302,15 @@
       "flavorText": "A lifeguard, water polo player, and avid water sports lover, Jordan is essentially a fish."
     },
     "Joshua Kou": {
-      "atk1Description": "Separate Hands\nIf you used this move last turn, deal 40 damage. (Otherwise, do nothing)",
+      "atk1Description": "Separate Hands\nIf you used this move last turn, deal 40 damage.",
       "abilityName": "Category Theory",
-      "abilityDescription": "If you play this card from your hand to your bench, you may draw until you have four cards in your hand.",
+      "abilityDescription": "If you play this character from your hand to your bench, you may draw cards until you have 4 cards in your hand.",
       "flavorText": "To destress from his intense rounds of Battle Cats, Joshua enjoys thinking about category theory and writing BRUMO problems."
     },
     "Juan Burgos": {
-      "atk1Description": "Concert Pitch: 40\nThis attack deals +20 damage per brass character on your bench.",
-      "abilityName": "Baking Buff: While on your bench, if your active character is a Brass type, they deal +20 damage per attack.",
+      "atk1Description": "Concert Pitch: 30\n+20 damage per Brass type character on your bench.",
+      "abilityName": "Baking Buff:",
+      "abilityDescription": "While Benched: Your Brass type characters deal +10 damage.",
       "flavorText": "Even though he's been stung by a jellyfish (ow), Juan still loves going to the zoo!"
     },
     "Julia Ceccarelli": {
@@ -317,7 +322,7 @@
       "atk1Description": "Flutter Tongue: Roll a 6 sided die until you get two consecutive numbers that add to 7. For each roll, do a separate attack of 10 damage.",
       "abilityName": "Immense Aura",
       "abilityDescription": "Take -10 damage from each attack, calculated after all modifiers.",
-      "flavorText": "!"
+      "flavorText": "Osoraku yosou mo shinai kamoshiremasen ga, Kana-san wa Nihongo wo hanasemasu!"
     },
     "Kathy Sun": {
       "atk1Description": "Analysis Paralysis\nReveal your opponent's hand. They choose two cards to shuffle back into their deck.",
@@ -325,14 +330,14 @@
       "flavorText": "Often found scouring Pinterest for cold dukes of the north, Kathy was also born on 6/7. Is it a divine sign?"
     },
     "Katie Xiang": {
-      "atk1Description": "Rubato 20\nDo 30 damage to your opponent's active character at the end of your opponent's next turn.",
+      "atk1Description": "Rubato 20\nAt the end of your opponent's next turn, 30 damage.",
       "abilityName": "Nausicaa's Undying Heartbeat",
-      "abilityDescription": "At the end of your turn, If this character is under 50 health, heal 20 damage from all your characters.",
+      "abilityDescription": "At the end of your turn, if this character has under 50 health, heal 20 damage from all your characters.",
       "flavorText": "Stories say Katie has a soft spot for emotional piano arrangements, the color purple, and kidnapping Mason."
     },
     "Kei Watanabe": {
       "atk1Description": "Rudiments:\n10 damage to one of your opponent's characters of your choice.",
-      "atk2Description": "Drum Kid Workshop:\nChoose an attack of any Percussion character in play to use as this attack. After attacking, move all energy from this character to the character whose attack you used.",
+      "atk2Description": "Drum Kid Workshop:\nChoose an attack of any of your Percussion type characters in play to use as this attack. Then, move all energy from this character to the character whose attack you used.",
       "flavorText": "Sustained by brisket, strawberry milk, and the energy of his twin brother, Kei's arranging prowess is only matched by his Vocaloid ball knowledge."
     },
     "Kevin Yang": {
@@ -351,7 +356,7 @@
     },
     "Loang Chiang": {
       "atk1Description": "Stick Trick 20\nYou may swap with a Benched character for free.",
-      "atk2Description": "Excused Absence:\nHeal 30 damage from each of your characters.",
+      "atk2Description": "Excused Absence:\nYour characters in play heal 30 damage. Remove 1 energy from this character.",
       "flavorText": "Loang has been advocating for AVGE speed dating for years on end. Who knows if she'll ever find her match?"
     },
     "Luca Chen": {
@@ -403,9 +408,9 @@
       "flavorText": "Meiyi hunts for the Andrews bun noodle bowl like Quanxi hunts for Devils."
     },
     "Meya Gao": {
-      "atk1Description": "Distortion: 40\nDuring your next turn, your guitars deal +40 damage.",
+      "atk1Description": "Distortion: 40\nNext turn, your Guitar type characters deal +40 damage.",
       "abilityName": "I See Your Soul:",
-      "abilityDescription": "If any character deals damage to this character, both characters cannot attack during the next turn.",
+      "abilityDescription": "While Active: If any character deals damage to this character, both characters cannot attack during the next turn.",
       "flavorText": "Meya has a lot of complex interests: JoJo, tomatoes, sheep, woodwork... if you want, she can break it down for you."
     },
     "Michael Tu": {
@@ -431,12 +436,12 @@
       "abilityDescription": "During this turn only, your active character has one additional energy attached. Cannot be played on the first turn."
     },
     "Owen Landry": {
-      "atk1Description": "Feedback Loop: 50\nEach of your Benched guitars take 10 damage.",
-      "atk2Description": "Domain Expansion:\nRemove all energy attached to this character. Deal 50 damage to all opposing characters.",
+      "atk1Description": "Feedback Loop: 50\nEach of your Benched Guitar type characters take 10 damage.",
+      "atk2Description": "Domain Expansion:\nRemove all energy attached to this character. Deal 50 damage to all opposing characters in play.",
       "flavorText": "Owen studies biomedical engineering in pursuit of recreating Cursed Techniques in the real world."
     },
     "Pascal Kim": {
-      "atk1Description": "Ragebaited: 20\nWhen at 50 health or below, deal +30 damage. When at 20 health or below, deal +80 damage instead.",
+      "atk1Description": "Ragebaited: 20\nWhen at 50 health or below, deal +30 damage. When at 20 health or below, deal +70 damage instead.",
       "atk2Description": "Ominous Chimes: Shuffle this character and all tools attached to it into your deck. At the end of your opponent's next turn, 70 damage.",
       "flavorText": "\"Hi hungry, I'm Pascal!\""
     },
@@ -452,9 +457,9 @@
       "flavorText": "Not many pre-meds can be like Rachael and grow bioluminescent algae in their closet..."
     },
     "Rachel Chen": {
-      "atk1Description": "SATB: For each of your Choir characters in play, choose one opposing character to deal 20 damage to.",
+      "atk1Description": "SATB:\nFor each of your Choir type characters in play, deal 20 damage to one opposing character.",
       "abilityName": "Program Production:",
-      "abilityDescription": "Once per turn, you may retrieve one concert program or concert ticket from your discard pile into your hand.",
+      "abilityDescription": "Once per turn, you may retrieve a Concert Program, Concert Roster, or Concert Ticket from your discard pile and place it on the top of your deck.",
       "flavorText": "Count on Rachel to turn a throwaway idea into a dramatic 10 page comic."
     },
     "Raffle Ticket": {
@@ -470,23 +475,24 @@
       "abilityDescription": "Attendance Policy: If this Stadium is active at the beginning of a player's turn, each of their characters takes 10 nonlethal damage for each empty bench slot you have."
     },
     "Roberto Gonzales": {
-      "atk1Description": "Guitar Shredding: 30\nRemove all energy attached to this character. For each, burn 1 card from the top of your opponent's deck.",
-      "atk2Description": "Distortion: 40\nDuring your next turn, your guitars deal +40 damage.",
+      "atk1Description": "Guitar Shredding: 30\nRemove all (X) attached to this character. For each, burn 1 card from the top of your opponent's deck.",
+      "atk2Description": "Distortion: 40\nNext turn, your Guitar type characters deal +40 damage.",
       "flavorText": "Roberto legendarily founded the Adobe Video Game Ensemble. Luckily for us, Adobe hasn't taken the copyright issue to court... yet."
     },
     "Ross Williams": {
-      "atk1Description": "Ross Attack!: If Ross is on your bench, choose a card from your discard pile to put on the top of your deck; if he is on your opponent's bench, deal 50 damage to one opposing character; if he is on both benches, nothing happens.",
-      "abilityName": "I Am Become Ross: While Benched: Your active character can use any of Ross's attacks.",
+      "atk1Description": "Ross Attack!: If Ross is on your bench, choose a card from your discard pile to put in your hand. If he is on your opponent's bench, deal 20 damage to one opposing character. If he is on both benches, nothing happens.",
+      "abilityName": "I Am Become Ross:",
+      "abilityDescription": "While Benched: Both active characters can use Ross's attacks.",
       "flavorText": "Ross? Ross. Ross? Ross! Ross..."
     },
     "Ryan Du": {
-      "atk1Description": "Chorus: 30\nDeal +10 damage for each of your benched characters.",
-      "atk2Description": "Tabemono King: All of your characters heal 40 damage. All of your opponent's characters heal 10 damage. Remove 1 energy from this character.",
+      "atk1Description": "Tabemono King:\nRemove all (X) attached to this character. For each, +30 damage.",
+      "atk2Description": "Chorus: 20\nDeal +10 damage per Benched character you have.",
       "flavorText": "No one knows how Ryan keeps track of all the deals around Providence. Maybe this foresight is also how he got 3 songs into Large Ensemble in 1 semester."
     },
     "Ryan Lee": {
       "atk1Description": "Percussion Ensemble: Attach up to two energy to one of your benched Percussion types.",
-      "atk2Description": ": Four Mallets: Attack four times. Each attack deals 10 damage. Draw a card.",
+      "atk2Description": "Four Mallets: Attack four times. Each attack deals 10 damage. Draw a card.",
       "flavorText": "Some say that Ryan has visited every cafe in Tokyo in search of the best matcha powder, in hopes of starting his own matcha maid cafe."
     },
     "Ryan Li": {
@@ -504,9 +510,9 @@
       "flavorText": "Rumor has it that all of the profit Sarah has made from selling her art has gone straight into her noodle fund."
     },
     "Sas Majumder": {
-      "atk1Description": ": Four Mallets: Attack four times. Each attack deals 10 damage. Draw a card.",
+      "atk1Description": "Four Mallets: Attack four times. Each attack deals 10 damage. Draw a card.",
       "abilityName": "Cybersecurity:",
-      "abilityDescription": "While in play: If, during your opponent's turn, a card enters your discard pile, you may put it back on the top of your deck. (May only use once per opponent's turn)"
+      "abilityDescription": "During your opponent's turn, for the first card that enters your discard pile, you may put it back on the top of your deck."
     },
     "Sophia S. Wang": {
       "atk1Description": "Damper Pedal 20\nDamage of your opponent's next attack is halved (rounded up)",
@@ -516,7 +522,7 @@
     },
     "Sophia Y. Wang": {
       "atk1Description": "Gacha Gaming\nYou may draw cards, taking 20 Fixed damage for each card drawn (you may not self-KO). If you get AVGE Birb, stop and heal all damage from this character. If you stop otherwise, shuffle drawn cards into your deck.",
-      "atk2Description": "Ricochet 50\nIf you knock out a character using this attack, do 30 damage to each remaining opposing character.",
+      "atk2Description": "Ricochet 50\nIf you knock out a character using this attack, do 30 damage to your opponent's Benched characters.",
       "flavorText": "Sophia loves gambling, as shown by her (how many hours?) on the Hoyoverse. According to her, Hoyofatigue is a myth."
     },
     "Standard Musescore File": {
@@ -538,8 +544,8 @@
       "abilityDescription": "Move an Item from your discard pile to the top of your deck."
     },
     "Vincent Chen": {
-      "atk1Description": "Fanfare: 20\nNot affected by type weakness or any immunities.",
-      "atk2Description": "Cherry Flavored Valve Oil: 40\nHeal one benched character of your choice for the same amount of damage this attack dealt.",
+      "atk1Description": "Fanfare: 20",
+      "atk2Description": "Cherry Flavored Valve Oil: 40\nHeal one benched character for the same amount of damage this attack dealt.",
       "flavorText": "Glory to big stall. Unless Vincent's the one facing it."
     },
     "Weston Poe": {
@@ -552,8 +558,9 @@
       "abilityDescription": "Arrangement: Shuffle all items from your discard pile into your deck."
     },
     "Yanwan Zhu": {
-      "atk1Description": "Intense Echo: 50\nYour opponent's benched characters take 10 damage.",
-      "abilityName": "Bass Boost: While Active: At the start of each of your turns, if she has exactly 2 energy attached to her, you may draw one extra card.",
+      "atk1Description": "Intense Voice: 60\nYour opponent's Benched characters take 10 damage.",
+      "abilityName": "Bass Boost:",
+      "abilityDescription": "While Active: At the start of your turn, if she has exactly 2 (X) attached, you may heal 30 damage from a different character.",
       "flavorText": "Yanwan is the \"most normal\" member of the Arknights server, but it's unclear if that really means anything, given, you know, the Arknights server..."
     },
     "Yuelin Hu": {

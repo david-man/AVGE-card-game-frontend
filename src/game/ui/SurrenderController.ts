@@ -14,6 +14,7 @@ type SurrenderControllerOptions = {
     onArm: (seconds: number) => void;
     onConfirm: () => void;
     onTimeout: () => void;
+    canInteract?: () => boolean;
 };
 
 export class SurrenderController
@@ -118,6 +119,11 @@ export class SurrenderController
     private handleClick (): void
     {
         if (this.body?.visible === false) {
+            return;
+        }
+
+        if (this.options.canInteract && !this.options.canInteract()) {
+            this.disarm(false);
             return;
         }
 

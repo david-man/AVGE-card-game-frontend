@@ -1,5 +1,5 @@
 import { Scene } from 'phaser';
-import { ENERGY_TOKEN_DEPTHS, GAME_DEPTHS, GAME_INTERACTION } from '../config';
+import { ENERGY_TOKEN_DEPTHS, GAME_DEPTHS, GAME_INTERACTION, MAX_BENCH_CARDS } from '../config';
 
 export class BoardInteractionController
 {
@@ -197,6 +197,24 @@ export class BoardInteractionController
                 }
 
                 if (isInitPhase) {
+                    if (originZoneId === ownerHandZone && targetZoneId === ownerBenchZone) {
+                        const benchHolder = g.cardHolderById[ownerBenchZone];
+                        const benchCharacterCount = Array.isArray(benchHolder?.cards)
+                            ? benchHolder.cards.filter((benchCard: any) => (
+                                benchCard
+                                && benchCard.getCardType
+                                && benchCard.getCardType() === 'character'
+                            )).length
+                            : 0;
+
+                        if (benchCharacterCount >= MAX_BENCH_CARDS) {
+                            g.appendTerminalLine(`Init setup bench is full (${MAX_BENCH_CARDS} max).`);
+                            g.layoutAllHolders();
+                            g.redrawAllCardMarks();
+                            return;
+                        }
+                    }
+
                     const initMoveDurationMs = 140;
                     const animateCardBodyTo = (movingCard: any, x: number, y: number, onComplete: () => void): void => {
                         g.tweens.add({

@@ -53,7 +53,10 @@ export class KeiWatanabeDrumkidWorkshopInputOverlay
         this.onSubmit = null;
         this.onCardClick = null;
         this.onBackgroundClick = null;
-        this.hintPreferredFontSize = GAME_INPUT_SELECTION_OVERLAY.hintFontSizeMin;
+        this.hintPreferredFontSize = Math.max(
+            GAME_INPUT_OVERLAY_HEADER_LAYOUT.hintFontSizeMin,
+            GAME_INPUT_SELECTION_OVERLAY.hintFontSizeMin
+        );
     }
 
     hasActiveOverlay (): boolean
@@ -92,7 +95,10 @@ export class KeiWatanabeDrumkidWorkshopInputOverlay
         this.onSubmit = null;
         this.onCardClick = null;
         this.onBackgroundClick = null;
-        this.hintPreferredFontSize = GAME_INPUT_SELECTION_OVERLAY.hintFontSizeMin;
+        this.hintPreferredFontSize = Math.max(
+            GAME_INPUT_OVERLAY_HEADER_LAYOUT.hintFontSizeMin,
+            GAME_INPUT_SELECTION_OVERLAY.hintFontSizeMin
+        );
     }
 
     start (
@@ -121,7 +127,12 @@ export class KeiWatanabeDrumkidWorkshopInputOverlay
             minSize: 10,
             maxWidth: Math.round(this.scene.scale.width * 0.92)
         });
-        const hintFontSize = Math.max(GAME_INPUT_SELECTION_OVERLAY.hintFontSizeMin, Math.round(cardWidth * GAME_INPUT_SELECTION_OVERLAY.hintFontSizeRatio));
+        const hintFontSize = Math.max(
+            GAME_INPUT_OVERLAY_HEADER_LAYOUT.hintFontSizeMin,
+            Math.round(this.scene.scale.width * GAME_INPUT_OVERLAY_HEADER_LAYOUT.hintFontSizeRatio),
+            GAME_INPUT_SELECTION_OVERLAY.hintFontSizeMin,
+            Math.round(cardWidth * GAME_INPUT_SELECTION_OVERLAY.hintFontSizeRatio)
+        );
         this.hintPreferredFontSize = hintFontSize;
         const itemLabelFontSize = Math.max(GAME_INPUT_SELECTION_OVERLAY.itemLabelFontSizeMin, Math.round(cardWidth * GAME_INPUT_SELECTION_OVERLAY.itemLabelFontSizeRatio));
         const itemSubLabelFontSize = Math.max(GAME_INPUT_SELECTION_OVERLAY.itemSubLabelFontSizeMin, Math.round(cardWidth * GAME_INPUT_SELECTION_OVERLAY.itemSubLabelFontSizeRatio));
@@ -132,7 +143,7 @@ export class KeiWatanabeDrumkidWorkshopInputOverlay
             font: 'minogram',
             text: hintDefaultMessage,
             preferredSize: hintFontSize,
-            minSize: 10,
+            minSize: GAME_INPUT_OVERLAY_HEADER_LAYOUT.hintFitMinSize,
             maxWidth: Math.round(this.scene.scale.width * 0.92)
         });
         const startY = Math.round(this.scene.scale.height * GAME_INPUT_SELECTION_OVERLAY.startYRatio);
@@ -351,7 +362,7 @@ export class KeiWatanabeDrumkidWorkshopInputOverlay
             font: 'minogram',
             text,
             preferredSize: this.hintPreferredFontSize,
-            minSize: 10,
+            minSize: GAME_INPUT_OVERLAY_HEADER_LAYOUT.hintFitMinSize,
             maxWidth: Math.round(this.scene.scale.width * 0.92)
         });
         this.hintText.setFontSize(fittedSize);

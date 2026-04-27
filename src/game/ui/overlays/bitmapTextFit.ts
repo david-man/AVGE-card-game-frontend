@@ -1,4 +1,5 @@
 import { Scene } from 'phaser';
+import { UI_MIN_FONT_SIZE } from '../../config';
 
 type FitBitmapTextOptions = {
     scene: Scene;
@@ -14,6 +15,163 @@ type FitBitmapTextTwoLineResult = {
     fontSize: number;
 };
 
+const BITMAP_FONT_SIZE_STEP = 0.25;
+const BITMAP_FONT_EPSILON = 0.0001;
+const BITMAP_FONT_SMALL_SIZE_THRESHOLD = Math.max(UI_MIN_FONT_SIZE, 12);
+const BITMAP_FONT_SMALL_SIZE_STEP = 1;
+
+const getBitmapFontSizeStep = (value: number): number => {
+    return value <= BITMAP_FONT_SMALL_SIZE_THRESHOLD
+        ? BITMAP_FONT_SMALL_SIZE_STEP
+        : BITMAP_FONT_SIZE_STEP;
+};
+
+const quantizeBitmapFontSize = (value: number): number => {
+    if (!Number.isFinite(value)) {
+        return UI_MIN_FONT_SIZE;
+    }
+
+    // Bitmap fonts lose thin strokes quickly when rendered at tiny fractional
+    // scales, so snap small sizes to whole numbers for crisper glyphs.
+    const step = getBitmapFontSizeStep(value);
+    const snapped = Math.round(value / step) * step;
+    return Math.max(UI_MIN_FONT_SIZE, snapped);
+};
+
+const normalizePreferredBitmapFontSize = (value: number): number => {
+    return quantizeBitmapFontSize(Math.max(UI_MIN_FONT_SIZE, value));
+};
+
+const normalizeMinBitmapFontSize = (value: number, preferredSize: number): number => {
+    return Math.max(UI_MIN_FONT_SIZE, Math.min(preferredSize, quantizeBitmapFontSize(Math.max(UI_MIN_FONT_SIZE, value))));
+};
+
+const getBitmapFontSizeCandidatesDescending = (preferredSize: number, minSize: number): number[] => {
+    const candidates: number[] = [];
+    let current = quantizeBitmapFontSize(preferredSize);
+    const floor = quantizeBitmapFontSize(minSize);
+
+    candidates.push(current);
+
+    while (current > floor + BITMAP_FONT_EPSILON) {
+        const step = getBitmapFontSizeStep(current);
+        const next = Math.max(floor, quantizeBitmapFontSize(current - step));
+        if (next >= current - BITMAP_FONT_EPSILON) {
+            break;
+        }
+
+        candidates.push(next);
+        current = next;
+    }
+
+    if (candidates[candidates.length - 1] > floor + BITMAP_FONT_EPSILON) {
+        candidates.push(floor);
+    }
+
+    return candidates;
+};
+
+type FitBitmapTextMultiLineOptions = FitBitmapTextOptions & {
+    maxLines: number;
+};
+
+export type FitBitmapTextMultiLineResult = {
+    text: string;
+    fontSize: number;
+    lineCount: number;
+};
+
+const measureBitmapTextWidth = (probe: Phaser.GameObjects.BitmapText, value: string): number => {
+    probe.setText(value);
+    return probe.width;
+};
+
+const splitBitmapWordToWidth = (
+    probe: Phaser.GameObjects.BitmapText,
+    word: string,
+    maxWidth: number
+): string[] => {
+    if (!word) {
+        return [];
+    }
+
+    if (measureBitmapTextWidth(probe, word) <= maxWidth) {
+        return [word];
+    }
+
+    const chunks: string[] = [];
+    let current = '';
+
+    for (const char of word) {
+        const candidate = `${current}${char}`;
+        if (!current || measureBitmapTextWidth(probe, candidate) <= maxWidth) {
+            current = candidate;
+            continue;
+        }
+
+        chunks.push(current);
+        current = char;
+    }
+
+    if (current) {
+        chunks.push(current);
+    }
+
+    return chunks;
+};
+
+const wrapBitmapTextToWidth = (
+    probe: Phaser.GameObjects.BitmapText,
+    normalizedText: string,
+    maxWidth: number
+): string[] => {
+    if (!normalizedText) {
+        return [''];
+    }
+
+    const words = normalizedText.split(' ').filter((word) => word.length > 0);
+    if (words.length === 0) {
+        return [''];
+    }
+
+    const lines: string[] = [];
+    let currentLine = '';
+
+    const flushCurrentLine = (): void => {
+        if (!currentLine) {
+            return;
+        }
+
+        lines.push(currentLine);
+        currentLine = '';
+    };
+
+    for (const word of words) {
+        const chunks = splitBitmapWordToWidth(probe, word, maxWidth);
+
+        for (let i = 0; i < chunks.length; i += 1) {
+            const chunk = chunks[i];
+            const separator = currentLine
+                ? (i === 0 ? ' ' : '')
+                : '';
+            const candidate = currentLine
+                ? `${currentLine}${separator}${chunk}`
+                : chunk;
+
+            if (!currentLine || measureBitmapTextWidth(probe, candidate) <= maxWidth) {
+                currentLine = candidate;
+                continue;
+            }
+
+            flushCurrentLine();
+            currentLine = chunk;
+        }
+    }
+
+    flushCurrentLine();
+    return lines.length > 0 ? lines : [''];
+};
+
 export const fitBitmapTextToSingleLine = ({
     scene,
     font,
@@ -23,8 +181,8 @@ export const fitBitmapTextToSingleLine = ({
     maxWidth
 }: FitBitmapTextOptions): number => {
     const normalizedText = text.trim();
-    const safePreferredSize = Math.max(1, Math.round(preferredSize));
-    const safeMinSize = Math.max(1, Math.min(safePreferredSize, Math.round(minSize)));
+    const safePreferredSize = normalizePreferredBitmapFontSize(preferredSize);
+    const safeMinSize = normalizeMinBitmapFontSize(minSize, safePreferredSize);
     const safeMaxWidth = Math.max(1, Math.round(maxWidth));
 
     if (!normalizedText) {
@@ -53,12 +211,17 @@ export const fitBitmapTextToSingleLine = ({
         return safePreferredSize;
     }
 
-    let nextSize = Math.max(safeMinSize, Math.floor((safePreferredSize * safeMaxWidth) / measuredWidth));
+    let nextSize = quantizeBitmapFontSize(Math.max(safeMinSize, (safePreferredSize * safeMaxWidth) / measuredWidth));
     probe.setFontSize(nextSize);
     measuredWidth = probe.width;
 
-    while (measuredWidth > safeMaxWidth && nextSize > safeMinSize) {
-        nextSize -= 1;
+    while (measuredWidth > safeMaxWidth && nextSize > safeMinSize + BITMAP_FONT_EPSILON) {
+        const candidateSize = Math.max(safeMinSize, quantizeBitmapFontSize(nextSize - getBitmapFontSizeStep(nextSize)));
+        if (candidateSize >= nextSize - BITMAP_FONT_EPSILON) {
+            break;
+        }
+
+        nextSize = candidateSize;
         probe.setFontSize(nextSize);
         measuredWidth = probe.width;
     }
@@ -76,8 +239,8 @@ export const fitBitmapTextToTwoLines = ({
     maxWidth
 }: FitBitmapTextOptions): FitBitmapTextTwoLineResult => {
     const normalizedText = text.trim().replace(/\s+/g, ' ');
-    const safePreferredSize = Math.max(1, Math.round(preferredSize));
-    const safeMinSize = Math.max(1, Math.min(safePreferredSize, Math.round(minSize)));
+    const safePreferredSize = normalizePreferredBitmapFontSize(preferredSize);
+    const safeMinSize = normalizeMinBitmapFontSize(minSize, safePreferredSize);
     const safeMaxWidth = Math.max(1, Math.round(maxWidth));
 
     if (!normalizedText) {
@@ -174,13 +337,18 @@ export const fitBitmapTextToTwoLines = ({
 
         let fittedSize = safePreferredSize;
         if (preferredWidth > safeMaxWidth) {
-            fittedSize = Math.max(safeMinSize, Math.floor((safePreferredSize * safeMaxWidth) / preferredWidth));
+            fittedSize = quantizeBitmapFontSize(Math.max(safeMinSize, (safePreferredSize * safeMaxWidth) / preferredWidth));
         }
 
         probe.setText(candidate);
         probe.setFontSize(fittedSize);
-        while (probe.getTextBounds().local.width > safeMaxWidth && fittedSize > safeMinSize) {
-            fittedSize -= 1;
+        while (probe.getTextBounds().local.width > safeMaxWidth && fittedSize > safeMinSize + BITMAP_FONT_EPSILON) {
+            const candidateSize = Math.max(safeMinSize, quantizeBitmapFontSize(fittedSize - getBitmapFontSizeStep(fittedSize)));
+            if (candidateSize >= fittedSize - BITMAP_FONT_EPSILON) {
+                break;
+            }
+
+            fittedSize = candidateSize;
             probe.setFontSize(fittedSize);
         }
 
@@ -207,4 +375,88 @@ export const fitBitmapTextToTwoLines = ({
     }
 
     return { text: normalizedText, fontSize: singleLineSize };
+};
+
+export const fitBitmapTextToMultiLine = ({
+    scene,
+    font,
+    text,
+    preferredSize,
+    minSize,
+    maxWidth,
+    maxLines
+}: FitBitmapTextMultiLineOptions): FitBitmapTextMultiLineResult => {
+    const normalizedText = text.trim().replace(/\s+/g, ' ');
+    const safePreferredSize = normalizePreferredBitmapFontSize(preferredSize);
+    const safeMinSize = normalizeMinBitmapFontSize(minSize, safePreferredSize);
+    const safeMaxWidth = Math.max(1, Math.round(maxWidth));
+    const safeMaxLines = Math.max(1, Math.round(maxLines));
+
+    if (!normalizedText) {
+        return { text: '', fontSize: safePreferredSize, lineCount: 0 };
+    }
+
+    if (!scene.cache.bitmapFont.exists(font)) {
+        return { text: normalizedText, fontSize: safePreferredSize, lineCount: 1 };
+    }
+
+    let probe: Phaser.GameObjects.BitmapText | null = null;
+    try {
+        probe = scene.add.bitmapText(-10000, -10000, font, normalizedText, safePreferredSize)
+            .setVisible(false)
+            .setAlpha(0);
+    }
+    catch {
+        return { text: normalizedText, fontSize: safePreferredSize, lineCount: 1 };
+    }
+
+    probe.setFontSize(safePreferredSize);
+    if (measureBitmapTextWidth(probe, normalizedText) <= safeMaxWidth) {
+        probe.destroy();
+        return { text: normalizedText, fontSize: safePreferredSize, lineCount: 1 };
+    }
+
+    let bestLines: string[] | null = null;
+    let bestSize = safeMinSize;
+    const sizeCandidates = getBitmapFontSizeCandidatesDescending(safePreferredSize, safeMinSize);
+
+    for (const size of sizeCandidates) {
+        probe.setFontSize(size);
+        const wrappedLines = wrapBitmapTextToWidth(probe, normalizedText, safeMaxWidth);
+        if (wrappedLines.length <= safeMaxLines) {
+            bestLines = wrappedLines;
+            bestSize = size;
+            break;
+        }
+    }
+
+    if (!bestLines) {
+        probe.setFontSize(safeMinSize);
+        bestLines = wrapBitmapTextToWidth(probe, normalizedText, safeMaxWidth);
+        bestSize = safeMinSize;
+    }
+
+    probe.destroy();
+
+    if (bestLines.length <= 1) {
+        const singleLineSize = fitBitmapTextToSingleLine({
+            scene,
+            font,
+            text: normalizedText,
+            preferredSize: bestSize,
+            minSize: safeMinSize,
+            maxWidth: safeMaxWidth
+        });
+        return {
+            text: normalizedText,
+            fontSize: singleLineSize,
+            lineCount: 1
+        };
+    }
+
+    return {
+        text: bestLines.join('\n'),
+        fontSize: bestSize,
+        lineCount: bestLines.length
+    };
 };

@@ -1055,7 +1055,7 @@ export type BackendCardSetup = {
     ownerId: 'p1' | 'p2';
     cardType: 'character' | 'tool' | 'item' | 'stadium' | 'supporter';
     holderId: string;
-    AVGECardType: 'NONE' | 'WW' | 'PERC' | 'PIANO' | 'STRING' | 'GUITAR' | 'CHOIR' | 'BRASS';
+    AVGECardType: string;
     AVGECardClass: string;
     hasAtk1: boolean;
     hasActive: boolean;
@@ -1103,18 +1103,19 @@ export type BackendEntitiesSetup = {
     players?: Partial<Record<'p1' | 'p2', BackendPlayerSetup>>;
 };
 
-const ALLOWED_AVGE_CARD_TYPES = new Set(['NONE', 'WW', 'PERC', 'PIANO', 'STRING', 'GUITAR', 'CHOIR', 'BRASS']);
 const ALLOWED_CARD_HOLDER_IDS = new Set([
     'p1-hand',
     'p1-bench',
     'p1-active',
     'p1-discard',
     'p1-deck',
+    'p1-tool',
     'p2-hand',
     'p2-bench',
     'p2-active',
     'p2-discard',
     'p2-deck',
+    'p2-tool',
     'stadium'
 ]);
 const ALLOWED_ENERGY_HOLDER_IDS = new Set([
@@ -1144,7 +1145,7 @@ const isBackendCardSetup = (value: unknown): value is BackendCardSetup => {
         typeof card.holderId === 'string' &&
         ALLOWED_CARD_HOLDER_IDS.has(card.holderId) &&
         typeof card.AVGECardType === 'string' &&
-        ALLOWED_AVGE_CARD_TYPES.has(card.AVGECardType) &&
+        card.AVGECardType.trim().length > 0 &&
         typeof card.AVGECardClass === 'string' &&
         typeof card.hasAtk1 === 'boolean' &&
         typeof card.hasActive === 'boolean' &&
@@ -1199,6 +1200,8 @@ export type BackendProtocolResponse = {
     bothPlayersConnected?: boolean;
     waitingForOpponent?: boolean;
     waitingForInit?: boolean;
+    blockedPendingPeerAck?: boolean;
+    blockedCommand?: string;
     requestFailed?: boolean;
 };
 
@@ -1284,6 +1287,8 @@ export const sendFrontendProtocolPacket = async (
             both_players_connected?: unknown;
             waiting_for_opponent?: unknown;
             waiting_for_init?: unknown;
+            blocked_pending_peer_ack?: unknown;
+            blocked_command?: unknown;
         };
 
         const packets = Array.isArray(payload.packets)
@@ -1310,6 +1315,14 @@ export const sendFrontendProtocolPacket = async (
             ? payload.waiting_for_init
             : undefined;
 
+        const blockedPendingPeerAck = typeof payload.blocked_pending_peer_ack === 'boolean'
+            ? payload.blocked_pending_peer_ack
+            : undefined;
+
+        const blockedCommand = typeof payload.blocked_command === 'string' && payload.blocked_command.trim().length > 0
+            ? payload.blocked_command.trim()
+            : undefined;
+
         return {
             packets,
             clientSlot,
@@ -1317,6 +1330,8 @@ export const sendFrontendProtocolPacket = async (
             bothPlayersConnected,
             waitingForOpponent,
             waitingForInit,
+            blockedPendingPeerAck,
+            blockedCommand,
             requestFailed: false,
         };
     }

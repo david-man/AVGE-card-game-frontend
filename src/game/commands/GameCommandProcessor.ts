@@ -1,4 +1,4 @@
-import { AVGE_CARD_TYPES, AVGE_CARD_TYPE_BORDER_COLORS, AVGECardType } from '../config';
+import { AVGE_CARD_TYPE_BORDER_COLORS, GAME_CARD_TYPE_FILL_COLORS } from '../config';
 
 export class GameCommandProcessor
 {
@@ -162,6 +162,51 @@ export class GameCommandProcessor
             return null;
         };
 
+        const parseForcedNumericResults = (rawValue: string, minValue: number, maxValue: number): number[] | null => {
+            const trimmed = rawValue.trim();
+            if (!trimmed) {
+                return null;
+            }
+
+            let normalized = trimmed;
+            if (normalized.startsWith('[') && normalized.endsWith(']')) {
+                normalized = normalized.slice(1, -1).trim();
+            }
+            if (!normalized) {
+                return null;
+            }
+
+            let tokens = normalized
+                .split(',')
+                .map((entry) => entry.trim())
+                .filter((entry) => entry.length > 0);
+
+            if (tokens.length === 1 && /\s+/.test(tokens[0])) {
+                tokens = tokens[0]
+                    .split(/\s+/)
+                    .map((entry) => entry.trim())
+                    .filter((entry) => entry.length > 0);
+            }
+
+            if (tokens.length === 0) {
+                return null;
+            }
+
+            const values: number[] = [];
+            for (const token of tokens) {
+                if (!/^-?\d+$/.test(token)) {
+                    return null;
+                }
+                const parsed = Number.parseInt(token, 10);
+                if (!Number.isFinite(parsed) || parsed < minValue || parsed > maxValue) {
+                    return null;
+                }
+                values.push(parsed);
+            }
+
+            return values;
+        };
+
         if (action === 'help' || action === '?') {
             this.printHelp(g);
             return;
@@ -178,6 +223,14 @@ export class GameCommandProcessor
             g.remoteInputLockActive = true;
             g.setBoardInputEnabled(false, false);
             g.appendTerminalLine('Input locked while remote client processes animation.');
+            return;
+        }
+
+        if (action === 'resync') {
+            g.appendTerminalLine('Requesting authoritative environment sync.');
+            if (typeof g.enqueueProtocolPacket === 'function') {
+                g.enqueueProtocolPacket('request_environment', {});
+            }
             return;
         }
 
@@ -313,20 +366,12 @@ export class GameCommandProcessor
                 return;
             }
 
-            const cardTypeColors: Record<string, number> = {
-                character: 0xe76f51,
-                tool: 0x457b9d,
-                item: 0x2a9d8f,
-                stadium: 0x6d597a,
-                supporter: 0xb45309,
-            };
-
             const result = g.createCardFromCommand({
                 id: cardId,
                 ownerId,
                 cardType,
                 holderId,
-                color: cardTypeColors[cardType],
+                color: GAME_CARD_TYPE_FILL_COLORS[cardType as keyof typeof GAME_CARD_TYPE_FILL_COLORS] ?? GAME_CARD_TYPE_FILL_COLORS.item,
                 AVGECardType: 'NONE',
                 AVGECardClass: cardClass,
                 hasAtk1,
@@ -728,18 +773,22 @@ export class GameCommandProcessor
             }
 
             const rawType = rawArgTwo.trim().toUpperCase();
-            const normalizedType = rawType === 'ALL' ? 'NONE' : rawType;
-
-            if (!(AVGE_CARD_TYPES as readonly string[]).includes(normalizedType)) {
+            if (!rawType) {
                 g.appendTerminalLine(`Invalid AVGE card type: ${rawArgTwo}`);
-                g.appendTerminalLine('Allowed: NONE, WW, PERC, PIANO, STRING, GUITAR, CHOIR, BRASS');
                 return;
             }
 
-            const nextType = normalizedType as AVGECardType;
-            const color = AVGE_CARD_TYPE_BORDER_COLORS[nextType];
-            card.body.setData('AVGECardType', nextType);
-            card.setBorderColor(color);
+            const nextType = rawType === 'ALL' ? 'NONE' : rawType;
+            if (typeof card.setAVGECardType === 'function') {
+                card.setAVGECardType(nextType);
+            }
+            else {
+                card.body.setData('AVGECardType', nextType);
+                const fallbackColor = AVGE_CARD_TYPE_BORDER_COLORS[nextType as keyof typeof AVGE_CARD_TYPE_BORDER_COLORS] ?? card.getBorderColor();
+                card.setBorderColor(fallbackColor);
+            }
+
+            const color = AVGE_CARD_TYPE_BORDER_COLORS[nextType as keyof typeof AVGE_CARD_TYPE_BORDER_COLORS] ?? card.getBorderColor();
             g.redrawAllCardMarks();
             g.appendTerminalLine(`${cardId} type -> ${nextType} (#${color.toString(16).padStart(6, '0').toUpperCase()})`);
             return;
@@ -873,8 +922,11 @@ export class GameCommandProcessor
                     .filter((item) => item.length > 0);
 
                 if (displayItemsRaw.length === 0) {
-                    failSelection('Display list cannot be empty.');
-                    return;
+                    if (!allowNone) {
+                        failSelection('Display list cannot be empty.');
+                        return;
+                    }
+                    revealLatest();
                 }
 
                 const highlightItemsRaw = highlightListToken
@@ -927,8 +979,8 @@ export class GameCommandProcessor
                     highlightKeySet.add(key);
                 }
 
-                const selectableCount = highlightKeySet.size + (allowNone ? 1 : 0);
-                if (!allowRepeat && numberOfSelections > selectableCount) {
+                const selectableCount = highlightKeySet.size;
+                if (!allowRepeat && !allowNone && numberOfSelections > selectableCount) {
                     failSelection('num-cards exceeds available selectable targets with repeat disabled.');
                     return;
                 }
@@ -1119,11 +1171,11 @@ export class GameCommandProcessor
             }
 
             if (mode === 'd6') {
-                const forcedValueToken = (rawInputArgs.split(/\s+/)[0] ?? '').trim();
-                const forcedValue = Number(forcedValueToken);
-                if (!Number.isInteger(forcedValue) || forcedValue < 1 || forcedValue > 6) {
+                const forcedValues = parseForcedNumericResults(rawInputArgs, 1, 6);
+                if (!forcedValues || forcedValues.length === 0) {
                     g.appendTerminalLine('Usage: input d6 [msg] [1-6]');
                     g.appendTerminalLine('   or: input d6 [player-1|player-2] [msg] [1-6]');
+                    g.appendTerminalLine('   or: input d6 [msg] [v1,v2,...]');
                     return;
                 }
 
@@ -1133,32 +1185,50 @@ export class GameCommandProcessor
                 }
 
                 g.setBoardInputEnabled(false);
-                g.appendTerminalLine(`Input D6 started. Click die to reveal ${forcedValue}.`);
-                g.inputOverlayController.startDiceRollOverlay(topMessage, (result: number) => {
-                    g.appendTerminalLine(`D6 -> ${result}`);
-                    emitCommandEvent('input_result', {
-                        input_type: 'd6',
-                        inputType: 'd6',
-                        message: topMessage,
-                        result,
-                        result_value: result,
-                        resultValue: result
-                    });
-                    g.clearOverlayPreviewIfActive();
-                    g.setBoardInputEnabled(true);
-                }, forcedValue);
+                g.appendTerminalLine(`Input D6 started. Click die to reveal ${forcedValues.join(',')}.`);
+
+                const rolledValues: number[] = [];
+                const totalRolls = forcedValues.length;
+
+                const runRollAtIndex = (index: number): void => {
+                    const stepMessage = totalRolls > 1 ? `${topMessage} ${index + 1}/${totalRolls}` : topMessage;
+                    g.inputOverlayController.startDiceRollOverlay(stepMessage, (result: number) => {
+                        rolledValues.push(result);
+                        g.appendTerminalLine(`D6 ${index + 1}/${totalRolls} -> ${result}`);
+
+                        if (index + 1 < totalRolls) {
+                            runRollAtIndex(index + 1);
+                            return;
+                        }
+
+                        const firstResult = rolledValues[0] ?? forcedValues[0];
+                        emitCommandEvent('input_result', {
+                            input_type: 'd6',
+                            inputType: 'd6',
+                            message: topMessage,
+                            result: firstResult,
+                            result_value: firstResult,
+                            resultValue: firstResult,
+                            result_values: rolledValues,
+                            resultValues: rolledValues
+                        });
+                        g.clearOverlayPreviewIfActive();
+                        g.setBoardInputEnabled(true);
+                    }, forcedValues[index]);
+                };
+
+                runRollAtIndex(0);
                 return;
             }
 
             if (mode === 'coin') {
-                const forcedValueToken = (rawInputArgs.split(/\s+/)[0] ?? '').trim();
-                if (forcedValueToken !== '0' && forcedValueToken !== '1') {
+                const forcedValues = parseForcedNumericResults(rawInputArgs, 0, 1);
+                if (!forcedValues || forcedValues.length === 0) {
                     g.appendTerminalLine('Usage: input coin [msg] [0|1]');
                     g.appendTerminalLine('   or: input coin [player-1|player-2] [msg] [0|1]');
+                    g.appendTerminalLine('   or: input coin [msg] [v1,v2,...] where each v is 0 or 1');
                     return;
                 }
-
-                const forcedResult = forcedValueToken === '1' ? 'heads' : 'tails';
 
                 if (g.inputOverlayController.hasActiveOverlay()) {
                     g.appendTerminalLine('Input overlay already active.');
@@ -1166,27 +1236,47 @@ export class GameCommandProcessor
                 }
 
                 g.setBoardInputEnabled(false);
-                g.appendTerminalLine(`Input COIN started. Click coin to reveal ${forcedValueToken}.`);
-                g.inputOverlayController.startCoinFlipOverlay(topMessage, (result: 'heads' | 'tails') => {
-                    const resultValue = result === 'heads' ? 1 : 0;
-                    g.appendTerminalLine(`COIN -> ${result.toUpperCase()}`);
+                g.appendTerminalLine(`Input COIN started. Click coin to reveal ${forcedValues.join(',')}.`);
 
-                    // Always exit coin input view immediately after selection,
-                    // even if backend processing of input_result is delayed.
-                    g.inputOverlayController.stopActiveOverlay();
-                    g.clearOverlayPreviewIfActive();
-                    g.setBoardInputEnabled(true);
+                const resultValues: number[] = [];
+                const resultLabels: string[] = [];
+                const totalFlips = forcedValues.length;
 
-                    emitCommandEvent('input_result', {
-                        input_type: 'coin',
-                        inputType: 'coin',
-                        message: topMessage,
-                        result,
-                        result_value: resultValue,
-                        resultValue,
-                        result_label: result.toUpperCase()
-                    });
-                }, forcedResult);
+                const runFlipAtIndex = (index: number): void => {
+                    const forcedResult = forcedValues[index] === 1 ? 'heads' : 'tails';
+                    const stepMessage = totalFlips > 1 ? `${topMessage} ${index + 1}/${totalFlips}` : topMessage;
+                    g.inputOverlayController.startCoinFlipOverlay(stepMessage, (result: 'heads' | 'tails') => {
+                        const resultValue = result === 'heads' ? 1 : 0;
+                        resultValues.push(resultValue);
+                        resultLabels.push(result.toUpperCase());
+                        g.appendTerminalLine(`COIN ${index + 1}/${totalFlips} -> ${result.toUpperCase()}`);
+
+                        if (index + 1 < totalFlips) {
+                            runFlipAtIndex(index + 1);
+                            return;
+                        }
+
+                        const firstResultValue = resultValues[0] ?? forcedValues[0];
+                        const firstResultLabel = firstResultValue === 1 ? 'HEADS' : 'TAILS';
+                        emitCommandEvent('input_result', {
+                            input_type: 'coin',
+                            inputType: 'coin',
+                            message: topMessage,
+                            result: firstResultLabel.toLowerCase(),
+                            result_value: firstResultValue,
+                            resultValue: firstResultValue,
+                            result_label: firstResultLabel,
+                            result_values: resultValues,
+                            resultValues: resultValues,
+                            result_labels: resultLabels,
+                            resultLabels: resultLabels
+                        });
+                        g.clearOverlayPreviewIfActive();
+                        g.setBoardInputEnabled(true);
+                    }, forcedResult);
+                };
+
+                runFlipAtIndex(0);
                 return;
             }
 
@@ -1473,6 +1563,7 @@ export class GameCommandProcessor
                     g.overlayPreviewContext = null;
                     g.appendTerminalLine('Reveal dismissed.');
                     emitCommandEvent('reveal', {
+                        command: g.pendingNotifyCommand ?? command,
                         target_view: revealTargetLabel,
                         cards: revealCards,
                         message: revealMessage || null,

@@ -28,6 +28,7 @@ export class CoinInputOverlay
     private settledResult: 'heads' | 'tails' | null;
     private onComplete: CoinFlipCompleteCallback | null;
     private forcedFinalResult: 'heads' | 'tails' | null;
+    private hintPreferredFontSize: number;
 
     constructor (scene: Scene, inputLockOverlay: Phaser.GameObjects.Rectangle)
     {
@@ -42,6 +43,7 @@ export class CoinInputOverlay
         this.settledResult = null;
         this.onComplete = null;
         this.forcedFinalResult = null;
+        this.hintPreferredFontSize = GAME_INPUT_OVERLAY_HEADER_LAYOUT.hintFontSizeMin;
     }
 
     hasActiveOverlay (): boolean
@@ -70,6 +72,7 @@ export class CoinInputOverlay
         this.settledResult = null;
         this.onComplete = null;
         this.forcedFinalResult = null;
+        this.hintPreferredFontSize = GAME_INPUT_OVERLAY_HEADER_LAYOUT.hintFontSizeMin;
     }
 
     start (onComplete: CoinFlipCompleteCallback, topMessage: string, forcedResult?: 'heads' | 'tails'): void
@@ -98,12 +101,16 @@ export class CoinInputOverlay
             Math.round(this.scene.scale.height * GAME_INPUT_OVERLAY_HEADER_LAYOUT.messageGapRatio)
         );
         const hintMessage = 'CLICK COIN TO FLIP';
-        const hintFontSize = fitBitmapTextToSingleLine({
+        this.hintPreferredFontSize = Math.max(
+            GAME_INPUT_OVERLAY_HEADER_LAYOUT.hintFontSizeMin,
+            Math.round(this.scene.scale.width * GAME_INPUT_OVERLAY_HEADER_LAYOUT.hintFontSizeRatio)
+        );
+        const fittedHintFontSize = fitBitmapTextToSingleLine({
             scene: this.scene,
             font: 'minogram',
             text: hintMessage,
-            preferredSize: 24,
-            minSize: 10,
+            preferredSize: this.hintPreferredFontSize,
+            minSize: GAME_INPUT_OVERLAY_HEADER_LAYOUT.hintFitMinSize,
             maxWidth: Math.round(this.scene.scale.width * 0.92)
         });
 
@@ -131,7 +138,7 @@ export class CoinInputOverlay
             this.scene.scale.height / 2 + Math.round(coinSize * 0.8),
             'minogram',
             hintMessage,
-            hintFontSize
+            fittedHintFontSize
         )
             .setOrigin(0.5)
             .setDepth(overlayDepth);
@@ -194,8 +201,8 @@ export class CoinInputOverlay
                                     scene: this.scene,
                                     font: 'minogram',
                                     text: confirmHint,
-                                    preferredSize: 24,
-                                    minSize: 10,
+                                    preferredSize: this.hintPreferredFontSize,
+                                    minSize: GAME_INPUT_OVERLAY_HEADER_LAYOUT.hintFitMinSize,
                                     maxWidth: Math.round(this.scene.scale.width * 0.92)
                                 }));
                             }

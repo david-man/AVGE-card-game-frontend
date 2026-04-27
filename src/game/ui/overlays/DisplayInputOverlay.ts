@@ -1,5 +1,6 @@
 import { Scene } from 'phaser';
 import { GAME_INPUT_SELECTION_OVERLAY } from '../../config';
+import { fitBitmapTextToMultiLine } from './bitmapTextFit';
 
 type OverlayCloseCallback = () => void;
 type OverlayCardClickCallback = (cardId: string) => void;
@@ -286,28 +287,83 @@ export class DisplayInputOverlay
                 GAME_INPUT_SELECTION_OVERLAY.cardWidthMin,
                 Math.round(this.scene.scale.width * GAME_INPUT_SELECTION_OVERLAY.cardWidthRatio)
             );
-            const maxColumns = Math.max(1, Math.floor(availableWidth / (preferredCardWidth + 12)));
-            const columnCount = Math.min(cards.length, Math.max(1, maxColumns));
-            const rowCount = Math.max(1, Math.ceil(cards.length / columnCount));
-
-            const horizontalGap = Math.max(
+            const desiredHorizontalGap = Math.max(
                 GAME_INPUT_SELECTION_OVERLAY.rowSpacingMin,
                 Math.round(this.scene.scale.width * GAME_INPUT_SELECTION_OVERLAY.rowSpacingRatio)
             );
-            const verticalGap = Math.max(
+            const desiredVerticalGap = Math.max(
                 GAME_INPUT_SELECTION_OVERLAY.rowGapMin,
                 Math.round(this.scene.scale.height * GAME_INPUT_SELECTION_OVERLAY.rowGapRatio)
             );
+            const minimumReadableCardWidth = 64;
 
-            const maxCardWidthByGrid = Math.floor((availableWidth - ((columnCount - 1) * horizontalGap)) / columnCount);
-            const maxCardHeightByGrid = Math.floor((availableHeight - ((rowCount - 1) * verticalGap)) / rowCount);
+            type GridCandidate = {
+                columnCount: number;
+                rowCount: number;
+                horizontalGap: number;
+                verticalGap: number;
+                cardWidth: number;
+                cardHeight: number;
+            };
 
-            const widthFromHeightConstraint = Math.floor(maxCardHeightByGrid / GAME_INPUT_SELECTION_OVERLAY.cardHeightRatio);
-            const fittedCardWidth = Math.max(64, Math.min(preferredCardWidth, maxCardWidthByGrid, widthFromHeightConstraint));
-            const fittedCardHeight = Math.max(96, Math.round(fittedCardWidth * GAME_INPUT_SELECTION_OVERLAY.cardHeightRatio));
+            let preferredCandidate: GridCandidate | null = null;
+            let fallbackCandidate: GridCandidate | null = null;
 
-            const cardWidth = fittedCardWidth;
-            const cardHeight = fittedCardHeight;
+            for (let candidateColumns = 1; candidateColumns <= cards.length; candidateColumns += 1) {
+                const candidateRows = Math.max(1, Math.ceil(cards.length / candidateColumns));
+                const candidateHorizontalGap = Math.max(
+                    4,
+                    Math.min(desiredHorizontalGap, Math.floor(availableWidth / Math.max(1, candidateColumns * 3)))
+                );
+                const candidateVerticalGap = Math.max(
+                    4,
+                    Math.min(desiredVerticalGap, Math.floor(availableHeight / Math.max(1, candidateRows * 3)))
+                );
+
+                const maxCardWidthByGrid = Math.floor((availableWidth - ((candidateColumns - 1) * candidateHorizontalGap)) / candidateColumns);
+                const maxCardHeightByGrid = Math.floor((availableHeight - ((candidateRows - 1) * candidateVerticalGap)) / candidateRows);
+
+                if (maxCardWidthByGrid <= 0 || maxCardHeightByGrid <= 0) {
+                    continue;
+                }
+
+                const widthFromHeightConstraint = Math.floor(maxCardHeightByGrid / GAME_INPUT_SELECTION_OVERLAY.cardHeightRatio);
+                const fittedCardWidth = Math.floor(Math.min(preferredCardWidth, maxCardWidthByGrid, widthFromHeightConstraint));
+
+                if (fittedCardWidth <= 0) {
+                    continue;
+                }
+
+                const candidate: GridCandidate = {
+                    columnCount: candidateColumns,
+                    rowCount: candidateRows,
+                    horizontalGap: candidateHorizontalGap,
+                    verticalGap: candidateVerticalGap,
+                    cardWidth: fittedCardWidth,
+                    cardHeight: Math.max(1, Math.round(fittedCardWidth * GAME_INPUT_SELECTION_OVERLAY.cardHeightRatio))
+                };
+
+                if (!fallbackCandidate || candidate.cardWidth > fallbackCandidate.cardWidth || (candidate.cardWidth === fallbackCandidate.cardWidth && candidate.rowCount > fallbackCandidate.rowCount)) {
+                    fallbackCandidate = candidate;
+                }
+
+                // Candidate columns are evaluated from low to high, so the
+                // first readable fit naturally prioritizes adding rows.
+                if (!preferredCandidate && candidate.cardWidth >= minimumReadableCardWidth) {
+                    preferredCandidate = candidate;
+                }
+            }
+
+            const chosenCandidate = preferredCandidate ?? fallbackCandidate;
+            const columnCount = chosenCandidate?.columnCount ?? 1;
+            const rowCount = chosenCandidate?.rowCount ?? cards.length;
+            const horizontalGap = chosenCandidate?.horizontalGap ?? 4;
+            const verticalGap = chosenCandidate?.verticalGap ?? 4;
+            const cardWidth = chosenCandidate?.cardWidth ?? Math.max(1, Math.floor(availableWidth));
+            const cardHeight = chosenCandidate?.cardHeight ?? Math.max(1, Math.floor(cardWidth * GAME_INPUT_SELECTION_OVERLAY.cardHeightRatio));
+            const itemTextMaxWidth = Math.max(12, cardWidth - 8);
+            const itemLabelPreferredSize = Math.max(8, Math.round(cardWidth * GAME_INPUT_SELECTION_OVERLAY.itemLabelFontSizeRatio));
+            const itemSubLabelPreferredSize = Math.max(7, Math.round(cardWidth * GAME_INPUT_SELECTION_OVERLAY.itemSubLabelFontSizeRatio));
 
             const totalGridWidth = (columnCount * cardWidth) + ((columnCount - 1) * horizontalGap);
             const totalGridHeight = (rowCount * cardHeight) + ((rowCount - 1) * verticalGap);
@@ -323,13 +379,39 @@ export class DisplayInputOverlay
                 const body = this.scene.add.rectangle(0, 0, cardWidth, cardHeight, card.cardColor, 1)
                     .setStrokeStyle(3, 0xffffff, 0.95);
 
-                const idText = this.scene.add.bitmapText(0, -Math.round(cardHeight * 0.2), 'minogram', card.cardClassLabel, cardLabelFontSize)
-                    .setOrigin(0.5)
-                    .setMaxWidth(cardWidth - 8);
+                const classLabelLayout = fitBitmapTextToMultiLine({
+                    scene: this.scene,
+                    font: 'minogram',
+                    text: card.cardClassLabel,
+                    preferredSize: Math.min(cardLabelFontSize, itemLabelPreferredSize),
+                    minSize: 7,
+                    maxWidth: itemTextMaxWidth,
+                    maxLines: 3
+                });
+                const idText = this.scene.add.bitmapText(
+                    0,
+                    -Math.round(cardHeight * 0.2),
+                    'minogram',
+                    classLabelLayout.text,
+                    classLabelLayout.fontSize
+                ).setOrigin(0.5);
 
-                const typeText = this.scene.add.bitmapText(0, Math.round(cardHeight * 0.23), 'minogram', card.cardTypeLabel, cardSubLabelFontSize)
-                    .setOrigin(0.5)
-                    .setMaxWidth(cardWidth - 8);
+                const typeLabelLayout = fitBitmapTextToMultiLine({
+                    scene: this.scene,
+                    font: 'minogram',
+                    text: card.cardTypeLabel,
+                    preferredSize: Math.min(cardSubLabelFontSize, itemSubLabelPreferredSize),
+                    minSize: 6,
+                    maxWidth: itemTextMaxWidth,
+                    maxLines: 2
+                });
+                const typeText = this.scene.add.bitmapText(
+                    0,
+                    Math.round(cardHeight * 0.23),
+                    'minogram',
+                    typeLabelLayout.text,
+                    typeLabelLayout.fontSize
+                ).setOrigin(0.5);
 
                 const cardContainer = this.scene.add.container(x, y, [body, idText, typeText])
                     .setDepth(overlayDepth + 1);

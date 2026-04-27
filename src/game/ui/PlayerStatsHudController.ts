@@ -74,7 +74,7 @@ export class PlayerStatsHudController
 
             const formatAttributeLabel = (attributeKey: string): string => {
                 if (attributeKey === 'ENERGY_ADD_REMAINING_IN_TURN') {
-                    return 'shared energy adds left';
+                    return 'energy adds left';
                 }
 
                 return attributeKey.toLowerCase().replace(/_/g, ' ');

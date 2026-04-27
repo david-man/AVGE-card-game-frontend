@@ -146,13 +146,16 @@ export class CardPreviewController
         this.flavorText = null;
     }
 
-    create (objectWidth: number, objectHeight: number): void
+    create (objectWidth: number, objectHeight: number, options?: { side?: 'left' | 'right' }): void
     {
         const panelWidth = Math.round((GAME_PREVIEW_LAYOUT.panelWidthBase / BASE_WIDTH) * GAME_WIDTH);
         const panelHeight = Math.round((GAME_PREVIEW_LAYOUT.panelHeightBase / BASE_HEIGHT) * GAME_HEIGHT);
         const sideMargin = Math.round((GAME_PREVIEW_LAYOUT.sideMarginBase / BASE_WIDTH) * GAME_WIDTH);
+        const side = options?.side ?? 'right';
 
-        const panelX = GAME_WIDTH - sideMargin - Math.round(panelWidth / 2);
+        const panelX = side === 'left'
+            ? sideMargin + Math.round(panelWidth / 2)
+            : GAME_WIDTH - sideMargin - Math.round(panelWidth / 2);
         const panelY = GAME_HEIGHT - sideMargin - Math.round(panelHeight / 2);
         const topY = panelY - Math.round(panelHeight / 2);
 
@@ -170,13 +173,25 @@ export class CardPreviewController
             .setDepth(GAME_DEPTHS.previewCard)
             .setVisible(false);
 
-        this.idText = this.scene.add.bitmapText(panelX, previewCardCenterY - Math.round(previewCardHeight * GAME_PREVIEW_LAYOUT.idYOffsetRatio), 'minogram', '', Math.max(14, Math.round(GAME_PREVIEW_LAYOUT.idFontSize * UI_SCALE)))
+        this.idText = this.scene.add.bitmapText(
+            panelX,
+            previewCardCenterY - Math.round(previewCardHeight * GAME_PREVIEW_LAYOUT.idYOffsetRatio),
+            'minogram',
+            '',
+            Math.max(GAME_PREVIEW_LAYOUT.idFontSizeMin, Math.round(GAME_PREVIEW_LAYOUT.idFontSize * UI_SCALE))
+        )
             .setOrigin(0.5)
             .setTint(GAME_PREVIEW_LAYOUT.panelStrokeColor)
             .setDepth(GAME_DEPTHS.previewText)
             .setVisible(false);
 
-        this.typeText = this.scene.add.bitmapText(panelX, previewCardCenterY + Math.round(previewCardHeight * GAME_PREVIEW_LAYOUT.typeYOffsetRatio), 'minogram', '', Math.max(12, Math.round(GAME_PREVIEW_LAYOUT.typeFontSize * UI_SCALE)))
+        this.typeText = this.scene.add.bitmapText(
+            panelX,
+            previewCardCenterY + Math.round(previewCardHeight * GAME_PREVIEW_LAYOUT.typeYOffsetRatio),
+            'minogram',
+            '',
+            Math.max(GAME_PREVIEW_LAYOUT.typeFontSizeMin, Math.round(GAME_PREVIEW_LAYOUT.typeFontSize * UI_SCALE))
+        )
             .setOrigin(0.5)
             .setTint(GAME_PREVIEW_LAYOUT.typeTint)
             .setDepth(GAME_DEPTHS.previewText)
@@ -187,7 +202,7 @@ export class CardPreviewController
             previewCardCenterY - Math.round(previewCardHeight / 2) + Math.round(previewCardHeight * GAME_PREVIEW_LAYOUT.hpOffsetYRatio),
             'minogram',
             '',
-            Math.max(10, Math.round(GAME_PREVIEW_LAYOUT.hpFontSize * UI_SCALE))
+            Math.max(GAME_PREVIEW_LAYOUT.hpFontSizeMin, Math.round(GAME_PREVIEW_LAYOUT.hpFontSize * UI_SCALE))
         )
             .setOrigin(0, 0)
             .setTint(GAME_PREVIEW_LAYOUT.panelStrokeColor)
@@ -199,7 +214,7 @@ export class CardPreviewController
             topY + Math.round(panelHeight * GAME_PREVIEW_LAYOUT.paragraphYRatio),
             'minogram',
             '',
-            Math.max(9, Math.round(GAME_PREVIEW_LAYOUT.paragraphFontSize * UI_SCALE))
+            Math.max(GAME_PREVIEW_LAYOUT.paragraphFontSizeMin, Math.round(GAME_PREVIEW_LAYOUT.paragraphFontSize * UI_SCALE))
         )
             .setOrigin(0.5, 0)
             .setCenterAlign()
@@ -214,7 +229,7 @@ export class CardPreviewController
             '',
             {
                 fontFamily: 'MinecraftRegular, serif',
-                fontSize: `${Math.max(8, Math.round((GAME_PREVIEW_LAYOUT.paragraphFontSize - 1) * UI_SCALE))}px`,
+                fontSize: `${Math.max(GAME_PREVIEW_LAYOUT.flavorFontSizeMin, Math.round((GAME_PREVIEW_LAYOUT.paragraphFontSize + GAME_PREVIEW_LAYOUT.flavorFontSizeDelta) * UI_SCALE))}px`,
                 fontStyle: 'italic',
                 color: '#e2e8f0',
                 align: 'center',
@@ -250,17 +265,20 @@ export class CardPreviewController
             font: 'minogram',
             text: this.idText.text,
             preferredSize: this.idText.fontSize,
-            minSize: Math.max(10, Math.round(this.idText.fontSize * 0.72)),
-            maxWidth: Math.max(12, Math.round(this.body.width * 0.9))
+            minSize: Math.max(GAME_PREVIEW_LAYOUT.fitIdMinSize, Math.round(this.idText.fontSize * GAME_PREVIEW_LAYOUT.fitIdSizeRatio)),
+            maxWidth: Math.max(GAME_PREVIEW_LAYOUT.fitIdWidthMin, Math.round(this.body.width * GAME_PREVIEW_LAYOUT.fitIdWidthRatio))
         }));
-        this.typeText.setVisible(true).setText(card.getCardType().toUpperCase());
+        const previewTypeText = card.getCardType() === 'character'
+            ? (String(card.getAVGECardType() ?? '').trim().toUpperCase() || 'NONE')
+            : card.getCardType().toUpperCase();
+        this.typeText.setVisible(true).setText(previewTypeText);
         this.typeText.setFontSize(fitBitmapTextToSingleLine({
             scene: this.scene,
             font: 'minogram',
             text: this.typeText.text,
             preferredSize: this.typeText.fontSize,
-            minSize: Math.max(9, Math.round(this.typeText.fontSize * 0.72)),
-            maxWidth: Math.max(12, Math.round(this.body.width * 0.9))
+            minSize: Math.max(GAME_PREVIEW_LAYOUT.fitTypeMinSize, Math.round(this.typeText.fontSize * GAME_PREVIEW_LAYOUT.fitTypeSizeRatio)),
+            maxWidth: Math.max(GAME_PREVIEW_LAYOUT.fitTypeWidthMin, Math.round(this.body.width * GAME_PREVIEW_LAYOUT.fitTypeWidthRatio))
         }));
 
         if (card.getCardType() === 'character') {
@@ -270,8 +288,8 @@ export class CardPreviewController
                 font: 'minogram',
                 text: this.hpText.text,
                 preferredSize: this.hpText.fontSize,
-                minSize: Math.max(8, Math.round(this.hpText.fontSize * 0.75)),
-                maxWidth: Math.max(10, Math.round(this.body.width * 0.6))
+                minSize: Math.max(GAME_PREVIEW_LAYOUT.fitHpMinSize, Math.round(this.hpText.fontSize * GAME_PREVIEW_LAYOUT.fitHpSizeRatio)),
+                maxWidth: Math.max(GAME_PREVIEW_LAYOUT.fitHpWidthMin, Math.round(this.body.width * GAME_PREVIEW_LAYOUT.fitHpWidthRatio))
             }));
         }
         else {
@@ -284,7 +302,7 @@ export class CardPreviewController
             .setText(previewCopy.mainText);
 
         if (this.flavorText) {
-            const flavorTopGap = Math.max(8, Math.round(6 * UI_SCALE));
+            const flavorTopGap = Math.max(GAME_PREVIEW_LAYOUT.flavorTopGapMin, Math.round(GAME_PREVIEW_LAYOUT.flavorTopGapBase * UI_SCALE));
             const hasFlavor = previewCopy.flavorText.trim().length > 0;
             this.flavorText
                 .setVisible(hasFlavor)
@@ -300,7 +318,7 @@ export class CardPreviewController
             return {
                 mainText: [
                     `Owner: ${ownerUsername}`,
-                    `Ability: ${otherCardDescription.abilityDescription}`,
+                    `${otherCardDescription.abilityDescription}`,
                 ].join('\n\n'),
                 flavorText: '',
             };
@@ -461,5 +479,20 @@ export class CardPreviewController
         this.hpText?.setVisible(false);
         this.paragraphText?.setVisible(false);
         this.flavorText?.setVisible(false);
+    }
+
+    isVisible (): boolean
+    {
+        return this.panel?.visible ?? false;
+    }
+
+    containsPoint (x: number, y: number): boolean
+    {
+        if (!this.panel || !this.panel.visible) {
+            return false;
+        }
+
+        const bounds = this.panel.getBounds();
+        return x >= bounds.left && x <= bounds.right && y >= bounds.top && y <= bounds.bottom;
     }
 }

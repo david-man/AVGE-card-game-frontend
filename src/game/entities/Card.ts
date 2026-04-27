@@ -1,7 +1,6 @@
 import { Scene } from 'phaser';
 import {
     AVGE_CARD_TYPE_BORDER_COLORS,
-    AVGECardType,
     CARD_ANIMATION,
     CARD_BORDER_WIDTH,
     CARD_DEFAULTS,
@@ -21,7 +20,7 @@ export type CardStatusEffectMap = Record<string, number>;
 export type CardOptions = {
     id: string;
     cardType: CardType;
-    AVGECardType: AVGECardType;
+    AVGECardType: string;
     AVGECardClass: string;
     statusEffect: CardStatusEffectMap;
     ownerId: PlayerId;
@@ -49,7 +48,7 @@ export class Card
     readonly id: string;
     readonly uniqueId: string;
     readonly cardType: CardType;
-    readonly avgeCardType: AVGECardType;
+    private avgeCardType: string;
     readonly ownerId: PlayerId;
     readonly cardClass: string;
     readonly hasAtk1: boolean;
@@ -92,7 +91,7 @@ export class Card
         this.id = options.id;
         this.uniqueId = options.id;
         this.cardType = options.cardType;
-        this.avgeCardType = options.AVGECardType;
+        this.avgeCardType = this.normalizeAvgeCardType(options.AVGECardType);
         this.ownerId = options.ownerId;
         this.cardClass = options.AVGECardClass;
         this.hasAtk1 = options.has_atk_1 ?? false;
@@ -124,7 +123,7 @@ export class Card
         this.hp = options.cardType === 'character' ? CARD_DEFAULTS.characterHp : 0;
         this.maxHp = options.cardType === 'character' ? CARD_DEFAULTS.characterMaxHp : 0;
         this.statusEffect = { ...options.statusEffect };
-        this.borderColor = AVGE_CARD_TYPE_BORDER_COLORS[this.avgeCardType] ?? CARD_DEFAULTS.borderColor;
+        this.borderColor = this.resolveBorderColorForAvgeCardType(this.avgeCardType);
         this.baseScale = CARD_DEFAULTS.baseScale;
         this.currentStrokeWidth = CARD_BORDER_WIDTH;
 
@@ -137,7 +136,7 @@ export class Card
             .setCenterAlign()
             .setTint(0xffffff);
 
-        this.typeLabel = scene.add.bitmapText(options.x, options.y + CARD_TEXT_LAYOUT.typeYOffset, 'minogram', this.cardType.toUpperCase(), this.baseTypeFontSize)
+        this.typeLabel = scene.add.bitmapText(options.x, options.y + CARD_TEXT_LAYOUT.typeYOffset, 'minogram', this.resolveDisplayTypeLabel(), this.baseTypeFontSize)
             .setOrigin(0.5, 1)
             .setTint(0xcde7ff);
 
@@ -160,6 +159,31 @@ export class Card
 
         this.applyFaceState();
         this.refreshHpLabel();
+    }
+
+    private normalizeAvgeCardType (rawType: string | null | undefined): string
+    {
+        if (typeof rawType !== 'string') {
+            return 'NONE';
+        }
+
+        const normalized = rawType.trim().toUpperCase();
+        return normalized.length > 0 ? normalized : 'NONE';
+    }
+
+    private resolveBorderColorForAvgeCardType (avgeCardType: string): number
+    {
+        const normalizedType = this.normalizeAvgeCardType(avgeCardType);
+        return AVGE_CARD_TYPE_BORDER_COLORS[normalizedType as keyof typeof AVGE_CARD_TYPE_BORDER_COLORS] ?? CARD_DEFAULTS.borderColor;
+    }
+
+    private resolveDisplayTypeLabel (): string
+    {
+        if (this.cardType !== 'character') {
+            return this.cardType.toUpperCase();
+        }
+
+        return this.avgeCardType;
     }
 
     private toStandardCardType (cardType: CardType): StandardCardType
@@ -266,6 +290,21 @@ export class Card
         this.applyBorderStyle();
     }
 
+    setAVGECardType (nextType: string): void
+    {
+        const normalizedType = this.normalizeAvgeCardType(nextType);
+        if (this.avgeCardType === normalizedType) {
+            return;
+        }
+
+        this.avgeCardType = normalizedType;
+        this.body.setData('AVGECardType', this.avgeCardType);
+        this.borderColor = this.resolveBorderColorForAvgeCardType(this.avgeCardType);
+        this.typeLabel.setText(this.resolveDisplayTypeLabel());
+        this.applyBorderStyle();
+        this.redrawMarks();
+    }
+
     getBorderColor (): number
     {
         return this.getCurrentBorderColor();
@@ -325,7 +364,7 @@ export class Card
         return this.cardType;
     }
 
-    getAVGECardType (): AVGECardType
+    getAVGECardType (): string
     {
         return this.avgeCardType;
     }

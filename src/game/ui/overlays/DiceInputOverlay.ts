@@ -36,6 +36,7 @@ export class DiceInputOverlay
     private settledValue: number | null;
     private onComplete: DiceRollCompleteCallback | null;
     private forcedFinalValue: number | null;
+    private hintPreferredFontSize: number;
 
     constructor (scene: Scene, inputLockOverlay: Phaser.GameObjects.Rectangle)
     {
@@ -50,6 +51,7 @@ export class DiceInputOverlay
         this.settledValue = null;
         this.onComplete = null;
         this.forcedFinalValue = null;
+        this.hintPreferredFontSize = GAME_INPUT_OVERLAY_HEADER_LAYOUT.hintFontSizeMin;
     }
 
     hasActiveOverlay (): boolean
@@ -78,6 +80,7 @@ export class DiceInputOverlay
         this.settledValue = null;
         this.onComplete = null;
         this.forcedFinalValue = null;
+        this.hintPreferredFontSize = GAME_INPUT_OVERLAY_HEADER_LAYOUT.hintFontSizeMin;
     }
 
     start (onComplete: DiceRollCompleteCallback, topMessage: string, forcedValue?: number): void
@@ -106,12 +109,16 @@ export class DiceInputOverlay
             Math.round(this.scene.scale.height * GAME_INPUT_OVERLAY_HEADER_LAYOUT.messageGapRatio)
         );
         const hintMessage = 'CLICK DIE TO ROLL D6';
-        const hintFontSize = fitBitmapTextToSingleLine({
+        this.hintPreferredFontSize = Math.max(
+            GAME_INPUT_OVERLAY_HEADER_LAYOUT.hintFontSizeMin,
+            Math.round(this.scene.scale.width * GAME_INPUT_OVERLAY_HEADER_LAYOUT.hintFontSizeRatio)
+        );
+        const fittedHintFontSize = fitBitmapTextToSingleLine({
             scene: this.scene,
             font: 'minogram',
             text: hintMessage,
-            preferredSize: 24,
-            minSize: 10,
+            preferredSize: this.hintPreferredFontSize,
+            minSize: GAME_INPUT_OVERLAY_HEADER_LAYOUT.hintFitMinSize,
             maxWidth: Math.round(this.scene.scale.width * 0.92)
         });
 
@@ -139,7 +146,7 @@ export class DiceInputOverlay
             this.scene.scale.height / 2 + Math.round(diceSize * 0.8),
             'minogram',
             hintMessage,
-            hintFontSize
+            fittedHintFontSize
         )
             .setOrigin(0.5)
             .setDepth(overlayDepth);
@@ -202,8 +209,8 @@ export class DiceInputOverlay
                                     scene: this.scene,
                                     font: 'minogram',
                                     text: confirmHint,
-                                    preferredSize: 24,
-                                    minSize: 10,
+                                    preferredSize: this.hintPreferredFontSize,
+                                    minSize: GAME_INPUT_OVERLAY_HEADER_LAYOUT.hintFitMinSize,
                                     maxWidth: Math.round(this.scene.scale.width * 0.92)
                                 }));
                             }
