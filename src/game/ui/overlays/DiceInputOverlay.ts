@@ -1,5 +1,5 @@
 import { Scene } from 'phaser';
-import { GAME_INPUT_OVERLAY_HEADER_LAYOUT } from '../../config';
+import { GAME_INPUT_OVERLAY_HEADER_LAYOUT, GAME_OVERLAY_DEPTHS } from '../../config';
 import { fitBitmapTextToSingleLine } from './bitmapTextFit';
 
 const DICE_FACE_TEXTURE_BY_VALUE: Record<number, string> = {
@@ -90,7 +90,7 @@ export class DiceInputOverlay
         this.forcedFinalValue = forcedValue ?? null;
 
         const startValue = this.getRandomDieFaceValue();
-        const overlayDepth = this.inputLockOverlay.depth + 5;
+        const overlayDepth = Math.max(GAME_OVERLAY_DEPTHS.overlayBase, this.inputLockOverlay.depth + 1);
         const diceSize = Math.max(140, Math.round(this.scene.scale.width * 0.1));
         const titleFontSize = Math.max(
             GAME_INPUT_OVERLAY_HEADER_LAYOUT.titleFontSizeMin,

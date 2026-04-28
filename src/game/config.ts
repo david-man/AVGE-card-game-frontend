@@ -145,8 +145,14 @@ export const GAME_SCENE_VISUALS = {
 	backgroundColor: 0x00ff00,
 	backgroundAlpha: 0.5,
 	inputLockColor: 0x7a7a7a,
-	inputLockAlpha: 0.45,
-	inputLockDepth: 299
+	inputLockAlpha: 0.45
+} as const;
+
+export const GAME_OVERLAY_DEPTHS = {
+	inputLock: 315,
+	opponentDisconnectBackdrop: 317,
+	opponentDisconnectText: 318,
+	overlayBase: 320
 } as const;
 
 export const GAME_INTERACTION = {
@@ -459,6 +465,10 @@ export const GAME_INPUT_SELECTION_OVERLAY = {
 	numberLabelFontSizeMin: 11,
 	submitLabelFontSizeRatio: 0.14,
 	submitLabelFontSizeMin: 12
+} as const;
+
+export const GAME_INPUT_REVEAL_OVERLAY = {
+	maxCardWidthRatio: 0.11
 } as const;
 
 export const GAME_INPUT_OVERLAY_HEADER_LAYOUT = {

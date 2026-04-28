@@ -39,6 +39,7 @@ import {
     GAME_EXPLOSION,
     GAME_HP_PULSE_ANIMATION,
     GAME_LAYOUT,
+    GAME_OVERLAY_DEPTHS,
     GAME_SCENE_VISUALS,
     GAME_SHUFFLE_ANIMATION,
     ENERGY_TOKEN_DEPTHS,
@@ -178,6 +179,7 @@ export class Game extends Scene
         body: Phaser.GameObjects.Arc;
         label: Phaser.GameObjects.BitmapText;
     }>;
+    cardActionSourceByKey: Partial<Record<CardActionKey, Card | null>>;
     phaseStateActionButton: {
         body: Phaser.GameObjects.Rectangle;
         label: Phaser.GameObjects.BitmapText;
@@ -213,7 +215,7 @@ export class Game extends Scene
         this.background.setAlpha(GAME_SCENE_VISUALS.backgroundAlpha);
 
         this.boardInputEnabled = true;
-        const inputLockDepth = Math.max(GAME_SCENE_VISUALS.inputLockDepth, GAME_DEPTHS.previewText + 10);
+        const inputLockDepth = GAME_OVERLAY_DEPTHS.inputLock;
         this.inputLockOverlay = this.add.rectangle(GAME_CENTER_X, GAME_CENTER_Y, GAME_WIDTH, GAME_HEIGHT, GAME_SCENE_VISUALS.inputLockColor, GAME_SCENE_VISUALS.inputLockAlpha)
             .setDepth(inputLockDepth)
             .setInteractive({ useHandCursor: false })
@@ -235,7 +237,7 @@ export class Game extends Scene
             0.92
         )
             .setStrokeStyle(2, 0xffffff, 0.85)
-            .setDepth(inputLockDepth + 2)
+            .setDepth(GAME_OVERLAY_DEPTHS.opponentDisconnectBackdrop)
             .setVisible(false);
         this.opponentDisconnectText = this.add.bitmapText(
             GAME_CENTER_X,
@@ -250,7 +252,7 @@ export class Game extends Scene
             .setOrigin(0.5)
             .setCenterAlign()
             .setMaxWidth(Math.round(GAME_WIDTH * 0.64))
-            .setDepth(inputLockDepth + 3)
+            .setDepth(GAME_OVERLAY_DEPTHS.opponentDisconnectText)
             .setVisible(false);
         this.inputOverlayController = new InputOverlayController(this, this.inputLockOverlay);
         this.boardInteractionController = new BoardInteractionController(this, this);
@@ -389,6 +391,7 @@ export class Game extends Scene
 
         this.createCardPreviewPanel();
         this.createCardActionButtons();
+        this.cardActionSourceByKey = { atk1: null, atk2: null, active: null };
         this.phaseStateActionButton = null;
         this.createSurrenderButton();
         this.createPlayerStatsHud();
@@ -1474,10 +1477,10 @@ export class Game extends Scene
                 color: GAME_CARD_TYPE_FILL_COLORS[cardDef.cardType],
                 AVGECardType: cardDef.AVGECardType,
                 AVGECardClass: cardDef.AVGECardClass,
-                hasAtk1: cardDef.hasAtk1,
-                hasActive: cardDef.hasActive,
+                hasAtk1: cardDef.hasAtk1 ?? false,
+                hasActive: cardDef.hasActive ?? false,
                 hasPassive: cardDef.hasPassive,
-                hasAtk2: cardDef.hasAtk2,
+                hasAtk2: cardDef.hasAtk2 ?? false,
                 atk1Name: cardDef.atk1Name,
                 activeName: cardDef.activeName,
                 atk2Name: cardDef.atk2Name,
@@ -1518,10 +1521,14 @@ export class Game extends Scene
             }
         }
 
-        const assignedView =
+        const payloadView =
             setup.playerView === 'admin' || setup.playerView === 'p1' || setup.playerView === 'p2' || setup.playerView === 'spectator'
                 ? setup.playerView
-                : this.activeViewMode;
+                : null;
+        const slotView = this.protocolClientSlot === 'p1' || this.protocolClientSlot === 'p2'
+            ? this.protocolClientSlot
+            : null;
+        const assignedView: ViewMode = payloadView ?? slotView ?? this.activeViewMode;
         this.applyBoardView(assignedView);
     }
 
@@ -1665,6 +1672,7 @@ export class Game extends Scene
                 ? this.cardHolderById[`${this.activeViewMode}-hand`]
                 : undefined;
         this.surrenderController.refresh(this.activeViewMode, handHolder);
+        this.refreshCardActionButtons();
     }
 
     private createPlayerStatsHud (): void
@@ -2102,7 +2110,7 @@ export class Game extends Scene
             return;
         }
 
-        const card = this.selectedCard;
+        const card = this.cardActionSourceByKey[actionKey] ?? this.selectedCard;
         if (!card) {
             return;
         }
@@ -2121,11 +2129,29 @@ export class Game extends Scene
         });
     }
 
+    private getCurrentTurnActiveCharacterCard (): Card | null
+    {
+        const activeHolder = this.cardHolderById[`${this.playerTurn}-active`];
+        if (!activeHolder) {
+            return null;
+        }
+
+        for (const holderCard of activeHolder.cards) {
+            if (holderCard.getCardType() === 'character') {
+                return holderCard;
+            }
+        }
+
+        return null;
+    }
+
     private refreshCardActionButtons (): void
     {
         if (!this.cardActionButtons || this.cardActionButtons.length === 0) {
             return;
         }
+
+        this.cardActionSourceByKey = { atk1: null, atk2: null, active: null };
 
         if (!this.boardInputEnabled) {
             for (const button of this.cardActionButtons) {
@@ -2167,13 +2193,20 @@ export class Game extends Scene
             return;
         }
 
-        const card = this.selectedCard;
-        const isEligibleZone = card ? /-(hand|bench|active)$/.test(card.getZoneId()) : false;
-        const isActiveSlot = Boolean(card && card.getZoneId() === `${card.getOwnerId()}-active`);
-        const canUseSelectedCardActions = Boolean(card && (this.activeViewMode === 'admin' || card.getOwnerId() === this.activeViewMode));
-        const showAtk1 = Boolean(card && this.gamePhase === 'atk' && card.getCardType() === 'character' && isActiveSlot && card.hasAttackOne());
-        const showAtk2 = Boolean(card && this.gamePhase === 'atk' && card.getCardType() === 'character' && isActiveSlot && card.hasAttackTwo());
-        const showActive = Boolean(card && canUseSelectedCardActions && card.getCardType() === 'character' && isEligibleZone && card.hasActiveAbility());
+        const selectedCard = this.selectedCard;
+        const selectedIsActiveSlot = Boolean(selectedCard && selectedCard.getZoneId() === `${selectedCard.getOwnerId()}-active`);
+        const currentTurnActiveCard = this.getCurrentTurnActiveCharacterCard();
+        const attackCard = selectedCard && selectedIsActiveSlot
+            ? selectedCard
+            : (this.gamePhase === 'atk' ? currentTurnActiveCard : null);
+        const canControlTurnActions = this.activeViewMode === 'admin' || this.activeViewMode === this.playerTurn;
+
+        const abilityCard = selectedCard ?? currentTurnActiveCard;
+        const abilityIsEligibleZone = abilityCard ? /-(hand|bench|active)$/.test(abilityCard.getZoneId()) : false;
+        const canUseAbilityCardActions = Boolean(abilityCard && (this.activeViewMode === 'admin' || abilityCard.getOwnerId() === this.activeViewMode));
+        const showAtk1 = Boolean(attackCard && this.gamePhase === 'atk' && canControlTurnActions && attackCard.getCardType() === 'character' && attackCard.getOwnerId() === this.playerTurn && attackCard.hasAttackOne());
+        const showAtk2 = Boolean(attackCard && this.gamePhase === 'atk' && canControlTurnActions && attackCard.getCardType() === 'character' && attackCard.getOwnerId() === this.playerTurn && attackCard.hasAttackTwo());
+        const showActive = Boolean(abilityCard && canUseAbilityCardActions && abilityCard.getCardType() === 'character' && abilityIsEligibleZone && abilityCard.hasActiveAbility());
 
         const radius = Math.max(12, Math.round((GAME_CARD_ACTION_BUTTON_LAYOUT.buttonRadiusBase / BASE_WIDTH) * GAME_WIDTH));
         const leftMargin = Math.round((GAME_CARD_ACTION_BUTTON_LAYOUT.leftMarginBase / BASE_WIDTH) * GAME_WIDTH);
@@ -2183,21 +2216,30 @@ export class Game extends Scene
         const labelPreferredSize = Math.max(10, Math.round(GAME_CARD_ACTION_BUTTON_LAYOUT.fontSize * UI_SCALE));
         const labelMinSize = Math.max(7, Math.round(labelPreferredSize * 0.55));
         const labelMaxWidth = Math.max(24, diameter - Math.max(8, Math.round(8 * UI_SCALE)));
-        const anchorLeftX = leftMargin;
-        const anchorY = GAME_HEIGHT - bottomMargin - radius;
+        const defaultAnchorX = leftMargin + radius;
+        const defaultAnchorY = GAME_HEIGHT - bottomMargin - radius;
 
-        const visibleButtons: Array<{ key: CardActionKey; body: Phaser.GameObjects.Arc; label: Phaser.GameObjects.BitmapText }> = [];
+        const clampButtonPosition = (x: number, y: number): { x: number; y: number } => {
+            return {
+                x: Phaser.Math.Clamp(Math.round(x), radius + 2, GAME_WIDTH - radius - 2),
+                y: Phaser.Math.Clamp(Math.round(y), radius + 2, GAME_HEIGHT - radius - 2),
+            };
+        };
+
+        const buttonByKey = new Map<CardActionKey, { key: CardActionKey; body: Phaser.GameObjects.Arc; label: Phaser.GameObjects.BitmapText }>();
+
         for (const button of this.cardActionButtons) {
             const visible =
                 (button.key === 'atk1' && showAtk1) ||
                 (button.key === 'atk2' && showAtk2) ||
                 (button.key === 'active' && showActive);
 
-            if (visible && card) {
+            const labelSourceCard = button.key === 'active' ? abilityCard : attackCard;
+            if (visible && labelSourceCard) {
                 const fittedLabel = fitBitmapTextToTwoLines({
                     scene: this,
                     font: 'minogram',
-                    text: this.getCardActionButtonLabel(card, button.key),
+                    text: this.getCardActionButtonLabel(labelSourceCard, button.key),
                     preferredSize: labelPreferredSize,
                     minSize: labelMinSize,
                     maxWidth: labelMaxWidth,
@@ -2212,21 +2254,45 @@ export class Game extends Scene
             button.label.setVisible(visible);
 
             if (visible) {
-                visibleButtons.push(button);
+                if (button.key === 'active') {
+                    this.cardActionSourceByKey.active = abilityCard;
+                }
+                else {
+                    this.cardActionSourceByKey[button.key] = attackCard;
+                }
+            }
+
+            buttonByKey.set(button.key, button);
+        }
+
+        const setButtonPosition = (buttonKey: CardActionKey, x: number, y: number): void => {
+            const button = buttonByKey.get(buttonKey);
+            if (!button || !button.body.visible) {
+                return;
+            }
+
+            const clamped = clampButtonPosition(x, y);
+            button.body.setPosition(clamped.x, clamped.y);
+            button.label.setPosition(clamped.x, clamped.y);
+        };
+
+        if (attackCard && (showAtk1 || showAtk2)) {
+            const bounds = attackCard.getBounds();
+            const lateralOffset = Math.round((bounds.width * 0.5) + radius + Math.max(gap, Math.round(8 * UI_SCALE)));
+            const anchorY = attackCard.y;
+            setButtonPosition('atk1', attackCard.x - lateralOffset, anchorY);
+            setButtonPosition('atk2', attackCard.x + lateralOffset, anchorY);
+        }
+
+        if (showActive) {
+            const surrenderMetrics = this.surrenderController.getButtonMetrics();
+            if (surrenderMetrics && surrenderMetrics.visible) {
+                setButtonPosition('active', surrenderMetrics.x, surrenderMetrics.y - (diameter + gap));
+            }
+            else {
+                setButtonPosition('active', defaultAnchorX, defaultAnchorY);
             }
         }
-
-        if (visibleButtons.length === 0) {
-            return;
-        }
-
-        const startX = anchorLeftX + radius;
-
-        visibleButtons.forEach((button, index) => {
-            const x = startX + (index * (diameter + gap));
-            button.body.setPosition(x, anchorY);
-            button.label.setPosition(x, anchorY);
-        });
     }
 
     private showCardPreview (card: Card, options?: { forceFaceUp?: boolean }): void

@@ -1553,9 +1553,7 @@ export class GameCommandProcessor
             g.setBoardInputEnabled(false);
             g.overlayPreviewContext = 'reveal';
             g.refreshCardActionButtons();
-            g.appendTerminalLine(`Reveal -> ${revealTargetLabel} (${revealCards.length})`);
             g.inputOverlayController.startRevealOverlay(
-                revealTargetLabel,
                 revealCards,
                 revealMessage,
                 timeoutSeconds,

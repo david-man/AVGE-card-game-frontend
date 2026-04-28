@@ -1,5 +1,5 @@
 import { Scene } from 'phaser';
-import { GAME_INPUT_OVERLAY_HEADER_LAYOUT, GAME_INPUT_SELECTION_OVERLAY } from '../../config';
+import { GAME_INPUT_OVERLAY_HEADER_LAYOUT, GAME_INPUT_SELECTION_OVERLAY, GAME_OVERLAY_DEPTHS } from '../../config';
 import { fitBitmapTextToSingleLine } from './bitmapTextFit';
 
 export type KeiWatanabeDrumkidWorkshopItem = {
@@ -115,7 +115,7 @@ export class KeiWatanabeDrumkidWorkshopInputOverlay
         this.onCardClick = onCardClick ?? null;
         this.onBackgroundClick = onBackgroundClick ?? null;
 
-        const overlayDepth = this.inputLockOverlay.depth + 5;
+        const overlayDepth = Math.max(GAME_OVERLAY_DEPTHS.overlayBase, this.inputLockOverlay.depth + 1);
         const cardWidth = Math.max(GAME_INPUT_SELECTION_OVERLAY.cardWidthMin, Math.round(this.scene.scale.width * GAME_INPUT_SELECTION_OVERLAY.cardWidthRatio));
         const cardHeight = Math.round(cardWidth * GAME_INPUT_SELECTION_OVERLAY.cardHeightRatio);
         const titleFontSize = Math.max(GAME_INPUT_SELECTION_OVERLAY.titleFontSizeMin, Math.round(cardWidth * GAME_INPUT_SELECTION_OVERLAY.titleFontSizeRatio));

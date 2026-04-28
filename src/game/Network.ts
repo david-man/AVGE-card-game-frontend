@@ -1,4 +1,5 @@
 import { io, Socket } from 'socket.io-client';
+import cardPreviewDescriptionsJson from './data/cardPreviewDescriptions.json';
 
 const DEFAULT_BACKEND_BASE_URL = 'http://127.0.0.1:5500';
 const DEFAULT_ROUTER_BASE_URL = 'http://127.0.0.1:5600';
@@ -1057,10 +1058,10 @@ export type BackendCardSetup = {
     holderId: string;
     AVGECardType: string;
     AVGECardClass: string;
-    hasAtk1: boolean;
-    hasActive: boolean;
+    hasAtk1?: boolean;
+    hasActive?: boolean;
     hasPassive?: boolean;
-    hasAtk2: boolean;
+    hasAtk2?: boolean;
     atk1Name?: string | null;
     activeName?: string | null;
     atk2Name?: string | null;
@@ -1123,58 +1124,283 @@ const ALLOWED_ENERGY_HOLDER_IDS = new Set([
     'energy-discard'
 ]);
 
-const isBackendCardSetup = (value: unknown): value is BackendCardSetup => {
-    if (typeof value !== 'object' || value === null) {
-        return false;
-    }
-
-    const card = value as Partial<BackendCardSetup>;
-    const hasValidStatusEffect = typeof card.statusEffect === 'object' && card.statusEffect !== null &&
-        Object.values(card.statusEffect as Record<string, unknown>).every((count) => Number.isInteger(count) && (count as number) >= 0);
-    const hasValidAtk1Name = card.atk1Name === undefined || typeof card.atk1Name === 'string' || card.atk1Name === null;
-    const hasValidActiveName = card.activeName === undefined || typeof card.activeName === 'string' || card.activeName === null;
-    const hasValidAtk2Name = card.atk2Name === undefined || typeof card.atk2Name === 'string' || card.atk2Name === null;
-    const hasValidAtk1Cost = card.atk1Cost === undefined || typeof card.atk1Cost === 'number';
-    const hasValidAtk2Cost = card.atk2Cost === undefined || typeof card.atk2Cost === 'number';
-    const hasValidHasPassive = card.hasPassive === undefined || typeof card.hasPassive === 'boolean';
-    const hasValidRetreatCost = card.retreatCost === undefined || typeof card.retreatCost === 'number';
-
-    return typeof card.id === 'string' &&
-        (card.ownerId === 'p1' || card.ownerId === 'p2') &&
-        (card.cardType === 'character' || card.cardType === 'tool' || card.cardType === 'item' || card.cardType === 'stadium' || card.cardType === 'supporter') &&
-        typeof card.holderId === 'string' &&
-        ALLOWED_CARD_HOLDER_IDS.has(card.holderId) &&
-        typeof card.AVGECardType === 'string' &&
-        card.AVGECardType.trim().length > 0 &&
-        typeof card.AVGECardClass === 'string' &&
-        typeof card.hasAtk1 === 'boolean' &&
-        typeof card.hasActive === 'boolean' &&
-        hasValidHasPassive &&
-        typeof card.hasAtk2 === 'boolean' &&
-        hasValidAtk1Name &&
-        hasValidActiveName &&
-        hasValidAtk2Name &&
-        hasValidAtk1Cost &&
-        hasValidAtk2Cost &&
-        hasValidRetreatCost &&
-        typeof card.hp === 'number' &&
-        typeof card.maxHp === 'number' &&
-        (typeof card.attachedToCardId === 'string' || card.attachedToCardId === null) &&
-        hasValidStatusEffect;
+type CardPreviewCatalogEntry = {
+    atk1Name?: unknown;
+    abilityName?: unknown;
+    atk2Name?: unknown;
+    atk1Cost?: unknown;
+    atk2Cost?: unknown;
+    retreatCost?: unknown;
 };
 
-const isBackendEnergySetup = (value: unknown): value is BackendEnergySetup => {
-    if (typeof value !== 'object' || value === null) {
-        return false;
+type CardPreviewCatalog = {
+    cards?: Record<string, CardPreviewCatalogEntry>;
+};
+
+const normalizeCardPreviewKey = (value: string): string => value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
+
+const readCatalogNullableString = (entry: CardPreviewCatalogEntry | undefined, key: keyof CardPreviewCatalogEntry): string | null | undefined => {
+    if (!entry) {
+        return undefined;
     }
 
-    const token = value as Partial<BackendEnergySetup>;
-    return typeof token.id === 'string' &&
-        typeof token.ownerId === 'string' &&
-        token.ownerId.trim().length > 0 &&
-        typeof token.holderId === 'string' &&
-        ALLOWED_ENERGY_HOLDER_IDS.has(token.holderId) &&
-        (typeof token.attachedToCardId === 'string' || token.attachedToCardId === null);
+    const value = entry[key];
+    if (value === null) {
+        return null;
+    }
+    if (typeof value !== 'string') {
+        return undefined;
+    }
+
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+};
+
+const readCatalogNumber = (entry: CardPreviewCatalogEntry | undefined, key: keyof CardPreviewCatalogEntry): number | undefined => {
+    if (!entry) {
+        return undefined;
+    }
+
+    const value = entry[key];
+    if (typeof value !== 'number' || Number.isNaN(value)) {
+        return undefined;
+    }
+
+    return value;
+};
+
+const cardPreviewCatalog = cardPreviewDescriptionsJson as CardPreviewCatalog;
+const cardPreviewByKey = new Map<string, CardPreviewCatalogEntry>();
+for (const [rawKey, entry] of Object.entries(cardPreviewCatalog.cards ?? {})) {
+    if (typeof entry !== 'object' || entry === null) {
+        continue;
+    }
+    cardPreviewByKey.set(normalizeCardPreviewKey(rawKey), entry as CardPreviewCatalogEntry);
+}
+
+const resolveCardPreviewEntry = (cardClass: string): CardPreviewCatalogEntry | undefined => {
+    return cardPreviewByKey.get(normalizeCardPreviewKey(cardClass));
+};
+
+const readObjectValue = (record: Record<string, unknown>, keys: string[]): unknown => {
+    for (const key of keys) {
+        if (Object.prototype.hasOwnProperty.call(record, key)) {
+            return record[key];
+        }
+    }
+
+    return undefined;
+};
+
+const readObjectString = (record: Record<string, unknown>, keys: string[]): string | undefined => {
+    const value = readObjectValue(record, keys);
+    if (typeof value !== 'string') {
+        return undefined;
+    }
+
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+};
+
+const readObjectNullableString = (record: Record<string, unknown>, keys: string[]): string | null | undefined => {
+    const value = readObjectValue(record, keys);
+    if (value === null) {
+        return null;
+    }
+    if (typeof value !== 'string') {
+        return undefined;
+    }
+
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+};
+
+const readObjectBoolean = (record: Record<string, unknown>, keys: string[]): boolean | undefined => {
+    const value = readObjectValue(record, keys);
+    return typeof value === 'boolean' ? value : undefined;
+};
+
+const readObjectNumber = (record: Record<string, unknown>, keys: string[]): number | undefined => {
+    const value = readObjectValue(record, keys);
+    if (typeof value !== 'number' || Number.isNaN(value)) {
+        return undefined;
+    }
+
+    return value;
+};
+
+const normalizeOwnerId = (raw: string | undefined): 'p1' | 'p2' | null => {
+    if (!raw) {
+        return null;
+    }
+
+    const normalized = raw.toLowerCase();
+    if (normalized === 'p1' || normalized === 'player-1' || normalized === 'player1') {
+        return 'p1';
+    }
+    if (normalized === 'p2' || normalized === 'player-2' || normalized === 'player2') {
+        return 'p2';
+    }
+
+    return null;
+};
+
+const normalizeCardType = (raw: string | undefined): BackendCardSetup['cardType'] | null => {
+    if (!raw) {
+        return null;
+    }
+
+    const normalized = raw.toLowerCase();
+    if (normalized === 'character' || normalized === 'tool' || normalized === 'item' || normalized === 'stadium' || normalized === 'supporter') {
+        return normalized;
+    }
+
+    return null;
+};
+
+const normalizeCardHolderId = (raw: string | undefined): string | null => {
+    if (!raw) {
+        return null;
+    }
+
+    const normalized = raw
+        .trim()
+        .toLowerCase()
+        .replace(/^player-1/, 'p1')
+        .replace(/^player-2/, 'p2')
+        .replace(/^player1/, 'p1')
+        .replace(/^player2/, 'p2');
+
+    if (!ALLOWED_CARD_HOLDER_IDS.has(normalized)) {
+        return null;
+    }
+
+    return normalized;
+};
+
+const normalizeEnergyHolderId = (raw: string | undefined): string | null => {
+    if (!raw) {
+        return null;
+    }
+
+    const normalized = raw.trim().toLowerCase();
+    if (!ALLOWED_ENERGY_HOLDER_IDS.has(normalized)) {
+        return null;
+    }
+
+    return normalized;
+};
+
+const normalizeStatusEffectPayload = (value: unknown): Record<string, number> | null => {
+    if (value === undefined) {
+        return {};
+    }
+
+    if (typeof value !== 'object' || value === null) {
+        return null;
+    }
+
+    const result: Record<string, number> = {};
+    for (const [key, rawCount] of Object.entries(value as Record<string, unknown>)) {
+        if (!Number.isInteger(rawCount) || (rawCount as number) < 0) {
+            return null;
+        }
+        result[key] = rawCount as number;
+    }
+
+    return result;
+};
+
+const normalizeBackendCardSetup = (value: unknown): BackendCardSetup | null => {
+    if (typeof value !== 'object' || value === null) {
+        return null;
+    }
+
+    const card = value as Record<string, unknown>;
+
+    const id = readObjectString(card, ['id', 'cardId', 'card_id']);
+    const ownerId = normalizeOwnerId(readObjectString(card, ['ownerId', 'owner_id', 'owner']));
+    const cardType = normalizeCardType(readObjectString(card, ['cardType', 'card_type']));
+    const holderId = normalizeCardHolderId(readObjectString(card, ['holderId', 'holder_id', 'zoneId', 'zone_id']));
+    const AVGECardType = readObjectString(card, ['AVGECardType', 'avgeCardType', 'avge_card_type']);
+    const AVGECardClass = readObjectString(card, ['AVGECardClass', 'avgeCardClass', 'avge_card_class']);
+    const hp = readObjectNumber(card, ['hp']);
+    const maxHp = readObjectNumber(card, ['maxHp', 'max_hp']);
+    const attachedToCardId = readObjectNullableString(card, ['attachedToCardId', 'attached_to_card_id']);
+    const statusEffect = normalizeStatusEffectPayload(readObjectValue(card, ['statusEffect', 'status_effect']));
+
+    if (!id || !ownerId || !cardType || !holderId || !AVGECardType || !AVGECardClass || hp === undefined || maxHp === undefined || statusEffect === null) {
+        return null;
+    }
+
+    const previewEntry = resolveCardPreviewEntry(AVGECardClass);
+    const atk1Name = cardType === 'character'
+        ? (readCatalogNullableString(previewEntry, 'atk1Name') ?? null)
+        : null;
+    const activeName = cardType === 'character'
+        ? (readCatalogNullableString(previewEntry, 'abilityName') ?? null)
+        : null;
+    const atk2Name = cardType === 'character'
+        ? (readCatalogNullableString(previewEntry, 'atk2Name') ?? null)
+        : null;
+
+    const atk1Cost = cardType === 'character'
+        ? (readCatalogNumber(previewEntry, 'atk1Cost') ?? 0)
+        : 0;
+    const atk2Cost = cardType === 'character'
+        ? (readCatalogNumber(previewEntry, 'atk2Cost') ?? 0)
+        : 0;
+    const retreatCost = cardType === 'character'
+        ? (readCatalogNumber(previewEntry, 'retreatCost') ?? 0)
+        : 0;
+
+    const hasPassiveRaw = readObjectBoolean(card, ['hasPassive', 'has_passive', 'haspassive']);
+
+    return {
+        id,
+        ownerId,
+        cardType,
+        holderId,
+        AVGECardType,
+        AVGECardClass,
+        hasAtk1: cardType === 'character' ? Boolean(atk1Name) : false,
+        hasActive: cardType === 'character' ? Boolean(activeName) : false,
+        hasPassive: hasPassiveRaw ?? false,
+        hasAtk2: cardType === 'character' ? Boolean(atk2Name) : false,
+        atk1Name,
+        activeName,
+        atk2Name,
+        atk1Cost,
+        atk2Cost,
+        retreatCost,
+        hp,
+        maxHp,
+        attachedToCardId: attachedToCardId ?? null,
+        statusEffect,
+    };
+};
+
+const normalizeBackendEnergySetup = (value: unknown): BackendEnergySetup | null => {
+    if (typeof value !== 'object' || value === null) {
+        return null;
+    }
+
+    const token = value as Record<string, unknown>;
+    const id = readObjectString(token, ['id']);
+    const ownerId = readObjectString(token, ['ownerId', 'owner_id', 'owner']);
+    const holderId = normalizeEnergyHolderId(readObjectString(token, ['holderId', 'holder_id']));
+    const attachedToCardId = readObjectNullableString(token, ['attachedToCardId', 'attached_to_card_id']);
+
+    if (!id || !ownerId || !holderId) {
+        return null;
+    }
+
+    return {
+        id,
+        ownerId,
+        holderId,
+        attachedToCardId: attachedToCardId ?? null,
+    };
 };
 
 export type FrontendProtocolPacket = {
@@ -1350,9 +1576,13 @@ export const parseBackendEntitiesSetup = (value: unknown): BackendEntitiesSetup 
         cards?: unknown;
         energyTokens?: unknown;
         roundNumber?: unknown;
+        round_number?: unknown;
         gamePhase?: unknown;
+        game_phase?: unknown;
         playerTurn?: unknown;
+        player_turn?: unknown;
         playerView?: unknown;
+        player_view?: unknown;
         players?: unknown;
     };
 
@@ -1360,17 +1590,20 @@ export const parseBackendEntitiesSetup = (value: unknown): BackendEntitiesSetup 
         return null;
     }
 
-    if (!payload.cards.every((card) => isBackendCardSetup(card))) {
+    const normalizedCards = payload.cards.map((card) => normalizeBackendCardSetup(card));
+    if (normalizedCards.some((card) => card === null)) {
         console.warn('[Network] environment payload has invalid card entries.');
         return null;
     }
 
-    if (!payload.energyTokens.every((token) => isBackendEnergySetup(token))) {
+    const normalizedEnergyTokens = payload.energyTokens.map((token) => normalizeBackendEnergySetup(token));
+    if (normalizedEnergyTokens.some((token) => token === null)) {
         console.warn('[Network] environment payload has invalid energy token entries.');
         return null;
     }
 
-    if (!Number.isInteger(payload.roundNumber) || (payload.roundNumber as number) < 0) {
+    const roundNumberRaw = payload.roundNumber ?? payload.round_number;
+    if (!Number.isInteger(roundNumberRaw) || (roundNumberRaw as number) < 0) {
         console.warn('[Network] environment payload is missing a valid integer roundNumber.');
         return null;
     }
@@ -1382,21 +1615,26 @@ export const parseBackendEntitiesSetup = (value: unknown): BackendEntitiesSetup 
     const gamePhase =
         payload.gamePhase === 'no-input' || payload.gamePhase === 'phase2' || payload.gamePhase === 'atk'
             ? payload.gamePhase
+            : payload.game_phase === 'no-input' || payload.game_phase === 'phase2' || payload.game_phase === 'atk'
+                ? payload.game_phase
             : undefined;
 
-    const playerTurn = payload.playerTurn === 'p1' || payload.playerTurn === 'p2'
-        ? payload.playerTurn
+    const playerTurnRaw = payload.playerTurn ?? payload.player_turn;
+    const playerTurn = playerTurnRaw === 'p1' || playerTurnRaw === 'p2'
+        ? playerTurnRaw
         : undefined;
 
     const playerView =
         payload.playerView === 'admin' || payload.playerView === 'p1' || payload.playerView === 'p2' || payload.playerView === 'spectator'
             ? payload.playerView
+            : payload.player_view === 'admin' || payload.player_view === 'p1' || payload.player_view === 'p2' || payload.player_view === 'spectator'
+                ? payload.player_view
             : undefined;
 
     return {
-        cards: payload.cards as BackendCardSetup[],
-        energyTokens: payload.energyTokens as BackendEnergySetup[],
-        roundNumber: payload.roundNumber as number,
+        cards: normalizedCards as BackendCardSetup[],
+        energyTokens: normalizedEnergyTokens as BackendEnergySetup[],
+        roundNumber: roundNumberRaw as number,
         gamePhase,
         playerTurn,
         playerView,

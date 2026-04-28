@@ -28,6 +28,33 @@ This template has been updated for:
 | `npm run dev-nolog` | Launch a development web server without sending anonymous data (see "About log.js" below) |
 | `npm run build-nolog` | Create a production build in the `dist` folder without sending anonymous data (see "About log.js" below) |
 
+## Runtime Backend Configuration
+
+The frontend defaults to localhost and can be pointed at a remote router without rebuilding.
+
+1. Edit `runtime-config.js` at deploy time.
+2. Set `window.AVGE_ROUTER_BASE_URL` to your router public origin.
+3. Leave `window.AVGE_BACKEND_BASE_URL` and `window.AVGE_BACKEND_PROTOCOL_URL` empty unless you need a fallback.
+
+Default localhost values in `runtime-config.js`:
+
+```js
+window.AVGE_ROUTER_BASE_URL = 'http://localhost:5600';
+window.AVGE_BACKEND_BASE_URL = 'http://localhost:5500';
+window.AVGE_BACKEND_PROTOCOL_URL = 'http://localhost:5500/protocol';
+```
+
+Example:
+
+```js
+window.AVGE_ROUTER_BASE_URL = 'https://router.example.com';
+```
+
+Behavior priority in the client:
+
+- Router API base: `AVGE_ROUTER_BASE_URL` then local default.
+- Room protocol base: assigned room `endpoint_url` from router, then `AVGE_BACKEND_BASE_URL`, then `AVGE_BACKEND_PROTOCOL_URL` origin, then local default.
+
 ## Writing Code
 
 After cloning the repo, run `npm install` from your project directory. Then, you can start the local development server by running `npm run dev`.

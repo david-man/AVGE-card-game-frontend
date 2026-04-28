@@ -97,7 +97,6 @@ export class InputOverlayController
     }
 
     startRevealOverlay (
-        playerLabel: string,
         cards: RevealOverlayCard[],
         message: string | null,
         timeoutSeconds: number | null,
@@ -107,7 +106,7 @@ export class InputOverlayController
     ): void
     {
         this.stopActiveOverlay();
-        this.displayOverlay.startRevealOverlay(playerLabel, cards, message, timeoutSeconds, onClose, onCardClick, onBackgroundClick);
+        this.displayOverlay.startRevealOverlay(cards, message, timeoutSeconds, onClose, onCardClick, onBackgroundClick);
     }
 
     startWinnerOverlay (winnerLabel: string, panelColor: number, onBackToMenu: OverlayCloseCallback): void

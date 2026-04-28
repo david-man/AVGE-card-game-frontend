@@ -1,5 +1,5 @@
 import { Scene } from 'phaser';
-import { GAME_INPUT_OVERLAY_HEADER_LAYOUT, GAME_INPUT_SELECTION_OVERLAY } from '../../config';
+import { GAME_INPUT_OVERLAY_HEADER_LAYOUT, GAME_INPUT_SELECTION_OVERLAY, GAME_OVERLAY_DEPTHS } from '../../config';
 import { fitBitmapTextToSingleLine } from './bitmapTextFit';
 
 type NumericalSubmitCallback = (value: number) => void;
@@ -80,7 +80,7 @@ export class NumericalEntryInputOverlay
         this.onSubmit = onSubmit;
         this.onBackgroundClick = onBackgroundClick ?? null;
 
-        const overlayDepth = this.inputLockOverlay.depth + 5;
+        const overlayDepth = Math.max(GAME_OVERLAY_DEPTHS.overlayBase, this.inputLockOverlay.depth + 1);
         const panelWidth = Math.max(420, Math.round(this.scene.scale.width * 0.34));
         const panelHeight = Math.max(220, Math.round(this.scene.scale.height * 0.28));
         const panelX = Math.round(this.scene.scale.width / 2);

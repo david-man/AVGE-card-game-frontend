@@ -176,4 +176,18 @@ export class SurrenderController
 
         this.label.setText(GAME_SURRENDER_BUTTON_LAYOUT.label);
     }
+
+    public getButtonMetrics (): { x: number; y: number; radius: number; visible: boolean } | null
+    {
+        if (!this.body) {
+            return null;
+        }
+
+        return {
+            x: this.body.x,
+            y: this.body.y,
+            radius: this.body.radius,
+            visible: this.body.visible,
+        };
+    }
 }

@@ -588,6 +588,7 @@ export class BoardInteractionController
 
             const sharedEnergyZoneId = g.energyZoneIdByOwner.p1;
             const targetZoneId = (dropZone?.getData('zoneId') as string | undefined) ?? null;
+            const isTargetSharedHolder = targetZoneId === sharedEnergyZoneId || targetZoneId === 'energy-discard';
             const characterTarget = g.findOverlappedOwnedCharacterForToken(token);
 
             if (characterTarget) {
@@ -604,11 +605,12 @@ export class BoardInteractionController
                 return;
             }
 
-            if (targetZoneId === sharedEnergyZoneId) {
+            if (isTargetSharedHolder) {
                 token.setAttachedToCardId(null);
                 g.setEnergyTokenZone(token, sharedEnergyZoneId);
                 g.layoutEnergyTokensInZone(sharedEnergyZoneId);
-                const didMove = fromZoneId !== sharedEnergyZoneId || fromAttachedToCardId !== null;
+                const isFromSharedHolder = fromZoneId === sharedEnergyZoneId || fromZoneId === 'energy-discard';
+                const didMove = !isFromSharedHolder || fromAttachedToCardId !== null;
                 if (didMove) {
                     g.emitBackendEvent('energy_moved', {
                         energy_id: token.id,

@@ -15,6 +15,7 @@ import {
     UI_SCALE
 } from '../config';
 import { CARD_CATALOG, CardCatalogEntry, CardCatalogCategory, CharacterCardType } from '../data/cardCatalog';
+import { decodeDeckShareHex, encodeDeckShareHex } from '../data/deckShareCodec';
 import { Card, CardType } from '../entities';
 import {
     clearClientSessionState,
@@ -66,8 +67,10 @@ export class DeckBuilder extends Scene
     saveLabel: GameObjects.BitmapText;
     backButton: GameObjects.Rectangle;
     backLabel: GameObjects.BitmapText;
-    renameButton: GameObjects.Rectangle;
-    renameLabel: GameObjects.BitmapText;
+    exportButton: GameObjects.Rectangle;
+    exportLabel: GameObjects.BitmapText;
+    importButton: GameObjects.Rectangle;
+    importLabel: GameObjects.BitmapText;
     searchButton: GameObjects.Rectangle;
     searchLabel: GameObjects.BitmapText;
     nextPageButton: GameObjects.Rectangle;
@@ -98,8 +101,6 @@ export class DeckBuilder extends Scene
         countLabel: GameObjects.BitmapText;
         plusButton: GameObjects.Rectangle;
         plusLabel: GameObjects.BitmapText;
-        minusButton: GameObjects.Rectangle;
-        minusLabel: GameObjects.BitmapText;
         card: CardCatalogEntry | null;
     }>;
     private busy: boolean;
@@ -132,8 +133,6 @@ export class DeckBuilder extends Scene
         countLabel: GameObjects.BitmapText;
         plusButton: GameObjects.Rectangle;
         plusLabel: GameObjects.BitmapText;
-        minusButton: GameObjects.Rectangle;
-        minusLabel: GameObjects.BitmapText;
         card: CardCatalogEntry | null;
     }>;
     private currentDeckPanel: GameObjects.Rectangle;
@@ -146,6 +145,7 @@ export class DeckBuilder extends Scene
     private deckPreviewSuppressOutsideClose: boolean;
     private keyboardKeydownHandler: ((event: KeyboardEvent) => void) | null;
     private pointerDownHandler: ((pointer: Phaser.Input.Pointer) => void) | null;
+    private lastDeckNameClickAtMs: number;
 
     constructor ()
     {
@@ -180,6 +180,7 @@ export class DeckBuilder extends Scene
         this.deckPreviewSuppressOutsideClose = false;
         this.keyboardKeydownHandler = null;
         this.pointerDownHandler = null;
+        this.lastDeckNameClickAtMs = 0;
     }
 
     preload (): void
@@ -213,6 +214,7 @@ export class DeckBuilder extends Scene
         this.searchRows = [];
         this.currentDeckCardObjects = [];
         this.deckPreviewSuppressOutsideClose = false;
+        this.lastDeckNameClickAtMs = 0;
 
         this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
             this.stopAuthSessionPush();
@@ -255,7 +257,23 @@ export class DeckBuilder extends Scene
             Math.max(DECK_BUILDER_TEXT_LAYOUT.subtitleFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.subtitleFontSizeBase * UI_SCALE))
         )
             .setOrigin(0.5)
-            .setTint(0xe2e8f0);
+            .setTint(0xe2e8f0)
+            .setInteractive({ useHandCursor: true });
+
+        this.subtitle.on('pointerdown', () => {
+            if (!this.state.deckId || this.busy) {
+                return;
+            }
+
+            const now = this.time.now;
+            if ((now - this.lastDeckNameClickAtMs) <= 320) {
+                this.lastDeckNameClickAtMs = 0;
+                this.renameCurrentDeck();
+                return;
+            }
+
+            this.lastDeckNameClickAtMs = now;
+        });
 
         this.pageIndicator = this.add.bitmapText(
             GAME_CENTER_X,
@@ -310,9 +328,9 @@ export class DeckBuilder extends Scene
             .setTint(0xffffff);
 
         this.saveButton = this.add.rectangle(
-            Math.round(GAME_CENTER_X + 280 * UI_SCALE),
+            Math.round(GAME_CENTER_X + 340 * UI_SCALE),
             Math.round(GAME_HEIGHT * 0.93),
-            Math.round(140 * UI_SCALE),
+            Math.round(112 * UI_SCALE),
             Math.round(48 * UI_SCALE),
             0x0f172a,
             0.95
@@ -331,9 +349,9 @@ export class DeckBuilder extends Scene
             .setTint(0xffffff);
 
         this.backButton = this.add.rectangle(
-            Math.round(GAME_CENTER_X - 280 * UI_SCALE),
+            Math.round(GAME_CENTER_X - 340 * UI_SCALE),
             Math.round(GAME_HEIGHT * 0.93),
-            Math.round(140 * UI_SCALE),
+            Math.round(112 * UI_SCALE),
             Math.round(48 * UI_SCALE),
             0x1e293b,
             0.95
@@ -351,31 +369,52 @@ export class DeckBuilder extends Scene
             .setOrigin(0.5)
             .setTint(0xffffff);
 
-        this.renameButton = this.add.rectangle(
-            Math.round(GAME_CENTER_X - 95 * UI_SCALE),
+        this.exportButton = this.add.rectangle(
+            Math.round(GAME_CENTER_X - 136 * UI_SCALE),
             Math.round(GAME_HEIGHT * 0.93),
-            Math.round(140 * UI_SCALE),
+            Math.round(112 * UI_SCALE),
             Math.round(48 * UI_SCALE),
-            0x334155,
+            0x1f2937,
             0.95
         )
             .setStrokeStyle(2, 0xffffff, 0.75)
             .setInteractive({ useHandCursor: true });
 
-        this.renameLabel = this.add.bitmapText(
-            this.renameButton.x,
-            this.renameButton.y,
+        this.exportLabel = this.add.bitmapText(
+            this.exportButton.x,
+            this.exportButton.y,
             'minogram',
-            'RENAME',
+            'EXPORT',
+            Math.max(DECK_BUILDER_TEXT_LAYOUT.actionFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.actionFontSizeBase * UI_SCALE))
+        )
+            .setOrigin(0.5)
+            .setTint(0xffffff);
+
+        this.importButton = this.add.rectangle(
+            GAME_CENTER_X,
+            Math.round(GAME_HEIGHT * 0.93),
+            Math.round(112 * UI_SCALE),
+            Math.round(48 * UI_SCALE),
+            0x78350f,
+            0.95
+        )
+            .setStrokeStyle(2, 0xffffff, 0.75)
+            .setInteractive({ useHandCursor: true });
+
+        this.importLabel = this.add.bitmapText(
+            this.importButton.x,
+            this.importButton.y,
+            'minogram',
+            'IMPORT',
             Math.max(DECK_BUILDER_TEXT_LAYOUT.actionFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.actionFontSizeBase * UI_SCALE))
         )
             .setOrigin(0.5)
             .setTint(0xffffff);
 
         this.searchButton = this.add.rectangle(
-            Math.round(GAME_CENTER_X + 95 * UI_SCALE),
+            Math.round(GAME_CENTER_X + 136 * UI_SCALE),
             Math.round(GAME_HEIGHT * 0.93),
-            Math.round(140 * UI_SCALE),
+            Math.round(112 * UI_SCALE),
             Math.round(48 * UI_SCALE),
             0x14532d,
             0.95
@@ -427,8 +466,12 @@ export class DeckBuilder extends Scene
             void this.saveDeck();
         });
 
-        this.renameButton.on('pointerdown', () => {
-            this.renameCurrentDeck();
+        this.exportButton.on('pointerdown', () => {
+            this.exportCurrentDeckShare();
+        });
+
+        this.importButton.on('pointerdown', () => {
+            this.importDeckShare();
         });
 
         this.searchButton.on('pointerdown', () => {
@@ -630,29 +673,8 @@ export class DeckBuilder extends Scene
                 .setOrigin(0, 0.5)
                 .setTint(0xffffff);
 
-            const minusButton = this.add.rectangle(
-                Math.round(GAME_CENTER_X + 120 * UI_SCALE),
-                y,
-                Math.round(40 * UI_SCALE),
-                Math.round(40 * UI_SCALE),
-                0x334155,
-                0.95
-            )
-                .setStrokeStyle(2, 0xffffff, 0.75)
-                .setInteractive({ useHandCursor: true });
-
-            const minusLabel = this.add.bitmapText(
-                minusButton.x,
-                minusButton.y,
-                'minogram',
-                '-',
-                Math.max(DECK_BUILDER_TEXT_LAYOUT.rowAdjustFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.rowAdjustFontSizeBase * UI_SCALE))
-            )
-                .setOrigin(0.5)
-                .setTint(0xffffff);
-
             const countLabel = this.add.bitmapText(
-                Math.round(GAME_CENTER_X + 170 * UI_SCALE),
+                Math.round(GAME_CENTER_X + 148 * UI_SCALE),
                 y,
                 'minogram',
                 '0',
@@ -662,7 +684,7 @@ export class DeckBuilder extends Scene
                 .setTint(0xffffff);
 
             const plusButton = this.add.rectangle(
-                Math.round(GAME_CENTER_X + 220 * UI_SCALE),
+                Math.round(GAME_CENTER_X + 214 * UI_SCALE),
                 y,
                 Math.round(40 * UI_SCALE),
                 Math.round(40 * UI_SCALE),
@@ -682,7 +704,7 @@ export class DeckBuilder extends Scene
                 .setOrigin(0.5)
                 .setTint(0xffffff);
 
-            container.add([iconBody, iconLabel, cardName, minusButton, minusLabel, countLabel, plusButton, plusLabel]);
+            container.add([iconBody, iconLabel, cardName, countLabel, plusButton, plusLabel]);
 
             const row = {
                 container,
@@ -692,8 +714,6 @@ export class DeckBuilder extends Scene
                 countLabel,
                 plusButton,
                 plusLabel,
-                minusButton,
-                minusLabel,
                 card: null as CardCatalogEntry | null,
             };
 
@@ -702,13 +722,6 @@ export class DeckBuilder extends Scene
                     return;
                 }
                 this.tryAddCardToDeck(row.card);
-            });
-
-            minusButton.on('pointerdown', () => {
-                if (this.busy || !row.card) {
-                    return;
-                }
-                this.tryRemoveCardFromDeck(row.card);
             });
 
             const showPreview = (pointer?: Phaser.Input.Pointer) => {
@@ -780,13 +793,13 @@ export class DeckBuilder extends Scene
         this.currentDeckCardObjects = [];
     }
 
-    private getCurrentDeckGroupedCards (): Array<{ category: CardCatalogCategory; cards: Array<{ card: CardCatalogEntry; count: number }> }>
+    private getCurrentDeckGroupedCards (): Array<{ category: CardCatalogCategory; cards: CardCatalogEntry[] }>
     {
         const categoryOrder: CardCatalogCategory[] = ['character', 'item', 'supporter', 'stadium', 'tool', 'status_effect'];
-        const countByCategory = new Map<CardCatalogCategory, Array<{ card: CardCatalogEntry; count: number }>>();
+        const cardsByCategory = new Map<CardCatalogCategory, CardCatalogEntry[]>();
 
         for (const category of categoryOrder) {
-            countByCategory.set(category, []);
+            cardsByCategory.set(category, []);
         }
 
         for (const [cardId, count] of this.state.countsByCardId.entries()) {
@@ -799,17 +812,24 @@ export class DeckBuilder extends Scene
                 continue;
             }
 
-            countByCategory.get(card.category)?.push({ card, count });
+            const bucket = cardsByCategory.get(card.category);
+            if (!bucket) {
+                continue;
+            }
+
+            for (let i = 0; i < count; i += 1) {
+                bucket.push(card);
+            }
         }
 
-        const grouped: Array<{ category: CardCatalogCategory; cards: Array<{ card: CardCatalogEntry; count: number }> }> = [];
+        const grouped: Array<{ category: CardCatalogCategory; cards: CardCatalogEntry[] }> = [];
         for (const category of categoryOrder) {
-            const cards = countByCategory.get(category) ?? [];
+            const cards = cardsByCategory.get(category) ?? [];
             if (cards.length === 0) {
                 continue;
             }
 
-            cards.sort((a, b) => a.card.label.localeCompare(b.card.label));
+            cards.sort((a, b) => a.label.localeCompare(b.label));
             grouped.push({ category, cards });
         }
 
@@ -850,7 +870,7 @@ export class DeckBuilder extends Scene
             DECK_BUILDER_CURRENT_DECK_PREVIEW_TEXT_LAYOUT.tileNameFontSizeMin,
             Math.round(DECK_BUILDER_CURRENT_DECK_PREVIEW_TEXT_LAYOUT.tileNameFontSizeBase * UI_SCALE)
         );
-        const countFontSize = Math.max(
+        const removeFontSize = Math.max(
             DECK_BUILDER_CURRENT_DECK_PREVIEW_TEXT_LAYOUT.tileCountFontSizeMin,
             Math.round(DECK_BUILDER_CURRENT_DECK_PREVIEW_TEXT_LAYOUT.tileCountFontSizeBase * UI_SCALE)
         );
@@ -862,7 +882,7 @@ export class DeckBuilder extends Scene
                 this.currentDeckPanel.x,
                 cursorY + Math.round(DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.emptyOffsetYBase * UI_SCALE),
                 'minogram',
-                'ADD CARDS USING +/-',
+                'ADD CARDS USING +',
                 Math.max(
                     DECK_BUILDER_CURRENT_DECK_PREVIEW_TEXT_LAYOUT.emptyStateFontSizeMin,
                     Math.round(DECK_BUILDER_CURRENT_DECK_PREVIEW_TEXT_LAYOUT.emptyStateFontSizeBase * UI_SCALE)
@@ -902,9 +922,7 @@ export class DeckBuilder extends Scene
             for (let i = 0; i < group.cards.length; i += 1) {
                 const row = Math.floor(i / columns);
                 const col = i % columns;
-                const cardItem = group.cards[i];
-                const card = cardItem.card;
-                const count = cardItem.count;
+                const card = group.cards[i];
 
                 const x = panelLeft + Math.round(tileWidth * 0.5) + (col * (tileWidth + tileGapX));
                 const y = cursorY + Math.round(tileHeight * 0.5) + (row * (tileHeight + tileGapY));
@@ -961,7 +979,7 @@ export class DeckBuilder extends Scene
                 name.setText(tileNameFit.text);
                 name.setFontSize(tileNameFit.fontSize);
 
-                const countBadge = this.add.rectangle(
+                const removeButton = this.add.rectangle(
                     x + Math.round(tileWidth * DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.countBadgeOffsetXRatio),
                     y + Math.round(tileHeight * DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.countBadgeOffsetYRatio),
                     Math.round(DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.countBadgeWidthBase * UI_SCALE),
@@ -970,18 +988,20 @@ export class DeckBuilder extends Scene
                     0.95
                 )
                     .setStrokeStyle(1, 0xffffff, 0.85)
-                    .setDepth(12);
+                    .setDepth(12)
+                    .setInteractive({ useHandCursor: true });
 
-                const countText = this.add.bitmapText(
-                    countBadge.x,
-                    countBadge.y,
+                const removeText = this.add.bitmapText(
+                    removeButton.x,
+                    removeButton.y,
                     'minogram',
-                    String(count),
-                    countFontSize
+                    '-',
+                    removeFontSize
                 )
                     .setOrigin(0.5)
                     .setTint(0xffffff)
-                    .setDepth(13);
+                    .setDepth(13)
+                    .setInteractive({ useHandCursor: true });
 
                 const openPreview = (pointer?: Phaser.Input.Pointer) => {
                     this.showDeckCardPreview(card, pointer);
@@ -996,7 +1016,15 @@ export class DeckBuilder extends Scene
                     openPreview(pointer);
                 });
 
-                this.currentDeckCardObjects.push(body, icon, name, countBadge, countText);
+                removeButton.on('pointerdown', () => {
+                    this.tryRemoveCardFromDeck(card);
+                });
+
+                removeText.on('pointerdown', () => {
+                    this.tryRemoveCardFromDeck(card);
+                });
+
+                this.currentDeckCardObjects.push(body, icon, name, removeButton, removeText);
             }
 
             cursorY += (sectionRows * (tileHeight + tileGapY)) + sectionGap;
@@ -1102,7 +1130,8 @@ export class DeckBuilder extends Scene
         this.deckPreviewProxyCard = this.createPreviewProxyCard(card);
         this.deckCardPreviewController.show(this.deckPreviewProxyCard, {
             ownerUsername: 'Deck Builder',
-            forceFaceUp: true
+            forceFaceUp: true,
+            hideOwnerLine: true
         });
 
         if (pointer) {
@@ -1279,8 +1308,7 @@ export class DeckBuilder extends Scene
         const rowGap = Math.max(38, Math.floor((rowsBottomY - rowsStartY) / Math.max(1, SEARCH_RESULTS_PER_PAGE - 1)));
 
         const nameX = panelX - Math.round(panelWidth * 0.5) + Math.round(26 * UI_SCALE);
-        const minusX = panelX + Math.round(panelWidth * 0.5) - Math.round(136 * UI_SCALE);
-        const countX = panelX + Math.round(panelWidth * 0.5) - Math.round(86 * UI_SCALE);
+        const countX = panelX + Math.round(panelWidth * 0.5) - Math.round(98 * UI_SCALE);
         const plusX = panelX + Math.round(panelWidth * 0.5) - Math.round(36 * UI_SCALE);
 
         for (let i = 0; i < SEARCH_RESULTS_PER_PAGE; i += 1) {
@@ -1320,29 +1348,6 @@ export class DeckBuilder extends Scene
                 .setTint(0xcbd5e1)
                 .setDepth(1203);
 
-            const minusButton = this.add.rectangle(
-                minusX,
-                y,
-                Math.round(36 * UI_SCALE),
-                Math.round(30 * UI_SCALE),
-                0x334155,
-                0.95
-            )
-                .setStrokeStyle(2, 0xffffff, 0.75)
-                .setDepth(1203)
-                .setInteractive({ useHandCursor: true });
-
-            const minusLabel = this.add.bitmapText(
-                minusButton.x,
-                minusButton.y,
-                'minogram',
-                '-',
-                Math.max(DECK_BUILDER_TEXT_LAYOUT.searchRowAdjustFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.searchRowAdjustFontSizeBase * UI_SCALE))
-            )
-                .setOrigin(0.5)
-                .setTint(0xffffff)
-                .setDepth(1204);
-
             const countLabel = this.add.bitmapText(
                 countX,
                 y,
@@ -1377,7 +1382,7 @@ export class DeckBuilder extends Scene
                 .setTint(0xffffff)
                 .setDepth(1204);
 
-            container.add([rowBackground, cardName, cardMeta, minusButton, minusLabel, countLabel, plusButton, plusLabel]);
+            container.add([rowBackground, cardName, cardMeta, countLabel, plusButton, plusLabel]);
 
             const row = {
                 container,
@@ -1386,8 +1391,6 @@ export class DeckBuilder extends Scene
                 countLabel,
                 plusButton,
                 plusLabel,
-                minusButton,
-                minusLabel,
                 card: null as CardCatalogEntry | null,
             };
 
@@ -1396,13 +1399,6 @@ export class DeckBuilder extends Scene
                     return;
                 }
                 this.tryAddCardToDeck(row.card);
-            });
-
-            minusButton.on('pointerdown', () => {
-                if (this.busy || !row.card) {
-                    return;
-                }
-                this.tryRemoveCardFromDeck(row.card);
             });
 
             this.searchRows.push(row);
@@ -1512,8 +1508,6 @@ export class DeckBuilder extends Scene
                 row.countLabel,
                 row.plusButton,
                 row.plusLabel,
-                row.minusButton,
-                row.minusLabel,
             ]),
         ];
     }
@@ -1642,10 +1636,6 @@ export class DeckBuilder extends Scene
 
             const count = this.state.countsByCardId.get(card.id) ?? 0;
             row.countLabel.setText(String(count));
-
-            const canRemove = count > 0;
-            row.minusButton.setAlpha(canRemove ? 1 : 0.45);
-            row.minusLabel.setAlpha(canRemove ? 1 : 0.45);
 
             const maxCopies = this.getMaxCopiesForCard(card);
             const totalCards = this.collectCards().length;
@@ -1950,6 +1940,77 @@ export class DeckBuilder extends Scene
         this.persistCurrentDeckDraft();
         this.refreshDeckSlotButtons();
         this.updateSummaryText();
+    }
+
+    private exportCurrentDeckShare (): void
+    {
+        if (!this.state.deckId || this.busy) {
+            return;
+        }
+
+        if (typeof window === 'undefined' || typeof window.prompt !== 'function') {
+            return;
+        }
+
+        const cards = this.collectCards();
+        const encoded = encodeDeckShareHex(cards);
+        if (!encoded.ok) {
+            this.subtitle.setText(encoded.message);
+            return;
+        }
+
+        window.prompt('Deck share code (hex). Copy and save this value:', encoded.shareHex);
+        this.subtitle.setText(`Exported ${encoded.cardCount} cards to deck share hex.`);
+    }
+
+    private importDeckShare (): void
+    {
+        if (!this.state.deckId || this.busy) {
+            return;
+        }
+
+        if (
+            typeof window === 'undefined'
+            || typeof window.prompt !== 'function'
+            || typeof window.confirm !== 'function'
+        ) {
+            return;
+        }
+
+        const rawInput = window.prompt('Paste deck share hex code to import into current selected deck:');
+        if (typeof rawInput !== 'string') {
+            return;
+        }
+
+        const decoded = decodeDeckShareHex(rawInput);
+        if (!decoded.ok) {
+            this.subtitle.setText(`Import failed: ${decoded.message}`);
+            return;
+        }
+
+        const validationError = this.validateDeckCards(decoded.cardIds);
+        if (validationError) {
+            this.subtitle.setText(`Import failed: ${validationError}`);
+            return;
+        }
+
+        const shouldOverwrite = window.confirm(`Overwrite current draft with ${decoded.cardCount} imported cards?`);
+        if (!shouldOverwrite) {
+            this.subtitle.setText('Deck import canceled.');
+            return;
+        }
+
+        this.state.countsByCardId.clear();
+        for (const cardId of decoded.cardIds) {
+            const current = this.state.countsByCardId.get(cardId) ?? 0;
+            this.state.countsByCardId.set(cardId, current + 1);
+        }
+
+        this.persistCurrentDeckDraft();
+        this.refreshDeckSlotButtons();
+        this.renderRows();
+        this.updateSummaryText();
+        this.subtitle.setText(`Imported ${decoded.cardCount} cards into ${this.state.deckName.toUpperCase()}. Save to persist.`);
     }
 
     private async selectDeckSlot (index: number): Promise<void>

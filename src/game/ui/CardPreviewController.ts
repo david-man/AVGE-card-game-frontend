@@ -15,8 +15,13 @@ import {
 import { fitBitmapTextToMultiLine, fitBitmapTextToSingleLine } from './overlays/bitmapTextFit';
 
 type CardPreviewDescriptionEntry = {
+    atk1Name?: string | null;
     atk1Description?: string;
+    atk1Cost?: number | null;
+    atk2Name?: string | null;
     atk2Description?: string;
+    atk2Cost?: number | null;
+    retreatCost?: number | null;
     abilityName?: string;
     abilityDescription?: string;
     flavorText?: string;
@@ -63,6 +68,8 @@ const readMultiLineField = (value: unknown, fallback: string): string => {
 
 const normalizeCardClassDisplayLabel = (value: string): string => {
     return value
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
         .replace(/[_-]+/g, ' ')
         .replace(/\s+/g, ' ')
         .trim();
@@ -96,16 +103,30 @@ const resolveCardPreviewDescriptionEntry = (cardClass: string): CardPreviewDescr
 };
 
 const resolveCharacterCardDescription = (cardClass: string): {
+    atk1Name: string;
     atk1Description: string;
+    atk1Cost: number | null;
+    atk2Name: string;
     atk2Description: string;
+    atk2Cost: number | null;
+    retreatCost: number | null;
     abilityName: string;
     abilityDescription: string;
     flavorText: string;
 } => {
     const entry = resolveCardPreviewDescriptionEntry(cardClass);
+    const parsedAtk1Cost = Number.isFinite(entry.atk1Cost) ? Math.max(0, Math.round(entry.atk1Cost as number)) : null;
+    const parsedAtk2Cost = Number.isFinite(entry.atk2Cost) ? Math.max(0, Math.round(entry.atk2Cost as number)) : null;
+    const parsedRetreatCost = Number.isFinite(entry.retreatCost) ? Math.max(0, Math.round(entry.retreatCost as number)) : null;
+
     return {
+        atk1Name: readSingleLineField(entry.atk1Name, 'Attack 1'),
         atk1Description: readMultiLineField(entry.atk1Description, characterDefaultDescription.atk1Description),
+        atk1Cost: parsedAtk1Cost,
+        atk2Name: readSingleLineField(entry.atk2Name, 'Attack 2'),
         atk2Description: readMultiLineField(entry.atk2Description, characterDefaultDescription.atk2Description),
+        atk2Cost: parsedAtk2Cost,
+        retreatCost: parsedRetreatCost,
         abilityName: readSingleLineField(entry.abilityName, characterDefaultDescription.abilityName),
         abilityDescription: readMultiLineField(entry.abilityDescription, characterDefaultDescription.abilityDescription),
         flavorText: readMultiLineField(entry.flavorText, characterDefaultDescription.flavorText),
@@ -253,7 +274,7 @@ export class CardPreviewController
             .setVisible(false);
     }
 
-    show (card: Card, options?: { ownerUsername?: string; forceFaceUp?: boolean }): void
+    show (card: Card, options?: { ownerUsername?: string; forceFaceUp?: boolean; hideOwnerLine?: boolean }): void
     {
         if (!this.panel || !this.body || !this.idText || !this.typeText || !this.hpText || !this.paragraphText) {
             return;
@@ -308,7 +329,7 @@ export class CardPreviewController
             this.hpText.setVisible(false);
         }
 
-        const previewCopy = this.buildCardPreviewParagraph(card, ownerUsername);
+        const previewCopy = this.buildCardPreviewParagraph(card, ownerUsername, options?.hideOwnerLine === true);
         this.paragraphText
             .setVisible(true)
             .setText(previewCopy.mainText);
@@ -323,41 +344,56 @@ export class CardPreviewController
         }
     }
 
-    private buildCardPreviewParagraph (card: Card, ownerUsername: string): { mainText: string; flavorText: string }
+    private buildCardPreviewParagraph (card: Card, ownerUsername: string, hideOwnerLine = false): { mainText: string; flavorText: string }
     {
         if (card.getCardType() !== 'character') {
             const otherCardDescription = resolveOtherCardDescription(card.getCardClass());
-            return {
-                mainText: [
+            const lines = hideOwnerLine
+                ? [`${otherCardDescription.abilityDescription}`]
+                : [
                     `Owner: ${ownerUsername}`,
                     `${otherCardDescription.abilityDescription}`,
-                ].join('\n\n'),
+                ];
+            return {
+                mainText: lines.join('\n\n'),
                 flavorText: '',
             };
         }
 
         const characterDescription = resolveCharacterCardDescription(card.getCardClass());
+        const hasCatalogAttackOneDescription = characterDescription.atk1Description !== characterDefaultDescription.atk1Description;
+        const hasCatalogAttackTwoDescription = characterDescription.atk2Description !== characterDefaultDescription.atk2Description;
         const headerLines = [
-            `Owner: ${ownerUsername}`,
             `Type: ${this.formatCharacterType(card)}`,
             `Statuses: ${this.formatCharacterStatuses(card)}`,
-            `Retreat Cost: ${card.getRetreatCost()}`,
+            `Retreat Cost: ${characterDescription.retreatCost ?? card.getRetreatCost()}`,
         ];
+        if (!hideOwnerLine) {
+            headerLines.unshift(`Owner: ${ownerUsername}`);
+        }
         const sections: string[] = [headerLines.join('\n')];
 
-        if (card.hasAttackOne()) {
+        if (card.hasAttackOne() || hasCatalogAttackOneDescription) {
+            const attackOneName = card.getAttackOneName() ?? characterDescription.atk1Name;
+            const attackOneCost = card.hasAttackOne()
+                ? card.getAttackOneCost()
+                : (characterDescription.atk1Cost ?? undefined);
             sections.push(this.formatNamedDescription(
-                card.getAttackOneName() ?? 'Attack 1',
+                attackOneName,
                 characterDescription.atk1Description,
-                card.getAttackOneCost()
+                attackOneCost
             ));
         }
 
-        if (card.hasAttackTwo()) {
+        if (card.hasAttackTwo() || hasCatalogAttackTwoDescription) {
+            const attackTwoName = card.getAttackTwoName() ?? characterDescription.atk2Name;
+            const attackTwoCost = card.hasAttackTwo()
+                ? card.getAttackTwoCost()
+                : (characterDescription.atk2Cost ?? undefined);
             sections.push(this.formatNamedDescription(
-                card.getAttackTwoName() ?? 'Attack 2',
+                attackTwoName,
                 characterDescription.atk2Description,
-                card.getAttackTwoCost()
+                attackTwoCost
             ));
         }
 
