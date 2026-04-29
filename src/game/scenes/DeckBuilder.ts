@@ -2568,20 +2568,6 @@ export class DeckBuilder extends Scene
             .sort((a, b) => a.label.localeCompare(b.label));
     }
 
-    private getActiveCategoryLabel (): string
-    {
-        const base = this.getCategoryLabel(this.state.activeCategory);
-        if (this.state.activeCategory !== 'character') {
-            return base;
-        }
-
-        if (this.state.activeCharacterCardType === 'all') {
-            return base;
-        }
-
-        return `${base} ${this.state.activeCharacterCardType.toUpperCase()}`;
-    }
-
     private getCategoryLabel (category: CardCatalogCategory): string
     {
         switch (category) {
@@ -2781,8 +2767,7 @@ export class DeckBuilder extends Scene
     private updateSummaryText (): void
     {
         const total = this.collectCards().length;
-        const categoryCount = this.getActiveCategoryCards().length;
-        this.subtitle.setText(`${this.state.deckName.toUpperCase()} - ${total} CARDS (${categoryCount} ${this.getActiveCategoryLabel()})`);
+        this.subtitle.setText(`${this.state.deckName.toUpperCase()} - ${total} CARDS`);
     }
 
     private getStoredSessionId (): string | null
