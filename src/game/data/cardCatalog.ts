@@ -69,7 +69,7 @@ export const CARD_CATALOG: CardCatalogEntry[] = [
     { id: 'RyanLi', label: 'Ryan Li', category: 'character', cardType: 'pianos', iconFallback: 'RYA' },
     { id: 'SophiaSWang', label: 'Sophia S Wang', category: 'character', cardType: 'pianos', iconFallback: 'SOP' },
     { id: 'AliceWang', label: 'Alice Wang', category: 'character', cardType: 'strings', iconFallback: 'ALI' },
-    { id: 'AndreaCR', label: 'Andrea CR', category: 'character', cardType: 'strings', iconFallback: 'AND' },
+    { id: 'AndreaCR', label: 'Andrea Condormango Rafael', category: 'character', cardType: 'strings', iconFallback: 'AND' },
     { id: 'AshleyToby', label: 'Ashley Toby', category: 'character', cardType: 'strings', iconFallback: 'ASH' },
     { id: 'EmilyWang', label: 'Emily Wang', category: 'character', cardType: 'strings', iconFallback: 'EMI' },
     { id: 'FionaLi', label: 'Fiona Li', category: 'character', cardType: 'strings', iconFallback: 'FIO' },

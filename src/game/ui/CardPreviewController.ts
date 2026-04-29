@@ -68,6 +68,11 @@ const readMultiLineField = (value: unknown, fallback: string): string => {
 };
 
 const normalizeCardClassDisplayLabel = (value: string): string => {
+    const compact = value.replace(/[^a-z0-9]+/gi, '').toLowerCase();
+    if (compact === 'andreacr') {
+        return 'Andrea Condormango Rafael';
+    }
+
     return value
     .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
     .replace(/([a-z0-9])([A-Z])/g, '$1 $2')

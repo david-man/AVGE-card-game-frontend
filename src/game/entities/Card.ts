@@ -193,6 +193,10 @@ export class Card
 
     private normalizeCardClassDisplayLabel (rawLabel: string): string
     {
+        if (rawLabel === 'AndreaCR') {
+            return 'Andrea Condormango Rafael';
+        }
+
         return rawLabel
             .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
             .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
