@@ -2,7 +2,7 @@ import { Scene } from 'phaser';
 
 import { EnergyToken } from './EnergyToken';
 import { ENTITY_VISUALS, GAME_LAYOUT, UI_SCALE } from '../config';
-import { fitBitmapTextToSingleLine } from '../ui/overlays/bitmapTextFit';
+import { fitTextToSingleLine } from '../ui/overlays/textFit';
 
 export type EnergyHolderConfig = {
     id: string;
@@ -24,8 +24,8 @@ export class EnergyHolder
     readonly height: number;
     readonly zone: Phaser.GameObjects.Zone;
     readonly background: Phaser.GameObjects.Rectangle;
-    readonly labelText: Phaser.GameObjects.BitmapText;
-    readonly pileCountTexts: Phaser.GameObjects.BitmapText[];
+    readonly labelText: Phaser.GameObjects.Text;
+    readonly pileCountTexts: Phaser.GameObjects.Text[];
 
     readonly tokens: EnergyToken[];
 
@@ -49,16 +49,15 @@ export class EnergyHolder
 
         const preferredLabelSize = Math.max(ENTITY_VISUALS.energyHolderLabelMinSize, Math.round(ENTITY_VISUALS.energyHolderLabelBaseSize * UI_SCALE));
         const labelTopGap = Math.max(4, Math.round(ENTITY_VISUALS.energyHolderLabelTopGapBase * UI_SCALE));
-        this.labelText = scene.add.bitmapText(config.x, config.y - Math.round((config.height / 2) + labelTopGap), 'minogram', config.label, preferredLabelSize)
+        this.labelText = scene.add.text(config.x, config.y - Math.round((config.height / 2) + labelTopGap), config.label).setFontSize(preferredLabelSize)
             .setOrigin(0.5)
-            .setCenterAlign()
+            .setAlign('center')
             .setTint(ENTITY_VISUALS.energyHolderLabelTint)
             .setAlpha(ENTITY_VISUALS.energyHolderLabelAlpha)
             .setDepth(ENTITY_VISUALS.energyHolderLabelDepth);
 
-        this.labelText.setFontSize(fitBitmapTextToSingleLine({
+        this.labelText.setFontSize(fitTextToSingleLine({
             scene,
-            font: 'minogram',
             text: config.label,
             preferredSize: preferredLabelSize,
             minSize: Math.max(ENTITY_VISUALS.energyHolderLabelMinSize, Math.round(preferredLabelSize * 0.72)),
@@ -67,7 +66,7 @@ export class EnergyHolder
 
         const countFontSize = Math.max(ENTITY_VISUALS.energyHolderLabelMinSize, Math.round(preferredLabelSize * 0.8));
         this.pileCountTexts = Array.from({ length: GAME_LAYOUT.energyTokenZonePileCount }, () => (
-            scene.add.bitmapText(config.x, config.y, 'minogram', '', countFontSize)
+            scene.add.text(config.x, config.y, '').setFontSize(countFontSize)
                 .setOrigin(0.5, 1)
                 .setTint(ENTITY_VISUALS.energyHolderLabelTint)
                 .setAlpha(Math.min(1, ENTITY_VISUALS.energyHolderLabelAlpha + 0.2))

@@ -10,9 +10,10 @@ import {
     GAME_HEIGHT,
     GAME_PREVIEW_LAYOUT,
     GAME_WIDTH,
+    UI_FONT_FAMILY,
     UI_SCALE
 } from '../config';
-import { fitBitmapTextToMultiLine, fitBitmapTextToSingleLine } from './overlays/bitmapTextFit';
+import { fitTextToMultiLine, fitTextToSingleLine } from './overlays/textFit';
 
 type CardPreviewDescriptionEntry = {
     atk1Name?: string | null;
@@ -156,10 +157,10 @@ export class CardPreviewController
     private readonly scene: Scene;
     private panel: Phaser.GameObjects.Rectangle | null;
     private body: Phaser.GameObjects.Rectangle | null;
-    private idText: Phaser.GameObjects.BitmapText | null;
-    private typeText: Phaser.GameObjects.BitmapText | null;
-    private hpText: Phaser.GameObjects.BitmapText | null;
-    private paragraphText: Phaser.GameObjects.BitmapText | null;
+    private idText: Phaser.GameObjects.Text | null;
+    private typeText: Phaser.GameObjects.Text | null;
+    private hpText: Phaser.GameObjects.Text | null;
+    private paragraphText: Phaser.GameObjects.Text | null;
     private flavorText: Phaser.GameObjects.Text | null;
 
     constructor (scene: Scene)
@@ -201,55 +202,31 @@ export class CardPreviewController
             .setDepth(GAME_DEPTHS.previewCard)
             .setVisible(false);
 
-        this.idText = this.scene.add.bitmapText(
-            panelX,
-            previewCardCenterY - Math.round(previewCardHeight * GAME_PREVIEW_LAYOUT.idYOffsetRatio),
-            'minogram',
-            '',
-            Math.max(GAME_PREVIEW_LAYOUT.idFontSizeMin, Math.round(GAME_PREVIEW_LAYOUT.idFontSize * UI_SCALE))
-        )
+        this.idText = this.scene.add.text(panelX, previewCardCenterY - Math.round(previewCardHeight * GAME_PREVIEW_LAYOUT.classYOffsetRatio), '').setFontSize(Math.max(GAME_PREVIEW_LAYOUT.classFontSizeMin, Math.round(GAME_PREVIEW_LAYOUT.classFontSize * UI_SCALE)))
             .setOrigin(0.5)
-            .setCenterAlign()
+            .setAlign('center')
             .setTint(GAME_PREVIEW_LAYOUT.panelStrokeColor)
             .setDepth(GAME_DEPTHS.previewText)
             .setVisible(false);
 
-        this.typeText = this.scene.add.bitmapText(
-            panelX,
-            previewCardCenterY + Math.round(previewCardHeight * GAME_PREVIEW_LAYOUT.typeYOffsetRatio),
-            'minogram',
-            '',
-            Math.max(GAME_PREVIEW_LAYOUT.typeFontSizeMin, Math.round(GAME_PREVIEW_LAYOUT.typeFontSize * UI_SCALE))
-        )
+        this.typeText = this.scene.add.text(panelX, previewCardCenterY + Math.round(previewCardHeight * GAME_PREVIEW_LAYOUT.typeYOffsetRatio), '').setFontSize(Math.max(GAME_PREVIEW_LAYOUT.typeFontSizeMin, Math.round(GAME_PREVIEW_LAYOUT.typeFontSize * UI_SCALE)))
             .setOrigin(0.5)
-            .setCenterAlign()
+            .setAlign('center')
             .setTint(GAME_PREVIEW_LAYOUT.typeTint)
             .setDepth(GAME_DEPTHS.previewText)
             .setVisible(false);
 
-        this.hpText = this.scene.add.bitmapText(
-            panelX - Math.round(previewCardWidth / 2) + Math.round(previewCardWidth * GAME_PREVIEW_LAYOUT.hpOffsetXRatio),
-            previewCardCenterY - Math.round(previewCardHeight / 2) + Math.round(previewCardHeight * GAME_PREVIEW_LAYOUT.hpOffsetYRatio),
-            'minogram',
-            '',
-            Math.max(GAME_PREVIEW_LAYOUT.hpFontSizeMin, Math.round(GAME_PREVIEW_LAYOUT.hpFontSize * UI_SCALE))
-        )
+        this.hpText = this.scene.add.text(panelX - Math.round(previewCardWidth / 2) + Math.round(previewCardWidth * GAME_PREVIEW_LAYOUT.hpOffsetXRatio), previewCardCenterY - Math.round(previewCardHeight / 2) + Math.round(previewCardHeight * GAME_PREVIEW_LAYOUT.hpOffsetYRatio), '').setFontSize(Math.max(GAME_PREVIEW_LAYOUT.hpFontSizeMin, Math.round(GAME_PREVIEW_LAYOUT.hpFontSize * UI_SCALE)))
             .setOrigin(0, 0)
             .setTint(GAME_PREVIEW_LAYOUT.panelStrokeColor)
             .setDepth(GAME_DEPTHS.previewText)
             .setVisible(false);
 
-        this.paragraphText = this.scene.add.bitmapText(
-            panelX,
-            topY + Math.round(panelHeight * GAME_PREVIEW_LAYOUT.paragraphYRatio),
-            'minogram',
-            '',
-            Math.max(GAME_PREVIEW_LAYOUT.paragraphFontSizeMin, Math.round(GAME_PREVIEW_LAYOUT.paragraphFontSize * UI_SCALE))
-        )
+        this.paragraphText = this.scene.add.text(panelX, topY + Math.round(panelHeight * GAME_PREVIEW_LAYOUT.paragraphYRatio), '').setFontSize(Math.max(GAME_PREVIEW_LAYOUT.paragraphFontSizeMin, Math.round(GAME_PREVIEW_LAYOUT.paragraphFontSize * UI_SCALE)))
             .setOrigin(0.5, 0)
-            .setCenterAlign()
+            .setAlign('center')
             .setTint(GAME_PREVIEW_LAYOUT.paragraphTint)
-            .setMaxWidth(Math.round(panelWidth * GAME_PREVIEW_LAYOUT.paragraphWidthRatio))
+            .setWordWrapWidth(Math.round(panelWidth * GAME_PREVIEW_LAYOUT.paragraphWidthRatio))
             .setDepth(GAME_DEPTHS.previewText)
             .setVisible(false);
 
@@ -258,7 +235,7 @@ export class CardPreviewController
             this.paragraphText.y,
             '',
             {
-                fontFamily: 'MinecraftRegular, serif',
+                fontFamily: UI_FONT_FAMILY,
                 fontSize: `${Math.max(GAME_PREVIEW_LAYOUT.flavorFontSizeMin, Math.round((GAME_PREVIEW_LAYOUT.paragraphFontSize + GAME_PREVIEW_LAYOUT.flavorFontSizeDelta) * UI_SCALE))}px`,
                 fontStyle: 'italic',
                 color: '#e2e8f0',
@@ -290,24 +267,22 @@ export class CardPreviewController
             .setStrokeStyle(CARD_BORDER_WIDTH, card.getBorderColor(), 1);
 
         this.idText.setVisible(true).setText(normalizeCardClassDisplayLabel(card.getCardClass()));
-        const previewIdFit = fitBitmapTextToMultiLine({
+        const previewClassFit = fitTextToMultiLine({
             scene: this.scene,
-            font: 'minogram',
             text: this.idText.text,
             preferredSize: this.idText.fontSize,
-            minSize: Math.max(GAME_PREVIEW_LAYOUT.fitIdMinSize, Math.round(this.idText.fontSize * GAME_PREVIEW_LAYOUT.fitIdSizeRatio)),
-            maxWidth: Math.max(GAME_PREVIEW_LAYOUT.fitIdWidthMin, Math.round(this.body.width * GAME_PREVIEW_LAYOUT.fitIdWidthRatio)),
+            minSize: Math.max(GAME_PREVIEW_LAYOUT.fitClassMinSize, Math.round(this.idText.fontSize * GAME_PREVIEW_LAYOUT.fitClassSizeRatio)),
+            maxWidth: Math.max(GAME_PREVIEW_LAYOUT.fitClassWidthMin, Math.round(this.body.width * GAME_PREVIEW_LAYOUT.fitClassWidthRatio)),
             maxLines: 3
         });
-        this.idText.setText(previewIdFit.text);
-        this.idText.setFontSize(previewIdFit.fontSize);
+        this.idText.setText(previewClassFit.text);
+        this.idText.setFontSize(previewClassFit.fontSize);
         const previewTypeText = card.getCardType() === 'character'
             ? (String(card.getAVGECardType() ?? '').trim().toUpperCase() || 'NONE')
             : card.getCardType().toUpperCase();
         this.typeText.setVisible(true).setText(previewTypeText);
-        this.typeText.setFontSize(fitBitmapTextToSingleLine({
+        this.typeText.setFontSize(fitTextToSingleLine({
             scene: this.scene,
-            font: 'minogram',
             text: this.typeText.text,
             preferredSize: this.typeText.fontSize,
             minSize: Math.max(GAME_PREVIEW_LAYOUT.fitTypeMinSize, Math.round(this.typeText.fontSize * GAME_PREVIEW_LAYOUT.fitTypeSizeRatio)),
@@ -316,9 +291,8 @@ export class CardPreviewController
 
         if (card.getCardType() === 'character') {
             this.hpText.setVisible(true).setText(`[${card.getHp()}/${card.getMaxHp()}]`);
-            this.hpText.setFontSize(fitBitmapTextToSingleLine({
+            this.hpText.setFontSize(fitTextToSingleLine({
                 scene: this.scene,
-                font: 'minogram',
                 text: this.hpText.text,
                 preferredSize: this.hpText.fontSize,
                 minSize: Math.max(GAME_PREVIEW_LAYOUT.fitHpMinSize, Math.round(this.hpText.fontSize * GAME_PREVIEW_LAYOUT.fitHpSizeRatio)),

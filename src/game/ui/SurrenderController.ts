@@ -8,7 +8,7 @@ import {
     UI_SCALE
 } from '../config';
 
-type ViewMode = 'p1' | 'p2' | 'admin' | 'spectator';
+type ViewMode = 'p1' | 'p2' | 'spectator';
 
 type SurrenderControllerOptions = {
     onArm: (seconds: number) => void;
@@ -22,7 +22,9 @@ export class SurrenderController
     private readonly scene: Scene;
     private readonly options: SurrenderControllerOptions;
     private body: Phaser.GameObjects.Arc | null;
-    private label: Phaser.GameObjects.BitmapText | null;
+    private icon: Phaser.GameObjects.Image | null;
+    private label: Phaser.GameObjects.Text | null;
+    private hoverLabel: Phaser.GameObjects.Text | null;
     private confirmArmed: boolean;
     private confirmTimerEvent: Phaser.Time.TimerEvent | null;
     private confirmSecondsRemaining: number;
@@ -32,7 +34,9 @@ export class SurrenderController
         this.scene = scene;
         this.options = options;
         this.body = null;
+        this.icon = null;
         this.label = null;
+        this.hoverLabel = null;
         this.confirmArmed = false;
         this.confirmTimerEvent = null;
         this.confirmSecondsRemaining = 0;
@@ -44,6 +48,12 @@ export class SurrenderController
         const x = GAME_WIDTH - radius;
         const y = radius;
         const fontSize = Math.max(10, Math.round(GAME_SURRENDER_BUTTON_LAYOUT.fontSize * UI_SCALE));
+        const iconMaxSize = Math.round(radius * 2 * GAME_SURRENDER_BUTTON_LAYOUT.iconMaxSizeRatio);
+        const hoverLabelOffsetY = Math.round((GAME_SURRENDER_BUTTON_LAYOUT.hoverLabelOffsetYBase / BASE_HEIGHT) * this.scene.scale.height);
+        const hoverLabelFontSize = Math.max(
+            GAME_SURRENDER_BUTTON_LAYOUT.hoverLabelFontSizeMin,
+            Math.round(GAME_SURRENDER_BUTTON_LAYOUT.hoverLabelFontSizeBase * UI_SCALE)
+        );
 
         this.body = this.scene.add.circle(
             x,
@@ -60,19 +70,52 @@ export class SurrenderController
             .setDepth(GAME_SURRENDER_BUTTON_LAYOUT.depth)
             .setInteractive({ useHandCursor: true });
 
-        this.label = this.scene.add.bitmapText(x, y, 'minogram', GAME_SURRENDER_BUTTON_LAYOUT.label, fontSize)
+        this.icon = this.scene.add.image(x, y, GAME_SURRENDER_BUTTON_LAYOUT.iconKey)
+            .setDisplaySize(iconMaxSize, iconMaxSize)
+            .setDepth(GAME_SURRENDER_BUTTON_LAYOUT.depth + 1);
+
+        this.label = this.scene.add.text(x, y, '').setFontSize(fontSize)
             .setOrigin(0.5)
             .setTint(GAME_SURRENDER_BUTTON_LAYOUT.textTint)
-            .setDepth(GAME_SURRENDER_BUTTON_LAYOUT.depth + 1);
+            .setDepth(GAME_SURRENDER_BUTTON_LAYOUT.depth + 2)
+            .setVisible(false);
+
+        this.hoverLabel = this.scene.add.text(x, y - hoverLabelOffsetY, GAME_SURRENDER_BUTTON_LAYOUT.hoverLabel).setFontSize(hoverLabelFontSize)
+            .setOrigin(0.5)
+            .setTint(GAME_SURRENDER_BUTTON_LAYOUT.hoverLabelTint)
+            .setDepth(GAME_SURRENDER_BUTTON_LAYOUT.depth + 2)
+            .setVisible(false);
 
         this.body.on('pointerdown', () => {
             this.handleClick();
+        });
+
+        this.body.on('pointerover', () => {
+            if (!this.body || !this.icon || !this.hoverLabel) {
+                return;
+            }
+
+            this.body.setFillStyle(0x991b1b, 0.98);
+            this.icon.setTint(0xfef08a);
+            if (!this.confirmArmed) {
+                this.hoverLabel.setVisible(true);
+            }
+        });
+
+        this.body.on('pointerout', () => {
+            if (!this.body || !this.icon || !this.hoverLabel) {
+                return;
+            }
+
+            this.body.setFillStyle(GAME_SURRENDER_BUTTON_LAYOUT.fillColor, GAME_SURRENDER_BUTTON_LAYOUT.fillAlpha);
+            this.icon.clearTint();
+            this.hoverLabel.setVisible(false);
         });
     }
 
     refresh (activeViewMode: ViewMode, handHolder: CardHolder | undefined): void
     {
-        if (!this.body || !this.label) {
+        if (!this.body || !this.icon || !this.label || !this.hoverLabel) {
             return;
         }
 
@@ -85,11 +128,15 @@ export class SurrenderController
             const x = Math.round(handHolder.x + (handHolder.width / 2) + handOffsetX + radius);
             const y = Math.round(handHolder.y + handOffsetY);
             this.body.setPosition(x, y);
+            this.icon.setPosition(x, y);
             this.label.setPosition(x, y);
+            this.hoverLabel.setPosition(x, y - Math.round((GAME_SURRENDER_BUTTON_LAYOUT.hoverLabelOffsetYBase / BASE_HEIGHT) * this.scene.scale.height));
         }
 
         this.body.setVisible(visible);
+        this.icon.setVisible(visible && !this.confirmArmed);
         this.label.setVisible(visible);
+        this.hoverLabel.setVisible(false);
 
         if (!visible) {
             this.disarm(false);
@@ -165,16 +212,22 @@ export class SurrenderController
 
     private refreshLabel (): void
     {
-        if (!this.label) {
+        if (!this.label || !this.icon || !this.hoverLabel) {
             return;
         }
 
         if (this.confirmArmed) {
             this.label.setText(String(this.confirmSecondsRemaining));
+            this.label.setVisible(true);
+            this.icon.setVisible(false);
+            this.hoverLabel.setVisible(false);
             return;
         }
 
-        this.label.setText(GAME_SURRENDER_BUTTON_LAYOUT.label);
+        this.label.setText('');
+        this.label.setVisible(false);
+        this.icon.setVisible(this.body?.visible ?? false);
+        this.hoverLabel.setVisible(false);
     }
 
     public getButtonMetrics (): { x: number; y: number; radius: number; visible: boolean } | null

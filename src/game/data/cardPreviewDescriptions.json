@@ -100,7 +100,7 @@
     },
     "Barron Lee": {
       "atk1Description": "20\nMove your energy among your characters any way you want.",
-      "abilityName": "Get Served:",
+      "abilityName": "Get Served",
       "abilityDescription": "Opposing characters cannot have >3 energy attached. When first played, remove all existing excess energy from each.",
       "flavorText": "Barron \"The Rock\" Lee is blunt, like the rocks he collects.",
       "atk1Name": "Embouchure",
@@ -112,11 +112,9 @@
       "atk1Name": "Feedback Loop",
       "atk1Cost": 2,
       "atk2Cost": 0,
-      "retreatCost": 1
-    },
-    "Ben Jose Cherek III": {
-      "atk1Description": "Feedback Loop: 50\nEach of your Benched Guitar type characters take 10 damage.",
-      "abilityName": "Loudmouth:",
+      "retreatCost": 1,
+      "atk1Description": "50\nEach of your Benched Guitar type characters take 10 damage.",
+      "abilityName": "Loudmouth",
       "abilityDescription": "When you play this character from your hand to your bench, you may switch him into your Active slot for free.",
       "flavorText": "Ben brings all the mischief and whimsy of being THE Florida man: he survived a category 5 hurricane, he was threatened at knifepoint in an attempted robbery outside V-Dub..."
     },
@@ -132,7 +130,7 @@
     },
     "Bokai Bi": {
       "atk1Description": "Roll a d6. If you roll a 4 or less, do 60 damage.",
-      "abilityName": "Algorithm:",
+      "abilityName": "Algorithm",
       "abilityDescription": "If your opponent plays a card you have in your hand, you may reveal it for 20 damage.",
       "flavorText": "Have you ever heard of Touhou Project?",
       "atk1Name": "Rimshot",
@@ -154,7 +152,7 @@
     },
     "Carolyn Zheng": {
       "atk1Description": "70",
-      "abilityName": "Procrastinate:",
+      "abilityName": "Procrastinate",
       "abilityDescription": "If this character did not attack last turn, +30 damage.",
       "flavorText": "Carolyn puts off writing for the Seabird Writing Conference by writing angsty fanfic instead.",
       "atk1Name": "Blast",
@@ -223,7 +221,7 @@
     },
     "Daniel Yang": {
       "atk1Description": "50\nIf you have 3 Piano type characters on your bench, deal 30 damage to each of your opponent's benched characters.",
-      "abilityName": "Delicate Ears:",
+      "abilityName": "Delicate Ears",
       "abilityDescription": "If there are no Brass characters in play, this character's attacks deal +10 damage.",
       "flavorText": "Not much is known about Daniel other than his love for breathing and Wisconsin, and his weakness to French horns and cheese.",
       "atk1Name": "Eight Hands Piano",
@@ -301,7 +299,7 @@
     },
     "Eugenia Ampofo": {
       "atk1Description": "20\nYou may swap with a Benched character for free.",
-      "abilityName": "Fermentation:",
+      "abilityName": "Fermentation",
       "abilityDescription": "While Active: You may attach one (X) to two different characters per turn.",
       "flavorText": "If you can speak Asante Twi with her, Eugenia might give you some extra pointers on your BIOL2555 homework.",
       "atk1Name": "Stick Trick",
@@ -369,7 +367,7 @@
     },
     "Grace Zhao": {
       "atk1Description": "50\nEach of your Benched Guitar type characters take 10 damage.",
-      "abilityName": "Royalties:",
+      "abilityName": "Royalties",
       "abilityDescription": "At the end of your turn, you may deal 10 damage to one opposing character with a Maid Outfit, AVGE Showcase Sticker, or AVGE T-Shirt attached.",
       "flavorText": "To cope with not yet being Connor's wife from Detroit: Become Human, Grace has become the go-to expert on Chinese brainrot.",
       "atk1Name": "Feedback Loop",
@@ -389,7 +387,7 @@
     },
     "Happy Ruth Jara": {
       "atk1Description": "30\nFlip 2 coins. If both are heads, +40 damage.",
-      "abilityName": "Leave Rehearsal Early:",
+      "abilityName": "Leave Rehearsal Early",
       "abilityDescription": "While Benched: If you did not play this character from your hand this turn and she has no tools attached, you may move her to your hand.",
       "flavorText": "Happy exists only in three places: the education department building, Ten One, and rehearsal.",
       "atk1Name": "Coloratura",
@@ -507,7 +505,7 @@
     },
     "Juan Burgos": {
       "atk1Description": "30\n+20 damage per Brass type character on your bench.",
-      "abilityName": "Baking Buff:",
+      "abilityName": "Baking Buff",
       "abilityDescription": "While Benched: Your Brass type characters deal +10 damage.",
       "flavorText": "Even though he's been stung by a jellyfish (ow), Juan still loves going to the zoo!",
       "atk1Name": "Concert Pitch",
@@ -675,7 +673,7 @@
     },
     "Meya Gao": {
       "atk1Description": "40\nNext turn, your Guitar type characters deal +40 damage.",
-      "abilityName": "I See Your Soul:",
+      "abilityName": "I See Your Soul",
       "abilityDescription": "While Active: If any character deals damage to this character, both characters cannot attack during the next turn.",
       "flavorText": "Meya has a lot of complex interests: JoJo, tomatoes, sheep, woodwork... if you want, she can break it down for you.",
       "atk1Name": "Distortion",
@@ -759,7 +757,7 @@
     },
     "Rachel Chen": {
       "atk1Description": "For each of your Choir type characters in play, deal 20 damage to one opposing character.",
-      "abilityName": "Program Production:",
+      "abilityName": "Program Production",
       "abilityDescription": "Once per turn, you may retrieve a Concert Program, Concert Roster, or Concert Ticket from your discard pile and place it on the top of your deck.",
       "flavorText": "Count on Rachel to turn a throwaway idea into a dramatic 10 page comic.",
       "atk1Name": "SATB",
@@ -794,7 +792,7 @@
     },
     "Ross Williams": {
       "atk1Description": "If Ross is on your bench, choose a card from your discard pile to put in your hand. If he is on your opponent's bench, deal 20 damage to one opposing character. If he is on both benches, nothing happens.",
-      "abilityName": "I Am Become Ross:",
+      "abilityName": "I Am Become Ross",
       "abilityDescription": "While Benched: Both active characters can use Ross's attacks.",
       "flavorText": "Ross? Ross. Ross? Ross! Ross...",
       "atk1Name": "Ross Attack!",
@@ -848,7 +846,7 @@
     },
     "Sas Majumder": {
       "atk1Description": "Attack four times. Each attack deals 10 damage. Draw a card.",
-      "abilityName": "Cybersecurity:",
+      "abilityName": "Cybersecurity",
       "abilityDescription": "During your opponent's turn, for the first card that enters your discard pile, you may put it back on the top of your deck.",
       "atk1Name": "Four Mallets",
       "atk1Cost": 3,
@@ -931,7 +929,7 @@
     },
     "Yanwan Zhu": {
       "atk1Description": "60\nYour opponent's Benched characters take 10 damage.",
-      "abilityName": "Bass Boost:",
+      "abilityName": "Bass Boost",
       "abilityDescription": "While Active: At the start of your turn, if she has exactly 2 (X) attached, you may heal 30 damage from a different character.",
       "flavorText": "Yanwan is the \"most normal\" member of the Arknights server, but it's unclear if that really means anything, given, you know, the Arknights server...",
       "atk1Name": "Intense Voice",

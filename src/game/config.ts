@@ -7,9 +7,16 @@ export const GAME_CENTER_Y = GAME_HEIGHT / 2;
 export const UI_BASE_WIDTH = 1920;
 export const UI_BASE_HEIGHT = 1080;
 export const UI_SCALE = Math.min(GAME_WIDTH / UI_BASE_WIDTH, GAME_HEIGHT / UI_BASE_HEIGHT);
-export const UI_MIN_FONT_SIZE = 8;
-export const UI_FONT_FAMILY = 'MinecraftRegular, serif';
-export const UI_TEXT_RENDER_MODE: 'bitmap' | 'vector' = 'bitmap';
+export const UI_MIN_FONT_SIZE = 6;
+export const UI_TEXT_RESOLUTION_MAX = 2;
+// Name of the TTF/OTF asset in public/assets used as the global UI font.
+export const FONT_TTF = 'MinecraftRegular-Bmg3.otf';
+// Optional external stylesheet source for web fonts.
+// Accepts either a URL (https://...) or a full <link ... href="..."> snippet.
+// When set, this takes precedence over FONT_TTF.
+export const FONT_STYLESHEET = 'https://use.typekit.net/qbi2gcz.css';
+export const UI_FONT_FAMILY_NAME = 'MinecraftRegular';
+export const UI_FONT_FAMILY = `'${UI_FONT_FAMILY_NAME}', serif`;
 
 // Reference size used for scene layout constants before scaling.
 export const BASE_WIDTH = 1280;
@@ -65,14 +72,14 @@ export const CARD_VISUALS = {
 } as const;
 
 export const CARD_TEXT_LAYOUT = {
-	idYOffset: 14,
+	classYOffset: 8,
 	typeYOffset: 18,
 	classTwoLineTypeGap: 10,
 	classTwoLineYOffsetBoost: 6,
 	hpPadding: 2,
 	classFitMinSizeFloor: 6,
 	classFitMinSizeRatio: 0.56,
-	classFitMaxWidthRatio: 0.95,
+	classFitMaxWidthRatio: 0.7,
 	classFitMaxWidthMin: 10,
 	classFitMaxLines: 3,
 	typeFitMinSizeRatio: 0.72,
@@ -88,10 +95,10 @@ export const CARD_TEXT_LAYOUT = {
 	statusGapFromHpRatio: 0.7,
 	statusGapFromHpMin: 1,
 	labelDepthOffset: 0.01,
-	minIdFontSize: 10,
+	classMinFontSize: 6,
+	classBaseFontSize: 15,
 	minTypeFontSize: 8,
 	minHpFontSize: 10,
-	baseIdFontSize: 15,
 	baseTypeFontSize: 11,
 	baseHpFontSize: 9
 } as const;
@@ -142,8 +149,8 @@ export const ENERGY_TOKEN_DEPTHS = {
 } as const;
 
 export const GAME_SCENE_VISUALS = {
-	backgroundColor: 0x00ff00,
-	backgroundAlpha: 0.5,
+	backgroundColor: 0x000000,
+	backgroundAlpha: 1,
 	inputLockColor: 0x7a7a7a,
 	inputLockAlpha: 0.45
 } as const;
@@ -219,7 +226,7 @@ export const GAME_PREVIEW_LAYOUT = {
 	cardWidthMultiplier: 1.55,
 	cardHeightMultiplier: 1.55,
 	cardCenterYRatio: 0.2,
-	idYOffsetRatio: 0.16,
+	classYOffsetRatio: 0.08,
 	typeYOffsetRatio: 0.16,
 	hpOffsetXRatio: 0.06,
 	hpOffsetYRatio: 0.06,
@@ -233,8 +240,8 @@ export const GAME_PREVIEW_LAYOUT = {
 	panelStrokeAlpha: 0.7,
 	cardFillColor: 0x1f2937,
 	cardFillAlpha: 1,
-	idFontSize: 16,
-	idFontSizeMin: 14,
+	classFontSize: 16,
+	classFontSizeMin: 14,
 	typeFontSize: 14,
 	typeFontSizeMin: 14,
 	hpFontSize: 11,
@@ -243,10 +250,10 @@ export const GAME_PREVIEW_LAYOUT = {
 	paragraphFontSizeMin: 14,
 	flavorFontSizeDelta: -1,
 	flavorFontSizeMin: 14,
-	fitIdMinSize: 10,
-	fitIdSizeRatio: 0.75,
-	fitIdWidthRatio: 0.9,
-	fitIdWidthMin: 12,
+	fitClassMinSize: 10,
+	fitClassSizeRatio: 0.75,
+	fitClassWidthRatio: 0.8,
+	fitClassWidthMin: 12,
 	fitTypeMinSize: 9,
 	fitTypeSizeRatio: 0.75,
 	fitTypeWidthRatio: 0.9,
@@ -289,6 +296,41 @@ export const MAIN_MENU_TEXT_LAYOUT = {
 	disconnectTitleFontSizeMin: 18,
 	disconnectContinueFontSizeBase: 26,
 	disconnectContinueFontSizeMin: 16
+} as const;
+
+export const MAIN_MENU_LOGO_LAYOUT = {
+	marginBase: 18,
+	marginMin: 12,
+	maxWidthRatio: 0.1,
+	maxHeightRatio: 0.1,
+	hoverScaleMultiplier: 1.04,
+	hoverTweenDurationMs: 110,
+	alpha: 0.92,
+	hoverAlpha: 1
+} as const;
+
+export const MAIN_MENU_LOGO_ASSET = {
+	key: 'standard-logo',
+	filePath: 'logos/logo_red.svg'
+} as const;
+
+export const MAIN_MENU_LOGO_LINK = {
+	url: 'https://www.brownavge.org/'
+} as const;
+
+export const MAIN_MENU_LAYOUT = {
+	titleYRatio: 0.34,
+	subtitleYRatio: 0.47,
+	accountMarginBase: 50,
+	accountTopBase: 60,
+	logoutWidthBase: 180,
+	logoutHeightBase: 60,
+	accountUiDepth: 620,
+	logoutBottomMarginBase: 900,
+	buttonWidthBase: 280,
+	buttonHeightBase: 84,
+	buttonYRatio: 0.68,
+	decksButtonOffsetYBase: 96
 } as const;
 
 export const DECK_BUILDER_TEXT_LAYOUT = {
@@ -338,6 +380,28 @@ export const DECK_BUILDER_TEXT_LAYOUT = {
 	searchPagerFontSizeMin: 8
 } as const;
 
+export const DECK_BUILDER_TRANSFER_ICON_ASSETS = {
+	exportKey: 'deck-builder-export-icon',
+	exportPath: 'icons/export.png',
+	importKey: 'deck-builder-import-icon',
+	importPath: 'icons/import.png',
+	resetKey: 'deck-builder-reset-icon',
+	resetPath: 'icons/trash.png'
+} as const;
+
+export const DECK_BUILDER_TRANSFER_ICON_LAYOUT = {
+	buttonSizeBase: 46,
+	buttonOffsetXBase: 16,
+	buttonGapXBase: 12,
+	iconMaxSizeRatio: 0.58,
+	hoverLabelOffsetYBase: 34,
+	hoverLabelFontSizeBase: 15,
+	hoverLabelFontSizeMin: 10,
+	resetConfirmWindowSeconds: 5,
+	resetCountdownFontSizeBase: 14,
+	resetCountdownFontSizeMin: 10
+} as const;
+
 export const GAME_STATUS_TEXT_LAYOUT = {
 	opponentDisconnectFontSizeBase: 16,
 	opponentDisconnectFontSizeMin: 14,
@@ -345,6 +409,24 @@ export const GAME_STATUS_TEXT_LAYOUT = {
 	phaseStateActionFontSizeMin: 10,
 	phaseStateActionFitFontSizeBase: 16,
 	phaseStateActionFitFontSizeMin: 9
+} as const;
+
+export const GAME_INIT_COUNTDOWN_OVERLAY = {
+	messages: ['3', '2', '1', 'Fight!'],
+	backdropAlpha: 0.45,
+	depthOffset: 8,
+	numberFontSizeBase: 140,
+	fightFontSizeBase: 170,
+	fontSizeMin: 44,
+	numberTint: 0xf8fafc,
+	fightTint: 0xfacc15,
+	popStartScale: 0.66,
+	popDurationMs: 170,
+	fadeOutDurationMs: 140,
+	numberHoldMs: 1000,
+	fightHoldMs: 1500,
+	backdropFadeInMs: 120,
+	backdropFadeOutMs: 180
 } as const;
 
 export const PHASE_HUD_TEXT_LAYOUT = {
@@ -416,6 +498,9 @@ export const GAME_SURRENDER_BUTTON_LAYOUT = {
 	handOffsetXBase: 14,
 	handOffsetYBase: 0,
 	confirmWindowMs: 5000,
+	iconKey: 'game-surrender-icon',
+	iconPath: 'icons/white-flag.png',
+	iconMaxSizeRatio: 0.7,
 	fontSize: 16,
 	fillColor: 0x7f1d1d,
 	fillAlpha: 0.92,
@@ -423,7 +508,11 @@ export const GAME_SURRENDER_BUTTON_LAYOUT = {
 	strokeColor: 0xffffff,
 	strokeAlpha: 0.75,
 	textTint: 0xffffff,
-	label: 'S',
+	hoverLabel: 'Surrender?',
+	hoverLabelOffsetYBase: 32,
+	hoverLabelFontSizeBase: 14,
+	hoverLabelFontSizeMin: 10,
+	hoverLabelTint: 0xfef08a,
 	depth: 316
 } as const;
 
@@ -493,7 +582,6 @@ export const GAME_PLAYER_STATS_HUD_LAYOUT = {
 	leftMarginBase: 12,
 	topMarginBase: 36,
 	rowGapBase: 18,
-	adminColumnGapBase: 360,
 	fontSize: 18,
 	tint: 0xffffff,
 	depth: 315

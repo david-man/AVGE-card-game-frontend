@@ -14,13 +14,13 @@ import {
 export class Login extends Scene
 {
     background: GameObjects.Image;
-    title: GameObjects.BitmapText;
-    subtitle: GameObjects.BitmapText;
-    usernameValue: GameObjects.BitmapText;
+    title: GameObjects.Text;
+    subtitle: GameObjects.Text;
+    usernameValue: GameObjects.Text;
     continueButton: GameObjects.Rectangle;
-    continueLabel: GameObjects.BitmapText;
+    continueLabel: GameObjects.Text;
     changeNameButton: GameObjects.Rectangle;
-    changeNameLabel: GameObjects.BitmapText;
+    changeNameLabel: GameObjects.Text;
 
     private selectedUsername: string;
     private submitting: boolean;
@@ -35,8 +35,7 @@ export class Login extends Scene
     preload (): void
     {
         this.load.setPath('assets');
-        this.load.image('background', 'bg.png');
-        this.load.bitmapFont('minogram', 'minogram_6x10.png', 'minogram_6x10.xml');
+        this.load.image('background', 'background/background_element.png');
     }
 
     create (): void
@@ -50,33 +49,15 @@ export class Login extends Scene
         this.background.setDisplaySize(GAME_WIDTH, GAME_HEIGHT);
         this.background.setAlpha(0.9);
 
-        this.title = this.add.bitmapText(
-            GAME_CENTER_X,
-            Math.round(GAME_HEIGHT * 0.24),
-            'minogram',
-            'LOGIN',
-            Math.max(LOGIN_TEXT_LAYOUT.titleFontSizeMin, Math.round(LOGIN_TEXT_LAYOUT.titleFontSizeBase * UI_SCALE))
-        )
+        this.title = this.add.text(GAME_CENTER_X, Math.round(GAME_HEIGHT * 0.24), 'LOGIN').setFontSize(Math.max(LOGIN_TEXT_LAYOUT.titleFontSizeMin, Math.round(LOGIN_TEXT_LAYOUT.titleFontSizeBase * UI_SCALE)))
             .setOrigin(0.5)
             .setTint(0xffffff);
 
-        this.subtitle = this.add.bitmapText(
-            GAME_CENTER_X,
-            Math.round(GAME_HEIGHT * 0.36),
-            'minogram',
-            'Choose your username to continue',
-            Math.max(LOGIN_TEXT_LAYOUT.subtitleFontSizeMin, Math.round(LOGIN_TEXT_LAYOUT.subtitleFontSizeBase * UI_SCALE))
-        )
+        this.subtitle = this.add.text(GAME_CENTER_X, Math.round(GAME_HEIGHT * 0.36), 'Choose your username to continue').setFontSize(Math.max(LOGIN_TEXT_LAYOUT.subtitleFontSizeMin, Math.round(LOGIN_TEXT_LAYOUT.subtitleFontSizeBase * UI_SCALE)))
             .setOrigin(0.5)
             .setTint(0xcbd5e1);
 
-        this.usernameValue = this.add.bitmapText(
-            GAME_CENTER_X,
-            Math.round(GAME_HEIGHT * 0.46),
-            'minogram',
-            this.selectedUsername.toUpperCase(),
-            Math.max(LOGIN_TEXT_LAYOUT.usernameFontSizeMin, Math.round(LOGIN_TEXT_LAYOUT.usernameFontSizeBase * UI_SCALE))
-        )
+        this.usernameValue = this.add.text(GAME_CENTER_X, Math.round(GAME_HEIGHT * 0.46), this.selectedUsername.toUpperCase()).setFontSize(Math.max(LOGIN_TEXT_LAYOUT.usernameFontSizeMin, Math.round(LOGIN_TEXT_LAYOUT.usernameFontSizeBase * UI_SCALE)))
             .setOrigin(0.5)
             .setTint(0xffffff);
 
@@ -94,13 +75,7 @@ export class Login extends Scene
             .setStrokeStyle(3, 0xffffff, 0.85)
             .setInteractive({ useHandCursor: true });
 
-        this.continueLabel = this.add.bitmapText(
-            GAME_CENTER_X,
-            Math.round(GAME_HEIGHT * 0.63),
-            'minogram',
-            'CONTINUE',
-            Math.max(LOGIN_TEXT_LAYOUT.continueFontSizeMin, Math.round(LOGIN_TEXT_LAYOUT.continueFontSizeBase * UI_SCALE))
-        )
+        this.continueLabel = this.add.text(GAME_CENTER_X, Math.round(GAME_HEIGHT * 0.63), 'CONTINUE').setFontSize(Math.max(LOGIN_TEXT_LAYOUT.continueFontSizeMin, Math.round(LOGIN_TEXT_LAYOUT.continueFontSizeBase * UI_SCALE)))
             .setOrigin(0.5)
             .setTint(0xffffff);
 
@@ -115,13 +90,7 @@ export class Login extends Scene
             .setStrokeStyle(2, 0xffffff, 0.7)
             .setInteractive({ useHandCursor: true });
 
-        this.changeNameLabel = this.add.bitmapText(
-            GAME_CENTER_X,
-            Math.round(GAME_HEIGHT * 0.76),
-            'minogram',
-            'CHANGE NAME',
-            Math.max(LOGIN_TEXT_LAYOUT.changeNameFontSizeMin, Math.round(LOGIN_TEXT_LAYOUT.changeNameFontSizeBase * UI_SCALE))
-        )
+        this.changeNameLabel = this.add.text(GAME_CENTER_X, Math.round(GAME_HEIGHT * 0.76), 'CHANGE NAME').setFontSize(Math.max(LOGIN_TEXT_LAYOUT.changeNameFontSizeMin, Math.round(LOGIN_TEXT_LAYOUT.changeNameFontSizeBase * UI_SCALE)))
             .setOrigin(0.5)
             .setTint(0xffffff);
 

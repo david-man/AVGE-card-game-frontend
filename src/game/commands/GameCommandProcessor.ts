@@ -625,11 +625,6 @@ export class GameCommandProcessor
                 return;
             }
 
-            if (g.activeViewMode === 'admin') {
-                g.appendTerminalLine('Admin view keeps all cards face up. Use view player-1 or view player-2 to flip cards.');
-                return;
-            }
-
             const nextStateTurnedOver = !card.isTurnedOver();
             card.flip();
             g.appendTerminalLine(`${cardId} ${nextStateTurnedOver ? 'turned over' : 'face up'}`);
@@ -826,7 +821,7 @@ export class GameCommandProcessor
             const parsedTargetView = possibleTargetToken
                 ? g.parseViewModeArg(possibleTargetToken.toLowerCase())
                 : null;
-            const targetView = parsedTargetView && parsedTargetView !== 'admin' ? parsedTargetView : null;
+            const targetView = parsedTargetView === 'p1' || parsedTargetView === 'p2' ? parsedTargetView : null;
             if (targetView && targetTokenMatch) {
                 rawInputBody = targetTokenMatch[2].trim();
             }
@@ -838,7 +833,7 @@ export class GameCommandProcessor
                 .replace(/\s+/g, ' ')
                 .trim();
             const rawInputArgs = parsedMessage?.rest ?? '';
-            const canShowTargetedInputInCurrentView = !targetView || g.activeViewMode === 'admin' || g.activeViewMode === targetView;
+            const canShowTargetedInputInCurrentView = !targetView || g.activeViewMode === targetView;
 
             if (!topMessage) {
                 g.appendTerminalLine('Usage: input [type] [msg] [..args]');
@@ -1357,9 +1352,9 @@ export class GameCommandProcessor
             const normalizedNotifyTarget = rawArgOne.toLowerCase();
             const notifyBoth = normalizedNotifyTarget === 'both' || normalizedNotifyTarget === 'all';
             const targetView = notifyBoth
-                ? (g.activeViewMode === 'admin' ? null : g.activeViewMode)
+                ? (g.activeViewMode === 'p1' || g.activeViewMode === 'p2' ? g.activeViewMode : null)
                 : g.parseViewModeArg(normalizedNotifyTarget);
-            if ((!targetView || targetView === 'admin') && !notifyBoth) {
+            if ((!targetView || targetView === 'spectator') && !notifyBoth) {
                 g.appendTerminalLine('Usage: notify [player-1|player-2|both] [msg]');
                 return;
             }
@@ -1391,7 +1386,7 @@ export class GameCommandProcessor
                 g.inputOverlayController.stopActiveOverlay();
             }
 
-            if (!notifyBoth && g.activeViewMode !== 'admin' && g.activeViewMode !== targetView) {
+            if (!notifyBoth && g.activeViewMode !== targetView) {
                 g.appendTerminalLine(`Notify skipped in ${g.getViewModeLabel(g.activeViewMode)} view (target: ${g.getViewModeLabel(targetView)}).`);
                 return;
             }
@@ -1429,12 +1424,12 @@ export class GameCommandProcessor
                 return;
             }
 
-            const winnerLabel = (!winnerView || winnerView === 'admin')
+            const winnerLabel = (!winnerView || winnerView === 'spectator')
                 ? winnerArg
                 : (explicitWinnerName || g.getPlayerUsername(winnerView));
 
             const panelColor =
-                g.activeViewMode === 'admin' || !winnerView || winnerView === 'admin'
+                !winnerView || winnerView === 'spectator'
                     ? 0x4b5563
                     : (g.activeViewMode === winnerView ? 0x166534 : 0x991b1b);
 
@@ -1469,9 +1464,9 @@ export class GameCommandProcessor
             const normalizedRevealTarget = rawArgOne.toLowerCase();
             const revealBoth = normalizedRevealTarget === 'both' || normalizedRevealTarget === 'all';
             const targetView = revealBoth
-                ? (g.activeViewMode === 'admin' ? null : g.activeViewMode)
+                ? (g.activeViewMode === 'p1' || g.activeViewMode === 'p2' ? g.activeViewMode : null)
                 : g.parseViewModeArg(normalizedRevealTarget);
-            if ((!targetView || targetView === 'admin') && !revealBoth) {
+            if ((!targetView || targetView === 'spectator') && !revealBoth) {
                 g.appendTerminalLine('Usage: reveal [player-1|player-2|both] [list of cards]');
                 return;
             }
@@ -1517,7 +1512,7 @@ export class GameCommandProcessor
                 return;
             }
 
-            if (!revealBoth && g.activeViewMode !== 'admin' && g.activeViewMode !== targetView) {
+            if (!revealBoth && g.activeViewMode !== targetView) {
                 g.appendTerminalLine(`Reveal skipped in ${g.getViewModeLabel(g.activeViewMode)} view (target: ${g.getViewModeLabel(targetView)}).`);
                 return;
             }
@@ -1611,11 +1606,11 @@ export class GameCommandProcessor
             const textureKey = g.resolveBoomTextureKey(rawArgTwo);
             if (!textureKey) {
                 g.appendTerminalLine(`Unknown boom asset: ${rawArgTwo}`);
-                g.appendTerminalLine('Try: pixelviolin.jpg, bg.png, logo.png, minecraftfont.png, font2bitmap.png');
+                g.appendTerminalLine('Try: background/background_element.png, logo.png, minecraftfont.png, font2bitmap.png');
                 return;
             }
 
-            g.playPixelViolinExplosion(card, textureKey);
+            g.playBoomExplosion(card, textureKey);
             g.appendTerminalLine(`BOOM on ${cardId} with ${textureKey}`);
             return;
         }
@@ -1624,7 +1619,7 @@ export class GameCommandProcessor
             const requestedView = rawArgOne?.toLowerCase();
 
             if (!requestedView) {
-                const order = ['admin', 'p1', 'p2'];
+                const order = ['p1', 'p2'];
                 const currentIndex = order.indexOf(g.activeViewMode);
                 const nextView = order[(currentIndex + 1) % order.length];
                 g.applyBoardView(nextView);
@@ -1634,7 +1629,7 @@ export class GameCommandProcessor
 
             const parsedView = g.parseViewModeArg(requestedView);
             if (!parsedView) {
-                g.appendTerminalLine('Usage: view [admin|player-1|player-2]');
+                g.appendTerminalLine('Usage: view [player-1|player-2]');
                 return;
             }
 
@@ -1689,7 +1684,7 @@ export class GameCommandProcessor
         }
 
         if (action === 'unselect-all' || action === 'unselectall') {
-            const targetOwner = g.activeViewMode === 'admin' ? null : g.activeViewMode;
+            const targetOwner = g.activeViewMode === 'p1' || g.activeViewMode === 'p2' ? g.activeViewMode : null;
             const resetDragCount = g.resetDraggingCards(targetOwner ?? undefined);
             const hadSelection = Boolean(g.selectedCard);
             g.clearCardSelection();
@@ -1923,7 +1918,7 @@ export class GameCommandProcessor
         g.appendTerminalLine('  create_card [cardid] [player-1|player-2] [character|tool|item|stadium|supporter] [cardholderid] [card_class] [has_atk_1] [has_active] [has_atk_2] [hp] [maxhp] [attached_card_id|none]');
         g.appendTerminalLine('    alias: create-card');
         g.appendTerminalLine('  boom [cardid] [asset?]');
-        g.appendTerminalLine('  view [admin|player-1|player-2]');
+        g.appendTerminalLine('  view [player-1|player-2]');
         g.appendTerminalLine('    note: "view" with no args cycles views');
         g.appendTerminalLine('  input [type] [msg] [..args]');
         g.appendTerminalLine('  input [type] [player-1|player-2] [msg] [..args]');

@@ -1,5 +1,5 @@
 import { Scene } from 'phaser';
-import { GAME_CENTER_X, GAME_CENTER_Y } from '../config';
+import { GAME_CENTER_X, GAME_CENTER_Y, GAME_HEIGHT, GAME_WIDTH, UI_FONT_FAMILY } from '../config';
 
 export class Preloader extends Scene
 {
@@ -10,39 +10,78 @@ export class Preloader extends Scene
 
     init ()
     {
-        //  We loaded this image in our Boot Scene, so we can display it here
-        this.add.image(GAME_CENTER_X, GAME_CENTER_Y, 'background');
+        this.add.image(GAME_CENTER_X, GAME_CENTER_Y, 'preloader-background')
+            .setDisplaySize(GAME_WIDTH, GAME_HEIGHT)
+            .setAlpha(0.92);
 
-        //  A simple progress bar. This is the outline of the bar.
-        this.add.rectangle(GAME_CENTER_X, GAME_CENTER_Y, 468, 32).setStrokeStyle(1, 0xffffff);
+        this.add.rectangle(GAME_CENTER_X, GAME_CENTER_Y, GAME_WIDTH, GAME_HEIGHT, 0x020617, 0.45);
 
-        //  This is the progress bar itself. It will increase in size from the left based on the % of progress.
-        const bar = this.add.rectangle(GAME_CENTER_X - 230, GAME_CENTER_Y, 4, 28, 0xffffff);
+        const title = this.add.text(GAME_CENTER_X, GAME_CENTER_Y - 90, 'Loading', {
+            fontFamily: UI_FONT_FAMILY,
+            fontSize: '40px',
+            color: '#ffffff',
+            stroke: '#000000',
+            strokeThickness: 4,
+        }).setOrigin(0.5);
 
-        //  Use the 'progress' event emitted by the LoaderPlugin to update the loading bar
+        const progressLabel = this.add.text(GAME_CENTER_X, GAME_CENTER_Y - 45, '0%', {
+            fontFamily: UI_FONT_FAMILY,
+            fontSize: '20px',
+            color: '#e2e8f0',
+        }).setOrigin(0.5);
+
+        const barWidth = 560;
+        const barHeight = 28;
+        const barX = GAME_CENTER_X - Math.round(barWidth / 2);
+
+        this.add.rectangle(GAME_CENTER_X, GAME_CENTER_Y, barWidth + 6, barHeight + 6, 0x000000, 0.45)
+            .setStrokeStyle(2, 0xffffff, 0.9);
+
+        const bar = this.add.rectangle(barX, GAME_CENTER_Y, 2, barHeight, 0x38bdf8, 1).setOrigin(0, 0.5);
+
+        const fileLabel = this.add.text(GAME_CENTER_X, GAME_CENTER_Y + 44, '', {
+            fontFamily: UI_FONT_FAMILY,
+            fontSize: '14px',
+            color: '#cbd5e1',
+        }).setOrigin(0.5);
+
         this.load.on('progress', (progress: number) => {
+            bar.width = Math.max(2, Math.round(barWidth * progress));
+            progressLabel.setText(`${Math.round(progress * 100)}%`);
+        });
 
-            //  Update the progress bar (our bar is 464px wide, so 100% = 464px)
-            bar.width = 4 + (460 * progress);
+        this.load.on('fileprogress', (file: Phaser.Loader.File) => {
+            const key = typeof file.key === 'string' ? file.key : '';
+            if (!key) {
+                return;
+            }
+            fileLabel.setText(`Loading ${key}`);
+        });
 
+        this.load.once('complete', () => {
+            fileLabel.setText('Ready');
+            this.tweens.add({
+                targets: [title, progressLabel, fileLabel, bar],
+                alpha: 0,
+                duration: 180,
+                onComplete: () => {
+                    this.scene.start('Login');
+                },
+            });
         });
     }
 
     preload ()
     {
-        //  Load the assets for the game - Replace with your own assets
         this.load.setPath('assets');
 
+        this.load.image('preloader-logo', 'logo.png');
+        this.load.image('preloader-board-preview', 'background/base_board.png');
         this.load.image('logo', 'logo.png');
-        this.load.bitmapFont('minogram', 'minogram_6x10.png', 'minogram_6x10.xml');
     }
 
     create ()
     {
-        //  When all the assets have loaded, it's often worth creating global objects here that the rest of the game can use.
-        //  For example, you can define global animations here, so we can use them in other scenes.
-
-        //  Move to the MainMenu. You could also swap this for a Scene Transition, such as a camera fade.
-        this.scene.start('MainMenu');
+        // Transition occurs in the loader complete callback.
     }
 }

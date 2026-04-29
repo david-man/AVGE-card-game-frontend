@@ -1,6 +1,6 @@
 import { Scene } from 'phaser';
 import { GAME_INPUT_OVERLAY_HEADER_LAYOUT, GAME_INPUT_SELECTION_OVERLAY, GAME_OVERLAY_DEPTHS } from '../../config';
-import { fitBitmapTextToSingleLine } from './bitmapTextFit';
+import { fitTextToSingleLine } from './textFit';
 
 export type KeiWatanabeDrumkidWorkshopItem = {
     id: string;
@@ -26,13 +26,13 @@ export class KeiWatanabeDrumkidWorkshopInputOverlay
     private scene: Scene;
     private inputLockOverlay: Phaser.GameObjects.Rectangle;
     private backdrop: Phaser.GameObjects.Rectangle | null;
-    private titleText: Phaser.GameObjects.BitmapText | null;
-    private hintText: Phaser.GameObjects.BitmapText | null;
+    private titleText: Phaser.GameObjects.Text | null;
+    private hintText: Phaser.GameObjects.Text | null;
     private cardUis: KeiItemUi[];
     private selectedCardId: string | null;
     private selectedAttack: 'atk1' | 'atk2' | null;
-    private atkButtons: Array<{ attack: 'atk1' | 'atk2'; body: Phaser.GameObjects.Rectangle; label: Phaser.GameObjects.BitmapText }>;
-    private submitButton: { body: Phaser.GameObjects.Rectangle; label: Phaser.GameObjects.BitmapText } | null;
+    private atkButtons: Array<{ attack: 'atk1' | 'atk2'; body: Phaser.GameObjects.Rectangle; label: Phaser.GameObjects.Text }>;
+    private submitButton: { body: Phaser.GameObjects.Rectangle; label: Phaser.GameObjects.Text } | null;
     private onSubmit: KeiSelectionSubmitCallback | null;
     private onCardClick: KeiCardClickCallback | null;
     private onBackgroundClick: KeiBackgroundClickCallback | null;
@@ -119,9 +119,8 @@ export class KeiWatanabeDrumkidWorkshopInputOverlay
         const cardWidth = Math.max(GAME_INPUT_SELECTION_OVERLAY.cardWidthMin, Math.round(this.scene.scale.width * GAME_INPUT_SELECTION_OVERLAY.cardWidthRatio));
         const cardHeight = Math.round(cardWidth * GAME_INPUT_SELECTION_OVERLAY.cardHeightRatio);
         const titleFontSize = Math.max(GAME_INPUT_SELECTION_OVERLAY.titleFontSizeMin, Math.round(cardWidth * GAME_INPUT_SELECTION_OVERLAY.titleFontSizeRatio));
-        const fittedTitleFontSize = fitBitmapTextToSingleLine({
+        const fittedTitleFontSize = fitTextToSingleLine({
             scene: this.scene,
-            font: 'minogram',
             text: topMessage,
             preferredSize: titleFontSize,
             minSize: 10,
@@ -138,9 +137,8 @@ export class KeiWatanabeDrumkidWorkshopInputOverlay
         const itemSubLabelFontSize = Math.max(GAME_INPUT_SELECTION_OVERLAY.itemSubLabelFontSizeMin, Math.round(cardWidth * GAME_INPUT_SELECTION_OVERLAY.itemSubLabelFontSizeRatio));
         const itemTextMaxWidth = cardWidth - GAME_INPUT_SELECTION_OVERLAY.itemTextMaxWidthPadding;
         const hintDefaultMessage = 'Select 1 character card';
-        const fittedHintFontSize = fitBitmapTextToSingleLine({
+        const fittedHintFontSize = fitTextToSingleLine({
             scene: this.scene,
-            font: 'minogram',
             text: hintDefaultMessage,
             preferredSize: hintFontSize,
             minSize: GAME_INPUT_OVERLAY_HEADER_LAYOUT.hintFitMinSize,
@@ -171,13 +169,7 @@ export class KeiWatanabeDrumkidWorkshopInputOverlay
             }
         });
 
-        this.titleText = this.scene.add.bitmapText(
-            this.scene.scale.width / 2,
-            startY,
-            'minogram',
-            topMessage,
-            fittedTitleFontSize
-        )
+        this.titleText = this.scene.add.text(this.scene.scale.width / 2, startY, topMessage).setFontSize(fittedTitleFontSize)
             .setOrigin(0.5)
             .setDepth(overlayDepth);
 
@@ -195,24 +187,22 @@ export class KeiWatanabeDrumkidWorkshopInputOverlay
                 .setStrokeStyle(3, 0xffffff, 1)
                 .setInteractive({ useHandCursor: true });
 
-            const idText = this.scene.add.bitmapText(0, -Math.round(cardHeight * 0.2), 'minogram', item.cardClassLabel, itemLabelFontSize)
+            const idText = this.scene.add.text(0, -Math.round(cardHeight * 0.2), item.cardClassLabel).setFontSize(itemLabelFontSize)
                 .setOrigin(0.5)
-                .setMaxWidth(itemTextMaxWidth);
-            idText.setFontSize(fitBitmapTextToSingleLine({
+                .setWordWrapWidth(itemTextMaxWidth);
+            idText.setFontSize(fitTextToSingleLine({
                 scene: this.scene,
-                font: 'minogram',
                 text: item.cardClassLabel,
                 preferredSize: itemLabelFontSize,
                 minSize: 9,
                 maxWidth: itemTextMaxWidth
             }));
 
-            const typeText = this.scene.add.bitmapText(0, Math.round(cardHeight * 0.23), 'minogram', item.cardTypeLabel, itemSubLabelFontSize)
+            const typeText = this.scene.add.text(0, Math.round(cardHeight * 0.23), item.cardTypeLabel).setFontSize(itemSubLabelFontSize)
                 .setOrigin(0.5)
-                .setMaxWidth(itemTextMaxWidth);
-            typeText.setFontSize(fitBitmapTextToSingleLine({
+                .setWordWrapWidth(itemTextMaxWidth);
+            typeText.setFontSize(fitTextToSingleLine({
                 scene: this.scene,
-                font: 'minogram',
                 text: item.cardTypeLabel,
                 preferredSize: itemSubLabelFontSize,
                 minSize: 8,
@@ -231,13 +221,7 @@ export class KeiWatanabeDrumkidWorkshopInputOverlay
             this.cardUis.push({ item, container, body });
         });
 
-        this.hintText = this.scene.add.bitmapText(
-            this.scene.scale.width / 2,
-            startY + cardHeight + rowGap,
-            'minogram',
-            hintDefaultMessage,
-            fittedHintFontSize
-        )
+        this.hintText = this.scene.add.text(this.scene.scale.width / 2, startY + cardHeight + rowGap, hintDefaultMessage).setFontSize(fittedHintFontSize)
             .setOrigin(0.5)
             .setDepth(overlayDepth);
 
@@ -253,7 +237,7 @@ export class KeiWatanabeDrumkidWorkshopInputOverlay
                 .setDepth(overlayDepth)
                 .setInteractive({ useHandCursor: true })
                 .setVisible(false);
-            const label = this.scene.add.bitmapText(x, attackY, 'minogram', attack.toUpperCase(), Math.max(12, Math.round(hintFontSize * 0.9)))
+            const label = this.scene.add.text(x, attackY, attack.toUpperCase()).setFontSize(Math.max(12, Math.round(hintFontSize * 0.9)))
                 .setOrigin(0.5)
                 .setDepth(overlayDepth + 1)
                 .setVisible(false);
@@ -276,7 +260,7 @@ export class KeiWatanabeDrumkidWorkshopInputOverlay
             .setStrokeStyle(2, 0xffffff, 0.5)
             .setDepth(overlayDepth)
             .setInteractive({ useHandCursor: true });
-        const submitLabel = this.scene.add.bitmapText(this.scene.scale.width / 2, submitY, 'minogram', 'SUBMIT', Math.max(GAME_INPUT_SELECTION_OVERLAY.submitLabelFontSizeMin, Math.round(cardWidth * GAME_INPUT_SELECTION_OVERLAY.submitLabelFontSizeRatio)))
+        const submitLabel = this.scene.add.text(this.scene.scale.width / 2, submitY, 'SUBMIT').setFontSize(Math.max(GAME_INPUT_SELECTION_OVERLAY.submitLabelFontSizeMin, Math.round(cardWidth * GAME_INPUT_SELECTION_OVERLAY.submitLabelFontSizeRatio)))
             .setOrigin(0.5)
             .setDepth(overlayDepth + 1);
 
@@ -357,9 +341,8 @@ export class KeiWatanabeDrumkidWorkshopInputOverlay
         }
 
         this.hintText.setText(text);
-        const fittedSize = fitBitmapTextToSingleLine({
+        const fittedSize = fitTextToSingleLine({
             scene: this.scene,
-            font: 'minogram',
             text,
             preferredSize: this.hintPreferredFontSize,
             minSize: GAME_INPUT_OVERLAY_HEADER_LAYOUT.hintFitMinSize,

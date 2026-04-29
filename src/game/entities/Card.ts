@@ -10,7 +10,7 @@ import {
     CARD_VISUALS,
     UI_SCALE
 } from '../config';
-import { fitBitmapTextToMultiLine, fitBitmapTextToSingleLine } from '../ui/overlays/bitmapTextFit';
+import { fitTextToMultiLine, fitTextToSingleLine, type FitTextMultiLineResult } from '../ui/overlays/textFit';
 
 export type CardType = 'character' | 'tool' | 'item' | 'stadium' | 'supporter';
 export type PlayerId = 'p1' | 'p2';
@@ -42,6 +42,22 @@ export type CardOptions = {
     atk_2_cost?: number;
 };
 
+type CardTextLayoutCache = {
+    boundsWidth: number;
+    idFontSize: number;
+    typeFontSize: number;
+    hpFontSize: number;
+    typeText: string;
+    hpText: string;
+    statusText: string;
+    classFit: FitTextMultiLineResult;
+    classLineCount: number;
+    typeFitSize: number;
+    hpFitSize: number;
+    statusBaseSize: number;
+    statusFitSize: number;
+};
+
 export class Card
 {
     private readonly scene: Scene;
@@ -51,6 +67,7 @@ export class Card
     private avgeCardType: string;
     readonly ownerId: PlayerId;
     readonly cardClass: string;
+    readonly displayCardClass: string;
     readonly hasAtk1: boolean;
     readonly hasAtk2: boolean;
     readonly hasActive: boolean;
@@ -64,14 +81,14 @@ export class Card
     readonly body: Phaser.GameObjects.Rectangle;
     readonly baseColor: number;
 
-    private readonly baseIdFontSize: number;
+    private readonly baseClassFontSize: number;
     private readonly baseTypeFontSize: number;
     private readonly baseHpFontSize: number;
 
-    private idLabel: Phaser.GameObjects.BitmapText;
-    private typeLabel: Phaser.GameObjects.BitmapText;
-    private hpLabel: Phaser.GameObjects.BitmapText;
-        private statusLabel: Phaser.GameObjects.BitmapText;
+    private idLabel: Phaser.GameObjects.Text;
+    private typeLabel: Phaser.GameObjects.Text;
+    private hpLabel: Phaser.GameObjects.Text;
+        private statusLabel: Phaser.GameObjects.Text;
     private turnedOver: boolean;
     private externallyVisible: boolean;
     private isFlipping: boolean;
@@ -84,6 +101,7 @@ export class Card
     private currentStrokeWidth: number;
     private selectionTween?: Phaser.Tweens.Tween;
     private strokeTween?: Phaser.Tweens.Tween;
+    private textLayoutCache: CardTextLayoutCache | null;
 
     constructor (scene: Scene, options: CardOptions)
     {
@@ -94,6 +112,7 @@ export class Card
         this.avgeCardType = this.normalizeAvgeCardType(options.AVGECardType);
         this.ownerId = options.ownerId;
         this.cardClass = options.AVGECardClass;
+        this.displayCardClass = this.normalizeCardClassDisplayLabel(this.cardClass);
         this.hasAtk1 = options.has_atk_1 ?? false;
         this.hasAtk2 = options.has_atk_2 ?? false;
         this.hasActive = options.has_active ?? false;
@@ -115,7 +134,7 @@ export class Card
             ? options.active_name.trim()
             : null;
         this.baseColor = options.color;
-        this.baseIdFontSize = Math.max(CARD_TEXT_LAYOUT.minIdFontSize, Math.round(CARD_TEXT_LAYOUT.baseIdFontSize * UI_SCALE));
+        this.baseClassFontSize = Math.max(CARD_TEXT_LAYOUT.classMinFontSize, Math.round(CARD_TEXT_LAYOUT.classBaseFontSize * UI_SCALE));
         this.baseTypeFontSize = Math.max(CARD_TEXT_LAYOUT.minTypeFontSize + 1, Math.round(CARD_TEXT_LAYOUT.baseTypeFontSize * UI_SCALE));
         this.baseHpFontSize = Math.max(CARD_TEXT_LAYOUT.minTypeFontSize, Math.round(CARD_TEXT_LAYOUT.baseHpFontSize * UI_SCALE));
         this.isFlipping = false;
@@ -126,25 +145,26 @@ export class Card
         this.borderColor = this.resolveBorderColorForAvgeCardType(this.avgeCardType);
         this.baseScale = CARD_DEFAULTS.baseScale;
         this.currentStrokeWidth = CARD_BORDER_WIDTH;
+        this.textLayoutCache = null;
 
         this.body = scene.add.rectangle(options.x, options.y, options.width, options.height, options.color, 1)
             .setStrokeStyle(CARD_BORDER_WIDTH, this.getCurrentBorderColor(), 1)
             .setInteractive({ draggable: true, useHandCursor: true });
 
-        this.idLabel = scene.add.bitmapText(options.x, options.y - CARD_TEXT_LAYOUT.idYOffset, 'minogram', this.cardClass, this.baseIdFontSize)
+        this.idLabel = scene.add.text(options.x, options.y - CARD_TEXT_LAYOUT.classYOffset, this.displayCardClass).setFontSize(this.baseClassFontSize)
             .setOrigin(0.5)
-            .setCenterAlign()
+            .setAlign('center')
             .setTint(0xffffff);
 
-        this.typeLabel = scene.add.bitmapText(options.x, options.y + CARD_TEXT_LAYOUT.typeYOffset, 'minogram', this.resolveDisplayTypeLabel(), this.baseTypeFontSize)
+        this.typeLabel = scene.add.text(options.x, options.y + CARD_TEXT_LAYOUT.typeYOffset, this.resolveDisplayTypeLabel()).setFontSize(this.baseTypeFontSize)
             .setOrigin(0.5, 1)
             .setTint(0xcde7ff);
 
-        this.hpLabel = scene.add.bitmapText(options.x, options.y, 'minogram', '', this.baseHpFontSize)
+        this.hpLabel = scene.add.text(options.x, options.y, '').setFontSize(this.baseHpFontSize)
             .setOrigin(0, 0)
             .setTint(0xffffff);
 
-        this.statusLabel = scene.add.bitmapText(options.x, options.y, 'minogram', '', this.baseHpFontSize)
+        this.statusLabel = scene.add.text(options.x, options.y, '').setFontSize(this.baseHpFontSize)
             .setOrigin(0, 0)
             .setTint(0xe2e8f0);
 
@@ -169,6 +189,16 @@ export class Card
 
         const normalized = rawType.trim().toUpperCase();
         return normalized.length > 0 ? normalized : 'NONE';
+    }
+
+    private normalizeCardClassDisplayLabel (rawLabel: string): string
+    {
+        return rawLabel
+            .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+            .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+            .replace(/[_-]+/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
     }
 
     private resolveBorderColorForAvgeCardType (avgeCardType: string): number
@@ -574,69 +604,107 @@ export class Card
 
     redrawMarks (): void
     {
-        const idFontSize = Math.max(Math.round(CARD_TEXT_LAYOUT.minIdFontSize * UI_SCALE), Math.round(this.baseIdFontSize * this.body.scaleY));
+        const idFontSize = Math.max(Math.round(CARD_TEXT_LAYOUT.classMinFontSize * UI_SCALE), Math.round(this.baseClassFontSize * this.body.scaleY));
         const typeFontSize = Math.max(Math.round(CARD_TEXT_LAYOUT.minTypeFontSize * UI_SCALE), Math.round(this.baseTypeFontSize * this.body.scaleY));
         const hpFontSize = Math.max(Math.round(CARD_TEXT_LAYOUT.minHpFontSize * UI_SCALE), Math.round(this.baseHpFontSize * this.body.scaleY));
         const bounds = this.body.getBounds();
+        const boundsWidth = Math.max(1, Math.round(bounds.width));
         const hpPadding = Math.max(CARD_TEXT_LAYOUT.hpPadding, Math.round(CARD_TEXT_LAYOUT.hpPadding * this.body.scaleY));
+        const typeText = this.typeLabel.text;
+        const hpText = this.hpLabel.text;
+        const statusText = this.statusLabel.text;
+        const statusBaseSize = Math.max(
+            Math.round(CARD_TEXT_LAYOUT.minTypeFontSize * UI_SCALE),
+            Math.round(hpFontSize * CARD_TEXT_LAYOUT.statusBaseSizeRatioToHp)
+        );
 
-        const classFit = fitBitmapTextToMultiLine({
-            scene: this.scene,
-            font: 'minogram',
-            text: this.cardClass,
-            preferredSize: idFontSize,
-            // Long card names (for example "Steinert Practice Room") need a
-            // lower font-size floor and slightly narrower width budget to stay
-            // inside the card border at all scales.
-            minSize: Math.max(CARD_TEXT_LAYOUT.classFitMinSizeFloor, Math.round(idFontSize * CARD_TEXT_LAYOUT.classFitMinSizeRatio)),
-            maxWidth: Math.max(CARD_TEXT_LAYOUT.classFitMaxWidthMin, Math.round(bounds.width * CARD_TEXT_LAYOUT.classFitMaxWidthRatio)),
-            maxLines: CARD_TEXT_LAYOUT.classFitMaxLines
-        });
+        const cache = this.textLayoutCache;
+        const shouldRecomputeLayout = !cache
+            || cache.boundsWidth !== boundsWidth
+            || cache.idFontSize !== idFontSize
+            || cache.typeFontSize !== typeFontSize
+            || cache.hpFontSize !== hpFontSize
+            || cache.typeText !== typeText
+            || cache.hpText !== hpText
+            || cache.statusText !== statusText;
 
-        const classLineCount = classFit.lineCount > 0 ? classFit.lineCount : 1;
-        const yOffset = (CARD_TEXT_LAYOUT.idYOffset + (classLineCount > 1 ? CARD_TEXT_LAYOUT.classTwoLineYOffsetBoost : 0)) * this.body.scaleY;
+        if (shouldRecomputeLayout) {
+            const classFit = fitTextToMultiLine({
+                scene: this.scene,
+                text: this.displayCardClass,
+                preferredSize: idFontSize,
+                // Long card names (for example "Steinert Practice Room") need a
+                // lower font-size floor and slightly narrower width budget to stay
+                // inside the card border at all scales.
+                minSize: Math.max(CARD_TEXT_LAYOUT.classFitMinSizeFloor, Math.round(idFontSize * CARD_TEXT_LAYOUT.classFitMinSizeRatio)),
+                maxWidth: Math.max(CARD_TEXT_LAYOUT.classFitMaxWidthMin, Math.round(bounds.width * CARD_TEXT_LAYOUT.classFitMaxWidthRatio)),
+                maxLines: CARD_TEXT_LAYOUT.classFitMaxLines
+            });
+
+            const classLineCount = classFit.lineCount > 0 ? classFit.lineCount : 1;
+            const typeFitSize = fitTextToSingleLine({
+                scene: this.scene,
+                text: typeText,
+                preferredSize: typeFontSize,
+                minSize: Math.max(Math.round(CARD_TEXT_LAYOUT.minTypeFontSize * UI_SCALE), Math.round(typeFontSize * CARD_TEXT_LAYOUT.typeFitMinSizeRatio)),
+                maxWidth: Math.max(CARD_TEXT_LAYOUT.typeFitMaxWidthMin, Math.round(bounds.width * CARD_TEXT_LAYOUT.typeFitMaxWidthRatio))
+            });
+            const hpFitSize = fitTextToSingleLine({
+                scene: this.scene,
+                text: hpText,
+                preferredSize: hpFontSize,
+                minSize: Math.max(Math.round(CARD_TEXT_LAYOUT.minHpFontSize * UI_SCALE), Math.round(hpFontSize * CARD_TEXT_LAYOUT.hpFitMinSizeRatio)),
+                maxWidth: Math.max(CARD_TEXT_LAYOUT.hpFitMaxWidthMin, Math.round(bounds.width * CARD_TEXT_LAYOUT.hpFitMaxWidthRatio))
+            });
+            const statusFitSize = fitTextToSingleLine({
+                scene: this.scene,
+                text: statusText,
+                preferredSize: statusBaseSize,
+                minSize: Math.max(Math.round(CARD_TEXT_LAYOUT.minTypeFontSize * UI_SCALE), Math.round(statusBaseSize * CARD_TEXT_LAYOUT.statusFitMinSizeRatio)),
+                maxWidth: Math.max(CARD_TEXT_LAYOUT.statusFitMaxWidthMin, Math.round(bounds.width * CARD_TEXT_LAYOUT.statusFitMaxWidthRatio))
+            });
+
+            this.textLayoutCache = {
+                boundsWidth,
+                idFontSize,
+                typeFontSize,
+                hpFontSize,
+                typeText,
+                hpText,
+                statusText,
+                classFit,
+                classLineCount,
+                typeFitSize,
+                hpFitSize,
+                statusBaseSize,
+                statusFitSize,
+            };
+        }
+
+        const resolvedLayout = this.textLayoutCache;
+        if (!resolvedLayout) {
+            return;
+        }
+
+        const yOffset = (CARD_TEXT_LAYOUT.classYOffset + (resolvedLayout.classLineCount > 1 ? CARD_TEXT_LAYOUT.classTwoLineYOffsetBoost : 0)) * this.body.scaleY;
         const bottomTypePadding = CARD_TEXT_LAYOUT.typeYOffset * this.body.scaleY;
 
         this.idLabel.setPosition(Math.round(this.body.x), Math.round(this.body.y - yOffset));
         this.typeLabel.setPosition(Math.round(this.body.x), Math.round(bounds.bottom - bottomTypePadding));
 
         this.idLabel.setScale(1);
-        this.idLabel.setText(classFit.text);
-        this.idLabel.setFontSize(classFit.fontSize);
+        this.idLabel.setText(resolvedLayout.classFit.text);
+        this.idLabel.setFontSize(resolvedLayout.classFit.fontSize);
 
         this.typeLabel.setScale(1);
-        this.typeLabel.setFontSize(typeFontSize);
-        this.typeLabel.setFontSize(fitBitmapTextToSingleLine({
-            scene: this.scene,
-            font: 'minogram',
-            text: this.typeLabel.text,
-            preferredSize: typeFontSize,
-            minSize: Math.max(Math.round(CARD_TEXT_LAYOUT.minTypeFontSize * UI_SCALE), Math.round(typeFontSize * CARD_TEXT_LAYOUT.typeFitMinSizeRatio)),
-            maxWidth: Math.max(CARD_TEXT_LAYOUT.typeFitMaxWidthMin, Math.round(bounds.width * CARD_TEXT_LAYOUT.typeFitMaxWidthRatio))
-        }));
+        this.typeLabel.setFontSize(resolvedLayout.typeFitSize);
 
         this.hpLabel.setScale(1);
-        this.hpLabel.setFontSize(hpFontSize);
-        this.hpLabel.setFontSize(fitBitmapTextToSingleLine({
-            scene: this.scene,
-            font: 'minogram',
-            text: this.hpLabel.text,
-            preferredSize: hpFontSize,
-            minSize: Math.max(Math.round(CARD_TEXT_LAYOUT.minHpFontSize * UI_SCALE), Math.round(hpFontSize * CARD_TEXT_LAYOUT.hpFitMinSizeRatio)),
-            maxWidth: Math.max(CARD_TEXT_LAYOUT.hpFitMaxWidthMin, Math.round(bounds.width * CARD_TEXT_LAYOUT.hpFitMaxWidthRatio))
-        }));
+        this.hpLabel.setFontSize(resolvedLayout.hpFitSize);
         this.hpLabel.setPosition(Math.round(bounds.left + hpPadding), Math.round(bounds.top + hpPadding));
 
         this.statusLabel.setScale(1);
-        this.statusLabel.setFontSize(Math.max(Math.round(CARD_TEXT_LAYOUT.minTypeFontSize * UI_SCALE), Math.round(hpFontSize * CARD_TEXT_LAYOUT.statusBaseSizeRatioToHp)));
-        this.statusLabel.setFontSize(fitBitmapTextToSingleLine({
-            scene: this.scene,
-            font: 'minogram',
-            text: this.statusLabel.text,
-            preferredSize: this.statusLabel.fontSize,
-            minSize: Math.max(Math.round(CARD_TEXT_LAYOUT.minTypeFontSize * UI_SCALE), Math.round(this.statusLabel.fontSize * CARD_TEXT_LAYOUT.statusFitMinSizeRatio)),
-            maxWidth: Math.max(CARD_TEXT_LAYOUT.statusFitMaxWidthMin, Math.round(bounds.width * CARD_TEXT_LAYOUT.statusFitMaxWidthRatio))
-        }));
+        this.statusLabel.setFontSize(resolvedLayout.statusFitSize);
         this.statusLabel.setPosition(
             Math.round(bounds.left + hpPadding),
             Math.round(this.hpLabel.y + this.hpLabel.height + Math.max(CARD_TEXT_LAYOUT.statusGapFromHpMin, Math.round(hpPadding * CARD_TEXT_LAYOUT.statusGapFromHpRatio)))

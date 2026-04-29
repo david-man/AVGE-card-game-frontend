@@ -1,6 +1,6 @@
 import { Scene } from 'phaser';
 import { GAME_INPUT_OVERLAY_HEADER_LAYOUT, GAME_INPUT_SELECTION_OVERLAY, GAME_OVERLAY_DEPTHS } from '../../config';
-import { fitBitmapTextToMultiLine, fitBitmapTextToSingleLine } from './bitmapTextFit';
+import { fitTextToMultiLine, fitTextToSingleLine } from './textFit';
 
 type SelectionSubmitCallback = (orderedSelections: string[]) => void;
 type SelectionCardClickCallback = (cardId: string) => void;
@@ -21,8 +21,8 @@ type SelectionItemUi = {
     selectable: boolean;
     container: Phaser.GameObjects.Container;
     body: Phaser.GameObjects.Rectangle;
-    label: Phaser.GameObjects.BitmapText;
-    subLabel?: Phaser.GameObjects.BitmapText;
+    label: Phaser.GameObjects.Text;
+    subLabel?: Phaser.GameObjects.Text;
     assignmentContainer: Phaser.GameObjects.Container;
     assignmentObjects: Phaser.GameObjects.GameObject[];
 };
@@ -33,9 +33,9 @@ export class SelectionInputOverlay
     private inputLockOverlay: Phaser.GameObjects.Rectangle;
     private selectionItemsUi: SelectionItemUi[];
     private selectionBackdrop: Phaser.GameObjects.Rectangle | null;
-    private selectionSubmitButton: { body: Phaser.GameObjects.Rectangle; label: Phaser.GameObjects.BitmapText } | null;
-    private selectionHintText: Phaser.GameObjects.BitmapText | null;
-    private selectionTitleText: Phaser.GameObjects.BitmapText | null;
+    private selectionSubmitButton: { body: Phaser.GameObjects.Rectangle; label: Phaser.GameObjects.Text } | null;
+    private selectionHintText: Phaser.GameObjects.Text | null;
+    private selectionTitleText: Phaser.GameObjects.Text | null;
     private selectionByIndex: Array<string | null>;
     private activeExpandedItemContainer: Phaser.GameObjects.Container | null;
     private allowRepeat: boolean;
@@ -152,9 +152,8 @@ export class SelectionInputOverlay
         const cardWidth = Math.max(GAME_INPUT_SELECTION_OVERLAY.cardWidthMin, Math.round(this.scene.scale.width * GAME_INPUT_SELECTION_OVERLAY.cardWidthRatio));
         const cardHeight = Math.round(cardWidth * GAME_INPUT_SELECTION_OVERLAY.cardHeightRatio);
         const titleFontSize = Math.max(GAME_INPUT_SELECTION_OVERLAY.titleFontSizeMin, Math.round(cardWidth * GAME_INPUT_SELECTION_OVERLAY.titleFontSizeRatio));
-        const fittedTitleFontSize = fitBitmapTextToSingleLine({
+        const fittedTitleFontSize = fitTextToSingleLine({
             scene: this.scene,
-            font: 'minogram',
             text: topMessage,
             preferredSize: titleFontSize,
             minSize: 10,
@@ -177,9 +176,8 @@ export class SelectionInputOverlay
         const hintMessage = allowNone
             ? 'Click items to fill slots in order. Submit auto-fills missing slots as none.'
             : 'Click items to fill slots in order. Click a {n} chip to remove that slot.';
-        const fittedHintFontSize = fitBitmapTextToSingleLine({
+        const fittedHintFontSize = fitTextToSingleLine({
             scene: this.scene,
-            font: 'minogram',
             text: hintMessage,
             preferredSize: hintFontSize,
             minSize: GAME_INPUT_OVERLAY_HEADER_LAYOUT.hintFitMinSize,
@@ -210,13 +208,7 @@ export class SelectionInputOverlay
         const rowCount = Math.max(1, Math.ceil(displayItems.length / columnCount));
         const displayRowY = startY;
 
-        this.selectionTitleText = this.scene.add.bitmapText(
-            this.scene.scale.width / 2,
-            displayRowY,
-            'minogram',
-            topMessage,
-            fittedTitleFontSize
-        )
+        this.selectionTitleText = this.scene.add.text(this.scene.scale.width / 2, displayRowY, topMessage).setFontSize(fittedTitleFontSize)
             .setOrigin(0.5)
             .setDepth(overlayDepth);
 
@@ -239,31 +231,23 @@ export class SelectionInputOverlay
             const primaryLabel = isNoneOption
                 ? 'None'
                 : (item.isCard ? (item.cardClassLabel ?? item.id) : item.id);
-            const primaryLabelLayout = fitBitmapTextToMultiLine({
+            const primaryLabelLayout = fitTextToMultiLine({
                 scene: this.scene,
-                font: 'minogram',
                 text: primaryLabel,
                 preferredSize: itemLabelFontSize,
                 minSize: 9,
                 maxWidth: itemTextMaxWidth,
                 maxLines: item.isCard ? 3 : (isNoneOption ? 1 : 5)
             });
-            const label = this.scene.add.bitmapText(
-                0,
-                -Math.round(cardHeight * GAME_INPUT_SELECTION_OVERLAY.itemLabelYOffsetRatio),
-                'minogram',
-                primaryLabelLayout.text,
-                primaryLabelLayout.fontSize
-            )
+            const label = this.scene.add.text(0, -Math.round(cardHeight * GAME_INPUT_SELECTION_OVERLAY.itemLabelYOffsetRatio), primaryLabelLayout.text).setFontSize(primaryLabelLayout.fontSize)
                 .setOrigin(0.5);
             if (!item.selectable) {
                 label.setTint(0xcbd5e1);
             }
 
             const subLabelText = `${item.cardTypeLabel ?? 'CARD'} | ${item.id}`;
-            const subLabelLayout = fitBitmapTextToMultiLine({
+            const subLabelLayout = fitTextToMultiLine({
                 scene: this.scene,
-                font: 'minogram',
                 text: subLabelText,
                 preferredSize: itemSubLabelFontSize,
                 minSize: 8,
@@ -271,13 +255,7 @@ export class SelectionInputOverlay
                 maxLines: 3
             });
             const subLabel = item.isCard
-                ? this.scene.add.bitmapText(
-                    0,
-                    Math.round(cardHeight * GAME_INPUT_SELECTION_OVERLAY.itemSubLabelYOffsetRatio),
-                    'minogram',
-                    subLabelLayout.text,
-                    subLabelLayout.fontSize
-                )
+                ? this.scene.add.text(0, Math.round(cardHeight * GAME_INPUT_SELECTION_OVERLAY.itemSubLabelYOffsetRatio), subLabelLayout.text).setFontSize(subLabelLayout.fontSize)
                     .setOrigin(0.5)
                 : undefined;
             if (subLabel && !item.selectable) {
@@ -339,13 +317,7 @@ export class SelectionInputOverlay
         const gridBottomY = displayRowY + ((rowCount - 1) * (cardHeight + rowGap)) + Math.round(cardHeight / 2);
         const nextRowY = gridBottomY + Math.round(cardHeight / 2) + (rowGap * GAME_INPUT_SELECTION_OVERLAY.numbersRowGapMultiplier);
 
-        this.selectionHintText = this.scene.add.bitmapText(
-            this.scene.scale.width / 2,
-            nextRowY,
-            'minogram',
-            hintMessage,
-            fittedHintFontSize
-        )
+        this.selectionHintText = this.scene.add.text(this.scene.scale.width / 2, nextRowY, hintMessage).setFontSize(fittedHintFontSize)
             .setOrigin(0.5)
             .setDepth(overlayDepth);
 
@@ -357,7 +329,7 @@ export class SelectionInputOverlay
             .setStrokeStyle(2, 0xffffff, 0.5)
             .setDepth(overlayDepth)
             .setInteractive({ useHandCursor: true });
-        const submitLabel = this.scene.add.bitmapText(this.scene.scale.width / 2, submitY, 'minogram', 'SUBMIT', submitLabelFontSize)
+        const submitLabel = this.scene.add.text(this.scene.scale.width / 2, submitY, 'SUBMIT').setFontSize(submitLabelFontSize)
             .setOrigin(0.5)
             .setDepth(overlayDepth + 1);
 
@@ -448,7 +420,7 @@ export class SelectionInputOverlay
         const chipFontSize = Math.max(9, Math.floor(this.assignmentChipFontSize));
 
         if (!ui.selectable) {
-            const blocked = this.scene.add.bitmapText(0, 0, 'minogram', 'X', chipFontSize)
+            const blocked = this.scene.add.text(0, 0, 'X').setFontSize(chipFontSize)
                 .setOrigin(0.5)
                 .setTint(0x94a3b8);
             ui.assignmentContainer.add(blocked);
@@ -458,7 +430,7 @@ export class SelectionInputOverlay
         }
 
         if (assignedIndexes.length === 0) {
-            const empty = this.scene.add.bitmapText(0, 0, 'minogram', '-', chipFontSize)
+            const empty = this.scene.add.text(0, 0, '-').setFontSize(chipFontSize)
                 .setOrigin(0.5)
                 .setTint(0xfff3b0);
             ui.assignmentContainer.add(empty);
@@ -489,7 +461,7 @@ export class SelectionInputOverlay
                 this.removeAssignmentIndex(slotIndex);
             });
 
-            const chipLabel = this.scene.add.bitmapText(chipCenterX, 0, 'minogram', text, chipFontSize)
+            const chipLabel = this.scene.add.text(chipCenterX, 0, text).setFontSize(chipFontSize)
                 .setOrigin(0.5)
                 .setTint(0xfff3b0);
 
@@ -554,9 +526,8 @@ export class SelectionInputOverlay
         }
 
         this.selectionHintText.setText(text);
-        const fittedSize = fitBitmapTextToSingleLine({
+        const fittedSize = fitTextToSingleLine({
             scene: this.scene,
-            font: 'minogram',
             text,
             preferredSize: this.hintPreferredFontSize,
             minSize: GAME_INPUT_OVERLAY_HEADER_LAYOUT.hintFitMinSize,

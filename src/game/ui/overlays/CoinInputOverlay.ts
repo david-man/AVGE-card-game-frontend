@@ -1,6 +1,6 @@
 import { Scene } from 'phaser';
 import { GAME_INPUT_OVERLAY_HEADER_LAYOUT, GAME_OVERLAY_DEPTHS } from '../../config';
-import { fitBitmapTextToSingleLine } from './bitmapTextFit';
+import { fitTextToSingleLine } from './textFit';
 
 const COIN_FACE_TEXTURE_BY_RESULT: Record<'heads' | 'tails', string> = {
     heads: 'coin-heads',
@@ -20,8 +20,8 @@ export class CoinInputOverlay
     private scene: Scene;
     private inputLockOverlay: Phaser.GameObjects.Rectangle;
     private image: Phaser.GameObjects.Image | null;
-    private titleText: Phaser.GameObjects.BitmapText | null;
-    private hintText: Phaser.GameObjects.BitmapText | null;
+    private titleText: Phaser.GameObjects.Text | null;
+    private hintText: Phaser.GameObjects.Text | null;
     private tickerEvent: Phaser.Time.TimerEvent | null;
     private isFlipping: boolean;
     private awaitingConfirm: boolean;
@@ -88,9 +88,8 @@ export class CoinInputOverlay
             GAME_INPUT_OVERLAY_HEADER_LAYOUT.titleFontSizeMin,
             Math.round(this.scene.scale.width * GAME_INPUT_OVERLAY_HEADER_LAYOUT.titleFontSizeRatio)
         );
-        const fittedTitleFontSize = fitBitmapTextToSingleLine({
+        const fittedTitleFontSize = fitTextToSingleLine({
             scene: this.scene,
-            font: 'minogram',
             text: topMessage,
             preferredSize: titleFontSize,
             minSize: 10,
@@ -105,9 +104,8 @@ export class CoinInputOverlay
             GAME_INPUT_OVERLAY_HEADER_LAYOUT.hintFontSizeMin,
             Math.round(this.scene.scale.width * GAME_INPUT_OVERLAY_HEADER_LAYOUT.hintFontSizeRatio)
         );
-        const fittedHintFontSize = fitBitmapTextToSingleLine({
+        const fittedHintFontSize = fitTextToSingleLine({
             scene: this.scene,
-            font: 'minogram',
             text: hintMessage,
             preferredSize: this.hintPreferredFontSize,
             minSize: GAME_INPUT_OVERLAY_HEADER_LAYOUT.hintFitMinSize,
@@ -123,23 +121,11 @@ export class CoinInputOverlay
             .setDepth(overlayDepth)
             .setInteractive({ useHandCursor: true });
 
-        this.titleText = this.scene.add.bitmapText(
-            this.scene.scale.width / 2,
-            this.scene.scale.height / 2 - Math.round(coinSize / 2) - titleGap,
-            'minogram',
-            topMessage,
-            fittedTitleFontSize
-        )
+        this.titleText = this.scene.add.text(this.scene.scale.width / 2, this.scene.scale.height / 2 - Math.round(coinSize / 2) - titleGap, topMessage).setFontSize(fittedTitleFontSize)
             .setOrigin(0.5)
             .setDepth(overlayDepth);
 
-        this.hintText = this.scene.add.bitmapText(
-            this.scene.scale.width / 2,
-            this.scene.scale.height / 2 + Math.round(coinSize * 0.8),
-            'minogram',
-            hintMessage,
-            fittedHintFontSize
-        )
+        this.hintText = this.scene.add.text(this.scene.scale.width / 2, this.scene.scale.height / 2 + Math.round(coinSize * 0.8), hintMessage).setFontSize(fittedHintFontSize)
             .setOrigin(0.5)
             .setDepth(overlayDepth);
 
@@ -197,9 +183,8 @@ export class CoinInputOverlay
                             if (this.hintText) {
                                 const confirmHint = 'CLICK AGAIN TO CONFIRM';
                                 this.hintText.setText(confirmHint);
-                                this.hintText.setFontSize(fitBitmapTextToSingleLine({
+                                this.hintText.setFontSize(fitTextToSingleLine({
                                     scene: this.scene,
-                                    font: 'minogram',
                                     text: confirmHint,
                                     preferredSize: this.hintPreferredFontSize,
                                     minSize: GAME_INPUT_OVERLAY_HEADER_LAYOUT.hintFitMinSize,

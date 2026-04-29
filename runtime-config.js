@@ -15,4 +15,15 @@
     if (typeof windowObj.AVGE_BACKEND_PROTOCOL_URL !== 'string') {
         windowObj.AVGE_BACKEND_PROTOCOL_URL = 'http://localhost:5500/protocol';
     }
+
+    // Optional runtime font overrides.
+    // AVGE_FONT_TTF: local assets filename, e.g. "MyFont.ttf"
+    // AVGE_FONT_STYLESHEET: URL or full <link ... href="..."> snippet
+    if (typeof windowObj.AVGE_FONT_TTF !== 'string') {
+        windowObj.AVGE_FONT_TTF = '';
+    }
+
+    if (typeof windowObj.AVGE_FONT_STYLESHEET !== 'string') {
+        windowObj.AVGE_FONT_STYLESHEET = '';
+    }
 })(window);

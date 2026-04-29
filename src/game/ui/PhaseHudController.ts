@@ -6,20 +6,20 @@ import {
     PHASE_HUD_TEXT_LAYOUT,
     UI_SCALE
 } from '../config';
-import { fitBitmapTextToSingleLine } from './overlays/bitmapTextFit';
+import { fitTextToSingleLine } from './overlays/textFit';
 
-type ViewMode = PlayerId | 'admin' | 'spectator';
+type ViewMode = PlayerId | 'spectator';
 type GamePhase = 'no-input' | 'phase2' | 'atk' | 'init';
 
 type PhaseHudUi = {
     background: Phaser.GameObjects.Rectangle;
-    title: Phaser.GameObjects.BitmapText;
-    roundLabel: Phaser.GameObjects.BitmapText;
-    roundValue: Phaser.GameObjects.BitmapText;
-    phaseLabel: Phaser.GameObjects.BitmapText;
-    phaseValue: Phaser.GameObjects.BitmapText;
-    turnLabel: Phaser.GameObjects.BitmapText;
-    turnValue: Phaser.GameObjects.BitmapText;
+    title: Phaser.GameObjects.Text;
+    roundLabel: Phaser.GameObjects.Text;
+    roundValue: Phaser.GameObjects.Text;
+    phaseLabel: Phaser.GameObjects.Text;
+    phaseValue: Phaser.GameObjects.Text;
+    turnLabel: Phaser.GameObjects.Text;
+    turnValue: Phaser.GameObjects.Text;
 };
 
 export class PhaseHudController
@@ -64,37 +64,37 @@ export class PhaseHudController
             .setStrokeStyle(2, 0xffffff, 0.45)
             .setDepth(314);
 
-        const title = this.scene.add.bitmapText(0, 0, 'minogram', 'GAME STATE', fontSize)
+        const title = this.scene.add.text(0, 0, 'GAME STATE').setFontSize(fontSize)
             .setOrigin(0, 0)
             .setTint(0xffffff)
             .setDepth(315);
 
-        const phaseLabel = this.scene.add.bitmapText(0, 0, 'minogram', 'phase:', fontSize)
+        const phaseLabel = this.scene.add.text(0, 0, 'phase:').setFontSize(fontSize)
             .setOrigin(0, 0)
             .setTint(0xffffff)
             .setDepth(315);
 
-        const roundLabel = this.scene.add.bitmapText(0, 0, 'minogram', 'round:', fontSize)
+        const roundLabel = this.scene.add.text(0, 0, 'round:').setFontSize(fontSize)
             .setOrigin(0, 0)
             .setTint(0xffffff)
             .setDepth(315);
 
-        const roundValue = this.scene.add.bitmapText(0, 0, 'minogram', '0', fontSize)
+        const roundValue = this.scene.add.text(0, 0, '0').setFontSize(fontSize)
             .setOrigin(1, 0)
             .setTint(0xffffff)
             .setDepth(315);
 
-        const phaseValue = this.scene.add.bitmapText(0, 0, 'minogram', 'PHASE2', fontSize)
+        const phaseValue = this.scene.add.text(0, 0, 'PHASE2').setFontSize(fontSize)
             .setOrigin(1, 0)
             .setTint(0xffffff)
             .setDepth(315);
 
-        const turnLabel = this.scene.add.bitmapText(0, 0, 'minogram', 'turn:', fontSize)
+        const turnLabel = this.scene.add.text(0, 0, 'turn:').setFontSize(fontSize)
             .setOrigin(0, 0)
             .setTint(0xffffff)
             .setDepth(315);
 
-        const turnValue = this.scene.add.bitmapText(0, 0, 'minogram', 'ASH', fontSize)
+        const turnValue = this.scene.add.text(0, 0, 'ASH').setFontSize(fontSize)
             .setOrigin(1, 0)
             .setTint(0xffffff)
             .setDepth(315);
@@ -217,26 +217,23 @@ export class PhaseHudController
             ? Math.max(this.ui.roundLabel.width, this.ui.phaseLabel.width, this.ui.turnLabel.width)
             : Math.max(this.ui.roundLabel.width, this.ui.phaseLabel.width);
         const availableValueWidth = Math.max(12, Math.round(panelWidth - (this.panelPaddingX * 2) - this.colGap - maxLabelWidth));
-        this.ui.roundValue.setFontSize(fitBitmapTextToSingleLine({
+        this.ui.roundValue.setFontSize(fitTextToSingleLine({
             scene: this.scene,
-            font: 'minogram',
             text: this.ui.roundValue.text,
             preferredSize: this.ui.roundValue.fontSize,
             minSize: Math.max(9, Math.round(this.ui.roundValue.fontSize * 0.72)),
             maxWidth: availableValueWidth
         }));
-        this.ui.phaseValue.setFontSize(fitBitmapTextToSingleLine({
+        this.ui.phaseValue.setFontSize(fitTextToSingleLine({
             scene: this.scene,
-            font: 'minogram',
             text: this.ui.phaseValue.text,
             preferredSize: this.ui.phaseValue.fontSize,
             minSize: Math.max(9, Math.round(this.ui.phaseValue.fontSize * 0.72)),
             maxWidth: availableValueWidth
         }));
         if (hasTurnRow) {
-            this.ui.turnValue.setFontSize(fitBitmapTextToSingleLine({
+            this.ui.turnValue.setFontSize(fitTextToSingleLine({
                 scene: this.scene,
-                font: 'minogram',
                 text: this.ui.turnValue.text,
                 preferredSize: this.ui.turnValue.fontSize,
                 minSize: Math.max(9, Math.round(this.ui.turnValue.fontSize * 0.72)),

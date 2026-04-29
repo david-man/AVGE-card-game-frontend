@@ -1,5 +1,16 @@
 import { Scene, GameObjects } from 'phaser';
-import { GAME_CENTER_X, GAME_CENTER_Y, GAME_HEIGHT, GAME_WIDTH, MAIN_MENU_TEXT_LAYOUT, UI_SCALE } from '../config';
+import {
+    GAME_CENTER_X,
+    GAME_CENTER_Y,
+    GAME_HEIGHT,
+    GAME_WIDTH,
+    MAIN_MENU_LAYOUT,
+    MAIN_MENU_LOGO_ASSET,
+    MAIN_MENU_LOGO_LAYOUT,
+    MAIN_MENU_LOGO_LINK,
+    MAIN_MENU_TEXT_LAYOUT,
+    UI_SCALE
+} from '../config';
 import {
     clearClientSessionState,
     fetchRouterSession,
@@ -20,15 +31,15 @@ import {
 export class MainMenu extends Scene
 {
     background: GameObjects.Image;
-    title: GameObjects.BitmapText;
-    subtitle: GameObjects.BitmapText;
+    title: GameObjects.Text;
+    subtitle: GameObjects.Text;
     startButton: GameObjects.Rectangle;
-    startButtonLabel: GameObjects.BitmapText;
+    startButtonLabel: GameObjects.Text;
     decksButton: GameObjects.Rectangle;
-    decksButtonLabel: GameObjects.BitmapText;
-    private usernameIndicator: GameObjects.BitmapText | null;
+    decksButtonLabel: GameObjects.Text;
+    private usernameIndicator: GameObjects.Text | null;
     private logoutButton: GameObjects.Rectangle | null;
-    private logoutButtonLabel: GameObjects.BitmapText | null;
+    private logoutButtonLabel: GameObjects.Text | null;
     private transitioning: boolean;
     private matchmakingPollTimer: Phaser.Time.TimerEvent | null;
     private authSessionUnsubscribe: (() => void) | null;
@@ -36,9 +47,9 @@ export class MainMenu extends Scene
     private authReady: boolean;
     private disconnectGateActive: boolean;
     private disconnectGateBackdrop: GameObjects.Rectangle | null;
-    private disconnectGateTitle: GameObjects.BitmapText | null;
+    private disconnectGateTitle: GameObjects.Text | null;
     private disconnectGateContinueButton: GameObjects.Rectangle | null;
-    private disconnectGateContinueLabel: GameObjects.BitmapText | null;
+    private disconnectGateContinueLabel: GameObjects.Text | null;
     private selectedDeckId: string | null;
     private pageHideHandler: (() => void) | null;
     private beforeUnloadHandler: (() => void) | null;
@@ -67,8 +78,8 @@ export class MainMenu extends Scene
     preload ()
     {
         this.load.setPath('assets');
-        this.load.image('background', 'bg.png');
-        this.load.bitmapFont('minogram', 'minogram_6x10.png', 'minogram_6x10.xml');
+        this.load.image('background', 'background/background_element.png');
+        this.load.image(MAIN_MENU_LOGO_ASSET.key, MAIN_MENU_LOGO_ASSET.filePath);
     }
 
     create ()
@@ -83,46 +94,80 @@ export class MainMenu extends Scene
         this.background.setDisplaySize(GAME_WIDTH, GAME_HEIGHT);
         this.background.setAlpha(0.9);
 
-        this.title = this.add.bitmapText(
-            GAME_CENTER_X,
-            Math.round(GAME_HEIGHT * 0.34),
-            'minogram',
-            'AVGE CARD GAME',
-            Math.max(MAIN_MENU_TEXT_LAYOUT.titleFontSizeMin, Math.round(MAIN_MENU_TEXT_LAYOUT.titleFontSizeBase * UI_SCALE))
-        )
+        const logoMargin = Math.max(MAIN_MENU_LOGO_LAYOUT.marginMin, Math.round(MAIN_MENU_LOGO_LAYOUT.marginBase * UI_SCALE));
+        const cornerLogo = this.add.image(logoMargin, GAME_HEIGHT - logoMargin, MAIN_MENU_LOGO_ASSET.key)
+            .setOrigin(0, 1)
+            .setDepth(8)
+            .setAlpha(MAIN_MENU_LOGO_LAYOUT.alpha)
+            .setInteractive({ useHandCursor: true });
+        const maxLogoWidth = GAME_WIDTH * MAIN_MENU_LOGO_LAYOUT.maxWidthRatio;
+        const maxLogoHeight = GAME_HEIGHT * MAIN_MENU_LOGO_LAYOUT.maxHeightRatio;
+        const logoScale = Math.min(
+            maxLogoWidth / cornerLogo.width,
+            maxLogoHeight / cornerLogo.height,
+            1
+        );
+        cornerLogo.setScale(logoScale);
+
+        cornerLogo.on('pointerover', () => {
+            this.tweens.killTweensOf(cornerLogo);
+            cornerLogo.setAlpha(MAIN_MENU_LOGO_LAYOUT.hoverAlpha);
+            this.tweens.add({
+                targets: cornerLogo,
+                scaleX: logoScale * MAIN_MENU_LOGO_LAYOUT.hoverScaleMultiplier,
+                scaleY: logoScale * MAIN_MENU_LOGO_LAYOUT.hoverScaleMultiplier,
+                duration: MAIN_MENU_LOGO_LAYOUT.hoverTweenDurationMs,
+                ease: 'Sine.easeOut'
+            });
+        });
+
+        cornerLogo.on('pointerout', () => {
+            this.tweens.killTweensOf(cornerLogo);
+            cornerLogo.setAlpha(MAIN_MENU_LOGO_LAYOUT.alpha);
+            this.tweens.add({
+                targets: cornerLogo,
+                scaleX: logoScale,
+                scaleY: logoScale,
+                duration: MAIN_MENU_LOGO_LAYOUT.hoverTweenDurationMs,
+                ease: 'Sine.easeOut'
+            });
+        });
+
+        cornerLogo.on('pointerdown', () => {
+            if (typeof window === 'undefined') {
+                return;
+            }
+
+            const targetUrl = MAIN_MENU_LOGO_LINK.url.trim();
+            if (targetUrl.length === 0) {
+                return;
+            }
+
+            window.open(targetUrl, '_blank', 'noopener,noreferrer');
+        });
+
+        this.title = this.add.text(GAME_CENTER_X, Math.round(GAME_HEIGHT * MAIN_MENU_LAYOUT.titleYRatio), 'AVGE CARD GAME').setFontSize(Math.max(MAIN_MENU_TEXT_LAYOUT.titleFontSizeMin, Math.round(MAIN_MENU_TEXT_LAYOUT.titleFontSizeBase * UI_SCALE)))
             .setOrigin(0.5)
             .setTint(0xffffff);
 
-        this.subtitle = this.add.bitmapText(
-            GAME_CENTER_X,
-            Math.round(GAME_HEIGHT * 0.47),
-            'minogram',
-            'Admin Visual Game Environment',
-            Math.max(MAIN_MENU_TEXT_LAYOUT.subtitleFontSizeMin, Math.round(MAIN_MENU_TEXT_LAYOUT.subtitleFontSizeBase * UI_SCALE))
-        )
+        this.subtitle = this.add.text(GAME_CENTER_X, Math.round(GAME_HEIGHT * MAIN_MENU_LAYOUT.subtitleYRatio), 'From: Brown AVGE').setFontSize(Math.max(MAIN_MENU_TEXT_LAYOUT.subtitleFontSizeMin, Math.round(MAIN_MENU_TEXT_LAYOUT.subtitleFontSizeBase * UI_SCALE)))
             .setOrigin(0.5)
             .setTint(0xcbd5e1);
 
-        const accountMargin = Math.round(50 * UI_SCALE);
-        const accountTop = Math.round(60 * UI_SCALE);
-        const logoutWidth = Math.round(250 * UI_SCALE);
-        const logoutHeight = Math.round(100 * UI_SCALE);
-        const accountUiDepth = 620;
-        const logoutBottomMargin = Math.round(40 * UI_SCALE);
+        const accountMargin = Math.round(MAIN_MENU_LAYOUT.accountMarginBase * UI_SCALE);
+        const accountTop = Math.round(MAIN_MENU_LAYOUT.accountTopBase * UI_SCALE);
+        const logoutWidth = Math.round(MAIN_MENU_LAYOUT.logoutWidthBase * UI_SCALE);
+        const logoutHeight = Math.round(MAIN_MENU_LAYOUT.logoutHeightBase * UI_SCALE);
+        const accountUiDepth = MAIN_MENU_LAYOUT.accountUiDepth;
+        const logoutBottomMargin = Math.round(MAIN_MENU_LAYOUT.logoutBottomMarginBase * UI_SCALE);
         const persistedUsername = typeof window !== 'undefined'
             ? window.localStorage.getItem(ROUTER_USERNAME_STORAGE_KEY)
             : null;
 
-        this.usernameIndicator = this.add.bitmapText(
-            GAME_WIDTH - accountMargin,
-            accountTop,
-            'minogram',
-            this.formatUsernameIndicator(persistedUsername),
-            Math.max(MAIN_MENU_TEXT_LAYOUT.accountFontSizeMin, Math.round(MAIN_MENU_TEXT_LAYOUT.accountFontSizeBase * UI_SCALE))
-        )
+        this.usernameIndicator = this.add.text(GAME_WIDTH - accountMargin, accountTop, this.formatUsernameIndicator(persistedUsername)).setFontSize(Math.max(MAIN_MENU_TEXT_LAYOUT.accountFontSizeMin, Math.round(MAIN_MENU_TEXT_LAYOUT.accountFontSizeBase * UI_SCALE)))
             .setOrigin(1, 0)
             .setTint(0xe2e8f0)
-            .setRightAlign()
+            .setAlign('right')
             .setDepth(accountUiDepth + 1);
 
         this.logoutButton = this.add.rectangle(
@@ -137,13 +182,7 @@ export class MainMenu extends Scene
             .setDepth(accountUiDepth)
             .setInteractive({ useHandCursor: true });
 
-        this.logoutButtonLabel = this.add.bitmapText(
-            this.logoutButton.x,
-            this.logoutButton.y,
-            'minogram',
-            'LOG OUT',
-            Math.max(MAIN_MENU_TEXT_LAYOUT.accountFontSizeMin, Math.round(MAIN_MENU_TEXT_LAYOUT.accountFontSizeBase * UI_SCALE))
-        )
+        this.logoutButtonLabel = this.add.text(this.logoutButton.x, this.logoutButton.y, 'LOG OUT').setFontSize(Math.max(MAIN_MENU_TEXT_LAYOUT.accountFontSizeMin, Math.round(MAIN_MENU_TEXT_LAYOUT.accountFontSizeBase * UI_SCALE)))
             .setOrigin(0.5)
             .setTint(0xffffff)
             .setDepth(accountUiDepth + 1);
@@ -165,9 +204,9 @@ export class MainMenu extends Scene
             void this.logoutAndReturnToLogin();
         });
 
-        const buttonWidth = Math.round(280 * UI_SCALE);
-        const buttonHeight = Math.round(84 * UI_SCALE);
-        const buttonY = Math.round(GAME_HEIGHT * 0.68);
+        const buttonWidth = Math.round(MAIN_MENU_LAYOUT.buttonWidthBase * UI_SCALE);
+        const buttonHeight = Math.round(MAIN_MENU_LAYOUT.buttonHeightBase * UI_SCALE);
+        const buttonY = Math.round(GAME_HEIGHT * MAIN_MENU_LAYOUT.buttonYRatio);
 
         this.startButton = this.add.rectangle(
             GAME_CENTER_X,
@@ -180,34 +219,22 @@ export class MainMenu extends Scene
             .setStrokeStyle(3, 0xffffff, 0.85)
             .setInteractive({ useHandCursor: true });
 
-        this.startButtonLabel = this.add.bitmapText(
-            GAME_CENTER_X,
-            buttonY,
-            'minogram',
-            'START',
-            Math.max(MAIN_MENU_TEXT_LAYOUT.startFontSizeMin, Math.round(MAIN_MENU_TEXT_LAYOUT.startFontSizeBase * UI_SCALE))
-        )
+        this.startButtonLabel = this.add.text(GAME_CENTER_X, buttonY, 'START').setFontSize(Math.max(MAIN_MENU_TEXT_LAYOUT.startFontSizeMin, Math.round(MAIN_MENU_TEXT_LAYOUT.startFontSizeBase * UI_SCALE)))
             .setOrigin(0.5)
             .setTint(0xffffff);
 
         this.decksButton = this.add.rectangle(
             GAME_CENTER_X,
-            Math.round(buttonY - (96 * UI_SCALE)),
+            Math.round(buttonY - (MAIN_MENU_LAYOUT.decksButtonOffsetYBase * UI_SCALE)),
             buttonWidth,
             buttonHeight,
-            0x1e293b,
+            0x0f172a,
             0.9
         )
             .setStrokeStyle(3, 0xffffff, 0.85)
             .setInteractive({ useHandCursor: true });
 
-        this.decksButtonLabel = this.add.bitmapText(
-            GAME_CENTER_X,
-            Math.round(buttonY - (96 * UI_SCALE)),
-            'minogram',
-            'DECK BUILDER',
-            Math.max(MAIN_MENU_TEXT_LAYOUT.deckBuilderFontSizeMin, Math.round(MAIN_MENU_TEXT_LAYOUT.deckBuilderFontSizeBase * UI_SCALE))
-        )
+        this.decksButtonLabel = this.add.text(GAME_CENTER_X, Math.round(buttonY - (MAIN_MENU_LAYOUT.decksButtonOffsetYBase * UI_SCALE)), 'DECK BUILDER').setFontSize(Math.max(MAIN_MENU_TEXT_LAYOUT.deckBuilderFontSizeMin, Math.round(MAIN_MENU_TEXT_LAYOUT.deckBuilderFontSizeBase * UI_SCALE)))
             .setOrigin(0.5)
             .setTint(0xffffff);
 
@@ -231,6 +258,24 @@ export class MainMenu extends Scene
 
             this.startButton.setFillStyle(0x0f172a, 0.9);
             this.startButtonLabel.setTint(0xffffff);
+        });
+
+        this.decksButton.on('pointerover', () => {
+            if (this.matchmakingInProgress) {
+                return;
+            }
+
+            this.decksButton.setFillStyle(0x1e293b, 0.95);
+            this.decksButtonLabel.setTint(0xfef08a);
+        });
+
+        this.decksButton.on('pointerout', () => {
+            if (this.matchmakingInProgress) {
+                return;
+            }
+
+            this.decksButton.setFillStyle(0x0f172a, 0.9);
+            this.decksButtonLabel.setTint(0xffffff);
         });
 
         const startGame = () => {
@@ -379,7 +424,7 @@ export class MainMenu extends Scene
         this.selectedDeckId = decksResult.ok ? (decksResult.selectedDeckId ?? null) : null;
         this.authReady = true;
         this.applyQueueUiState(false);
-        this.updateMatchmakingSubtitle(this.selectedDeckId ? 'Admin Visual Game Environment' : 'No deck selected. Open Deck Builder.');
+        this.updateMatchmakingSubtitle(this.selectedDeckId ? 'From: Brown AVGE' : 'No deck selected. Open Deck Builder.');
     }
 
     private async resumeAssignedRoomIfPresent (sessionId: string, currentRoomId: string | null): Promise<boolean>
@@ -443,13 +488,7 @@ export class MainMenu extends Scene
             0.92
         ).setDepth(depthBase);
 
-        this.disconnectGateTitle = this.add.bitmapText(
-            GAME_CENTER_X,
-            Math.round(GAME_HEIGHT * 0.45),
-            'minogram',
-            titleText,
-            Math.max(MAIN_MENU_TEXT_LAYOUT.disconnectTitleFontSizeMin, Math.round(MAIN_MENU_TEXT_LAYOUT.disconnectTitleFontSizeBase * UI_SCALE))
-        )
+        this.disconnectGateTitle = this.add.text(GAME_CENTER_X, Math.round(GAME_HEIGHT * 0.45), titleText).setFontSize(Math.max(MAIN_MENU_TEXT_LAYOUT.disconnectTitleFontSizeMin, Math.round(MAIN_MENU_TEXT_LAYOUT.disconnectTitleFontSizeBase * UI_SCALE)))
             .setOrigin(0.5)
             .setTint(0xffffff)
             .setDepth(depthBase + 1);
@@ -466,13 +505,7 @@ export class MainMenu extends Scene
             .setDepth(depthBase + 1)
             .setInteractive({ useHandCursor: true });
 
-        this.disconnectGateContinueLabel = this.add.bitmapText(
-            GAME_CENTER_X,
-            buttonY,
-            'minogram',
-            'CONTINUE',
-            Math.max(MAIN_MENU_TEXT_LAYOUT.disconnectContinueFontSizeMin, Math.round(MAIN_MENU_TEXT_LAYOUT.disconnectContinueFontSizeBase * UI_SCALE))
-        )
+        this.disconnectGateContinueLabel = this.add.text(GAME_CENTER_X, buttonY, 'CONTINUE').setFontSize(Math.max(MAIN_MENU_TEXT_LAYOUT.disconnectContinueFontSizeMin, Math.round(MAIN_MENU_TEXT_LAYOUT.disconnectContinueFontSizeBase * UI_SCALE)))
             .setOrigin(0.5)
             .setTint(0xffffff)
             .setDepth(depthBase + 2);
@@ -511,12 +544,12 @@ export class MainMenu extends Scene
         this.startButton.setVisible(true).setInteractive({ useHandCursor: true });
         this.startButtonLabel.setVisible(true).setText('START').setTint(0xffffff);
         this.startButton.setFillStyle(0x0f172a, 0.9);
-        this.decksButton.setVisible(true).setInteractive({ useHandCursor: true });
-        this.decksButtonLabel.setVisible(true);
+        this.decksButton.setVisible(true).setInteractive({ useHandCursor: true }).setFillStyle(0x0f172a, 0.9);
+        this.decksButtonLabel.setVisible(true).setTint(0xffffff);
         this.usernameIndicator?.setVisible(true);
         this.logoutButton?.setVisible(true).setInteractive({ useHandCursor: true });
         this.logoutButtonLabel?.setVisible(true);
-        this.updateMatchmakingSubtitle('Admin Visual Game Environment');
+        this.updateMatchmakingSubtitle('From: Brown AVGE');
     }
 
     private async logoutAndReturnToLogin (): Promise<void>
@@ -901,12 +934,12 @@ export class MainMenu extends Scene
             .setInteractive({ useHandCursor: true })
             .setFillStyle(0x0f172a, 0.9);
         this.startButtonLabel
-            .setText('START')
+            .setText('PLAY')
             .setTint(0xffffff);
 
         this.decksButton
             .setInteractive({ useHandCursor: true })
-            .setFillStyle(0x1e293b, 0.9);
+            .setFillStyle(0x0f172a, 0.9);
         this.decksButtonLabel.setTint(0xffffff);
 
         this.logoutButton

@@ -8,6 +8,8 @@ import {
     DECK_BUILDER_CATEGORY_FILL_COLORS,
     DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT,
     DECK_BUILDER_CURRENT_DECK_PREVIEW_TEXT_LAYOUT,
+    DECK_BUILDER_TRANSFER_ICON_ASSETS,
+    DECK_BUILDER_TRANSFER_ICON_LAYOUT,
     DECK_BUILDER_TEXT_LAYOUT,
     GAME_CENTER_X,
     GAME_HEIGHT,
@@ -29,7 +31,7 @@ import {
     UserDeck,
 } from '../Network';
 import { CardPreviewController } from '../ui/CardPreviewController';
-import { fitBitmapTextToMultiLine } from '../ui/overlays/bitmapTextFit';
+import { fitTextToMultiLine } from '../ui/overlays/textFit';
 
 type DeckBuilderState = {
     deckId: string | null;
@@ -47,6 +49,13 @@ type DeckDraft = {
     dirty: boolean;
 };
 
+type DeckBuilderButtonStyle = {
+    fillColor: number;
+    fillAlpha: number;
+    labelTint?: number;
+    labelAlpha?: number;
+};
+
 const CARDS_PER_PAGE = 8;
 const SEARCH_RESULTS_PER_PAGE = 8;
 const FIXED_DECK_SLOT_COUNT = 5;
@@ -60,47 +69,55 @@ const CARD_BY_ID: Map<string, CardCatalogEntry> = new Map(CARD_CATALOG.map((entr
 export class DeckBuilder extends Scene
 {
     background: GameObjects.Image;
-    title: GameObjects.BitmapText;
-    subtitle: GameObjects.BitmapText;
-    pageIndicator: GameObjects.BitmapText;
+    title: GameObjects.Text;
+    subtitle: GameObjects.Text;
+    pageIndicator: GameObjects.Text;
     saveButton: GameObjects.Rectangle;
-    saveLabel: GameObjects.BitmapText;
+    saveLabel: GameObjects.Text;
     backButton: GameObjects.Rectangle;
-    backLabel: GameObjects.BitmapText;
+    backLabel: GameObjects.Text;
+    resetButton: GameObjects.Rectangle;
+    resetIcon: GameObjects.Image;
+    resetLabel: GameObjects.Text;
+    resetHoverLabel: GameObjects.Text;
     exportButton: GameObjects.Rectangle;
-    exportLabel: GameObjects.BitmapText;
+    exportIcon: GameObjects.Image;
+    exportLabel: GameObjects.Text;
     importButton: GameObjects.Rectangle;
-    importLabel: GameObjects.BitmapText;
+    importIcon: GameObjects.Image;
+    importLabel: GameObjects.Text;
     searchButton: GameObjects.Rectangle;
-    searchLabel: GameObjects.BitmapText;
+    searchLabel: GameObjects.Text;
     nextPageButton: GameObjects.Rectangle;
     prevPageButton: GameObjects.Rectangle;
+    nextPageLabel: GameObjects.Text;
+    prevPageLabel: GameObjects.Text;
     categoryButtons: Array<{
         category: CardCatalogCategory;
         body: GameObjects.Rectangle;
-        label: GameObjects.BitmapText;
+        label: GameObjects.Text;
     }>;
     characterTypeButtons: Array<{
         cardType: CharacterCardType | 'all';
         body: GameObjects.Rectangle;
-        label: GameObjects.BitmapText;
+        label: GameObjects.Text;
     }>;
 
     private state: DeckBuilderState;
     deckSlotButtons: Array<{
         index: number;
         body: GameObjects.Rectangle;
-        label: GameObjects.BitmapText;
+        label: GameObjects.Text;
     }>;
     private slotDecks: Array<UserDeck | null>;
     private rows: Array<{
         container: Phaser.GameObjects.Container;
         iconBody: GameObjects.Rectangle;
-        iconLabel: GameObjects.BitmapText;
-        cardName: GameObjects.BitmapText;
-        countLabel: GameObjects.BitmapText;
+        iconLabel: GameObjects.Text;
+        cardName: GameObjects.Text;
+        countLabel: GameObjects.Text;
         plusButton: GameObjects.Rectangle;
-        plusLabel: GameObjects.BitmapText;
+        plusLabel: GameObjects.Text;
         card: CardCatalogEntry | null;
     }>;
     private busy: boolean;
@@ -110,33 +127,33 @@ export class DeckBuilder extends Scene
     private searchMenuVisible: boolean;
     private searchQuery: string;
     private searchPageIndex: number;
-    private searchMenuObjects: Array<GameObjects.Rectangle | GameObjects.BitmapText | Phaser.GameObjects.Container>;
+    private searchMenuObjects: Array<GameObjects.Rectangle | GameObjects.Text | Phaser.GameObjects.Container>;
     private searchBackdrop: GameObjects.Rectangle;
     private searchPanel: GameObjects.Rectangle;
-    private searchTitle: GameObjects.BitmapText;
-    private searchHint: GameObjects.BitmapText;
-    private searchQueryLabel: GameObjects.BitmapText;
+    private searchTitle: GameObjects.Text;
+    private searchHint: GameObjects.Text;
+    private searchQueryLabel: GameObjects.Text;
     private searchSaveButton: GameObjects.Rectangle;
-    private searchSaveLabel: GameObjects.BitmapText;
+    private searchSaveLabel: GameObjects.Text;
     private searchCloseButton: GameObjects.Rectangle;
-    private searchCloseLabel: GameObjects.BitmapText;
+    private searchCloseLabel: GameObjects.Text;
     private searchClearButton: GameObjects.Rectangle;
-    private searchClearLabel: GameObjects.BitmapText;
+    private searchClearLabel: GameObjects.Text;
     private searchPrevButton: GameObjects.Rectangle;
-    private searchPrevLabel: GameObjects.BitmapText;
+    private searchPrevLabel: GameObjects.Text;
     private searchNextButton: GameObjects.Rectangle;
-    private searchNextLabel: GameObjects.BitmapText;
+    private searchNextLabel: GameObjects.Text;
     private searchRows: Array<{
         container: Phaser.GameObjects.Container;
-        cardName: GameObjects.BitmapText;
-        cardMeta: GameObjects.BitmapText;
-        countLabel: GameObjects.BitmapText;
+        cardName: GameObjects.Text;
+        cardMeta: GameObjects.Text;
+        countLabel: GameObjects.Text;
         plusButton: GameObjects.Rectangle;
-        plusLabel: GameObjects.BitmapText;
+        plusLabel: GameObjects.Text;
         card: CardCatalogEntry | null;
     }>;
     private currentDeckPanel: GameObjects.Rectangle;
-    private currentDeckHint: GameObjects.BitmapText;
+    private currentDeckHint: GameObjects.Text;
     private currentDeckCardObjects: Phaser.GameObjects.GameObject[];
     private deckCardPreviewController: CardPreviewController;
     private deckPreviewProxyCard: Card | null;
@@ -145,7 +162,10 @@ export class DeckBuilder extends Scene
     private deckPreviewSuppressOutsideClose: boolean;
     private keyboardKeydownHandler: ((event: KeyboardEvent) => void) | null;
     private pointerDownHandler: ((pointer: Phaser.Input.Pointer) => void) | null;
+    private gameObjectDownHandler: ((pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.GameObject) => void) | null;
     private lastDeckNameClickAtMs: number;
+    private resetDeckConfirmTimer: Phaser.Time.TimerEvent | null;
+    private resetDeckConfirmSecondsRemaining: number;
 
     constructor ()
     {
@@ -180,20 +200,25 @@ export class DeckBuilder extends Scene
         this.deckPreviewSuppressOutsideClose = false;
         this.keyboardKeydownHandler = null;
         this.pointerDownHandler = null;
+        this.gameObjectDownHandler = null;
         this.lastDeckNameClickAtMs = 0;
+        this.resetDeckConfirmTimer = null;
+        this.resetDeckConfirmSecondsRemaining = 0;
     }
 
     preload (): void
     {
         this.load.setPath('assets');
-        this.load.image('background', 'bg.png');
-        this.load.bitmapFont('minogram', 'minogram_6x10.png', 'minogram_6x10.xml');
+        this.load.image('background', 'background/background_element.png');
+        this.load.image(DECK_BUILDER_TRANSFER_ICON_ASSETS.exportKey, DECK_BUILDER_TRANSFER_ICON_ASSETS.exportPath);
+        this.load.image(DECK_BUILDER_TRANSFER_ICON_ASSETS.importKey, DECK_BUILDER_TRANSFER_ICON_ASSETS.importPath);
+        this.load.image(DECK_BUILDER_TRANSFER_ICON_ASSETS.resetKey, DECK_BUILDER_TRANSFER_ICON_ASSETS.resetPath);
     }
 
     create (): void
     {
         // Phaser reuses the same Scene instance on restart; clear row refs from
-        // prior runs so we never mutate destroyed BitmapText objects.
+        // prior runs so we never mutate destroyed text objects.
         this.rows = [];
         this.state.deckId = null;
         this.state.deckName = 'My Deck';
@@ -231,6 +256,11 @@ export class DeckBuilder extends Scene
                 this.input.off('pointerdown', this.pointerDownHandler);
                 this.pointerDownHandler = null;
             }
+            if (this.gameObjectDownHandler) {
+                this.input.off('gameobjectdown', this.gameObjectDownHandler);
+                this.gameObjectDownHandler = null;
+            }
+            this.disarmResetDeckConfirm();
         });
 
         this.cameras.main.fadeIn(180, 0, 0, 0);
@@ -239,23 +269,11 @@ export class DeckBuilder extends Scene
         this.background.setDisplaySize(GAME_WIDTH, GAME_HEIGHT);
         this.background.setAlpha(0.9);
 
-        this.title = this.add.bitmapText(
-            GAME_CENTER_X,
-            Math.round(GAME_HEIGHT * 0.09),
-            'minogram',
-            'DECK BUILDER',
-            Math.max(DECK_BUILDER_TEXT_LAYOUT.titleFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.titleFontSizeBase * UI_SCALE))
-        )
+        this.title = this.add.text(GAME_CENTER_X, Math.round(GAME_HEIGHT * 0.09), 'DECK BUILDER').setFontSize(Math.max(DECK_BUILDER_TEXT_LAYOUT.titleFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.titleFontSizeBase * UI_SCALE)))
             .setOrigin(0.5)
             .setTint(0xffffff);
 
-        this.subtitle = this.add.bitmapText(
-            GAME_CENTER_X,
-            Math.round(GAME_HEIGHT * 0.15),
-            'minogram',
-            'Loading deck...',
-            Math.max(DECK_BUILDER_TEXT_LAYOUT.subtitleFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.subtitleFontSizeBase * UI_SCALE))
-        )
+        this.subtitle = this.add.text(GAME_CENTER_X, Math.round(GAME_HEIGHT * 0.15), 'Loading deck...').setFontSize(Math.max(DECK_BUILDER_TEXT_LAYOUT.subtitleFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.subtitleFontSizeBase * UI_SCALE)))
             .setOrigin(0.5)
             .setTint(0xe2e8f0)
             .setInteractive({ useHandCursor: true });
@@ -275,13 +293,7 @@ export class DeckBuilder extends Scene
             this.lastDeckNameClickAtMs = now;
         });
 
-        this.pageIndicator = this.add.bitmapText(
-            GAME_CENTER_X,
-            Math.round(GAME_HEIGHT * 0.84),
-            'minogram',
-            '',
-            Math.max(DECK_BUILDER_TEXT_LAYOUT.pageIndicatorFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.pageIndicatorFontSizeBase * UI_SCALE))
-        )
+        this.pageIndicator = this.add.text(GAME_CENTER_X, Math.round(GAME_HEIGHT * 0.84), '').setFontSize(Math.max(DECK_BUILDER_TEXT_LAYOUT.pageIndicatorFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.pageIndicatorFontSizeBase * UI_SCALE)))
             .setOrigin(0.5)
             .setTint(0xcbd5e1);
 
@@ -296,13 +308,7 @@ export class DeckBuilder extends Scene
             .setStrokeStyle(2, 0xffffff, 0.75)
             .setInteractive({ useHandCursor: true });
 
-        this.add.bitmapText(
-            this.prevPageButton.x,
-            this.prevPageButton.y,
-            'minogram',
-            'PREV',
-            Math.max(DECK_BUILDER_TEXT_LAYOUT.pageNavFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.pageNavFontSizeBase * UI_SCALE))
-        )
+        this.prevPageLabel = this.add.text(this.prevPageButton.x, this.prevPageButton.y, 'PREV').setFontSize(Math.max(DECK_BUILDER_TEXT_LAYOUT.pageNavFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.pageNavFontSizeBase * UI_SCALE)))
             .setOrigin(0.5)
             .setTint(0xffffff);
 
@@ -317,13 +323,7 @@ export class DeckBuilder extends Scene
             .setStrokeStyle(2, 0xffffff, 0.75)
             .setInteractive({ useHandCursor: true });
 
-        this.add.bitmapText(
-            this.nextPageButton.x,
-            this.nextPageButton.y,
-            'minogram',
-            'NEXT',
-            Math.max(DECK_BUILDER_TEXT_LAYOUT.pageNavFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.pageNavFontSizeBase * UI_SCALE))
-        )
+        this.nextPageLabel = this.add.text(this.nextPageButton.x, this.nextPageButton.y, 'NEXT').setFontSize(Math.max(DECK_BUILDER_TEXT_LAYOUT.pageNavFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.pageNavFontSizeBase * UI_SCALE)))
             .setOrigin(0.5)
             .setTint(0xffffff);
 
@@ -332,19 +332,13 @@ export class DeckBuilder extends Scene
             Math.round(GAME_HEIGHT * 0.93),
             Math.round(112 * UI_SCALE),
             Math.round(48 * UI_SCALE),
-            0x0f172a,
+            0x14532d,
             0.95
         )
             .setStrokeStyle(2, 0xffffff, 0.85)
             .setInteractive({ useHandCursor: true });
 
-        this.saveLabel = this.add.bitmapText(
-            this.saveButton.x,
-            this.saveButton.y,
-            'minogram',
-            'SAVE',
-            Math.max(DECK_BUILDER_TEXT_LAYOUT.actionFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.actionFontSizeBase * UI_SCALE))
-        )
+        this.saveLabel = this.add.text(this.saveButton.x, this.saveButton.y, 'SAVE').setFontSize(Math.max(DECK_BUILDER_TEXT_LAYOUT.actionFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.actionFontSizeBase * UI_SCALE)))
             .setOrigin(0.5)
             .setTint(0xffffff);
 
@@ -359,78 +353,189 @@ export class DeckBuilder extends Scene
             .setStrokeStyle(2, 0xffffff, 0.75)
             .setInteractive({ useHandCursor: true });
 
-        this.backLabel = this.add.bitmapText(
-            this.backButton.x,
-            this.backButton.y,
-            'minogram',
-            'BACK',
-            Math.max(DECK_BUILDER_TEXT_LAYOUT.actionFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.actionFontSizeBase * UI_SCALE))
-        )
+        this.backLabel = this.add.text(this.backButton.x, this.backButton.y, 'BACK').setFontSize(Math.max(DECK_BUILDER_TEXT_LAYOUT.actionFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.actionFontSizeBase * UI_SCALE)))
             .setOrigin(0.5)
             .setTint(0xffffff);
+        this.resetButton = this.add.rectangle(
+            Math.round(GAME_CENTER_X - 204 * UI_SCALE),
+            Math.round(GAME_HEIGHT * 0.93),
+            Math.round(DECK_BUILDER_TRANSFER_ICON_LAYOUT.buttonSizeBase * UI_SCALE),
+            Math.round(DECK_BUILDER_TRANSFER_ICON_LAYOUT.buttonSizeBase * UI_SCALE),
+            0x991b1b,
+            0.95
+        )
+            .setStrokeStyle(2, 0xffffff, 0.75)
+            .setInteractive({ useHandCursor: true });
+
+        this.resetIcon = this.add.image(this.resetButton.x, this.resetButton.y, DECK_BUILDER_TRANSFER_ICON_ASSETS.resetKey)
+            .setDepth(this.resetButton.depth + 1);
+
+        this.resetLabel = this.add.text(this.resetButton.x, this.resetButton.y, '').setFontSize(Math.max(
+                DECK_BUILDER_TRANSFER_ICON_LAYOUT.resetCountdownFontSizeMin,
+                Math.round(DECK_BUILDER_TRANSFER_ICON_LAYOUT.resetCountdownFontSizeBase * UI_SCALE)
+            ))
+            .setOrigin(0.5)
+            .setTint(0xffffff)
+            .setDepth(this.resetButton.depth + 2)
+            .setVisible(false);
+
+            this.resetHoverLabel = this.add.text(this.resetButton.x, this.resetButton.y, 'Reset deck?').setFontSize(Math.max(
+                DECK_BUILDER_TRANSFER_ICON_LAYOUT.hoverLabelFontSizeMin,
+                Math.round(DECK_BUILDER_TRANSFER_ICON_LAYOUT.hoverLabelFontSizeBase * UI_SCALE)
+                ))
+                .setOrigin(0.5)
+                .setTint(0xfef08a)
+                .setDepth(this.resetButton.depth + 2)
+                .setVisible(false);
 
         this.exportButton = this.add.rectangle(
             Math.round(GAME_CENTER_X - 136 * UI_SCALE),
             Math.round(GAME_HEIGHT * 0.93),
-            Math.round(112 * UI_SCALE),
-            Math.round(48 * UI_SCALE),
+            Math.round(DECK_BUILDER_TRANSFER_ICON_LAYOUT.buttonSizeBase * UI_SCALE),
+            Math.round(DECK_BUILDER_TRANSFER_ICON_LAYOUT.buttonSizeBase * UI_SCALE),
             0x1f2937,
             0.95
         )
             .setStrokeStyle(2, 0xffffff, 0.75)
             .setInteractive({ useHandCursor: true });
 
-        this.exportLabel = this.add.bitmapText(
-            this.exportButton.x,
-            this.exportButton.y,
-            'minogram',
-            'EXPORT',
-            Math.max(DECK_BUILDER_TEXT_LAYOUT.actionFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.actionFontSizeBase * UI_SCALE))
-        )
+        this.exportIcon = this.add.image(this.exportButton.x, this.exportButton.y, DECK_BUILDER_TRANSFER_ICON_ASSETS.exportKey)
+            .setDepth(this.exportButton.depth + 1);
+
+        this.exportLabel = this.add.text(this.exportButton.x, this.exportButton.y, 'EXPORT').setFontSize(Math.max(DECK_BUILDER_TEXT_LAYOUT.actionFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.actionFontSizeBase * UI_SCALE)))
             .setOrigin(0.5)
-            .setTint(0xffffff);
+            .setTint(0xfef08a)
+            .setDepth(this.exportButton.depth + 2)
+            .setVisible(false);
 
         this.importButton = this.add.rectangle(
             GAME_CENTER_X,
             Math.round(GAME_HEIGHT * 0.93),
-            Math.round(112 * UI_SCALE),
-            Math.round(48 * UI_SCALE),
+            Math.round(DECK_BUILDER_TRANSFER_ICON_LAYOUT.buttonSizeBase * UI_SCALE),
+            Math.round(DECK_BUILDER_TRANSFER_ICON_LAYOUT.buttonSizeBase * UI_SCALE),
             0x78350f,
             0.95
         )
             .setStrokeStyle(2, 0xffffff, 0.75)
             .setInteractive({ useHandCursor: true });
 
-        this.importLabel = this.add.bitmapText(
-            this.importButton.x,
-            this.importButton.y,
-            'minogram',
-            'IMPORT',
-            Math.max(DECK_BUILDER_TEXT_LAYOUT.actionFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.actionFontSizeBase * UI_SCALE))
-        )
+        this.importIcon = this.add.image(this.importButton.x, this.importButton.y, DECK_BUILDER_TRANSFER_ICON_ASSETS.importKey)
+            .setDepth(this.importButton.depth + 1);
+
+        this.importLabel = this.add.text(this.importButton.x, this.importButton.y, 'IMPORT').setFontSize(Math.max(DECK_BUILDER_TEXT_LAYOUT.actionFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.actionFontSizeBase * UI_SCALE)))
             .setOrigin(0.5)
-            .setTint(0xffffff);
+            .setTint(0xfef08a)
+            .setDepth(this.importButton.depth + 2)
+            .setVisible(false);
+
+        const iconMaxSize = Math.round(DECK_BUILDER_TRANSFER_ICON_LAYOUT.buttonSizeBase * UI_SCALE * DECK_BUILDER_TRANSFER_ICON_LAYOUT.iconMaxSizeRatio);
+        this.resetIcon.setDisplaySize(iconMaxSize, iconMaxSize);
+        this.exportIcon.setDisplaySize(iconMaxSize, iconMaxSize);
+        this.importIcon.setDisplaySize(iconMaxSize, iconMaxSize);
 
         this.searchButton = this.add.rectangle(
-            Math.round(GAME_CENTER_X + 136 * UI_SCALE),
+            GAME_CENTER_X,
             Math.round(GAME_HEIGHT * 0.93),
             Math.round(112 * UI_SCALE),
             Math.round(48 * UI_SCALE),
-            0x14532d,
+            0x0f172a,
             0.95
         )
             .setStrokeStyle(2, 0xffffff, 0.75)
             .setInteractive({ useHandCursor: true });
 
-        this.searchLabel = this.add.bitmapText(
-            this.searchButton.x,
-            this.searchButton.y,
-            'minogram',
-            'SEARCH',
-            Math.max(DECK_BUILDER_TEXT_LAYOUT.actionFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.actionFontSizeBase * UI_SCALE))
-        )
+        this.searchLabel = this.add.text(this.searchButton.x, this.searchButton.y, 'SEARCH').setFontSize(Math.max(DECK_BUILDER_TEXT_LAYOUT.actionFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.actionFontSizeBase * UI_SCALE)))
             .setOrigin(0.5)
             .setTint(0xffffff);
+
+        this.bindHoverHighlight(
+            this.prevPageButton,
+            this.prevPageLabel,
+            () => ({ fillColor: 0x0f172a, fillAlpha: 0.9, labelTint: 0xffffff }),
+            () => ({ fillColor: 0x1e293b, fillAlpha: 0.98, labelTint: 0xfef08a }),
+            () => this.state.pageIndex > 0
+        );
+
+        this.bindHoverHighlight(
+            this.nextPageButton,
+            this.nextPageLabel,
+            () => ({ fillColor: 0x0f172a, fillAlpha: 0.9, labelTint: 0xffffff }),
+            () => ({ fillColor: 0x1e293b, fillAlpha: 0.98, labelTint: 0xfef08a }),
+            () => this.state.pageIndex < Math.max(0, Math.ceil(this.getActiveCategoryCards().length / CARDS_PER_PAGE) - 1)
+        );
+
+        this.bindHoverHighlight(
+            this.saveButton,
+            this.saveLabel,
+            () => ({ fillColor: 0x14532d, fillAlpha: 0.95, labelTint: 0xffffff }),
+            () => ({ fillColor: 0x166534, fillAlpha: 0.98, labelTint: 0xfef08a })
+        );
+
+        this.bindHoverHighlight(
+            this.backButton,
+            this.backLabel,
+            () => ({ fillColor: 0x1e293b, fillAlpha: 0.95, labelTint: 0xffffff }),
+            () => ({ fillColor: 0x334155, fillAlpha: 0.98, labelTint: 0xfef08a })
+        );
+
+        this.bindHoverHighlight(
+            this.resetButton,
+            null,
+            () => ({ fillColor: 0x991b1b, fillAlpha: 0.95 }),
+            () => ({ fillColor: 0xb91c1c, fillAlpha: 0.98 })
+        );
+
+        this.bindHoverHighlight(
+            this.exportButton,
+            null,
+            () => ({ fillColor: 0x1f2937, fillAlpha: 0.95, labelTint: 0xffffff }),
+            () => ({ fillColor: 0x334155, fillAlpha: 0.98, labelTint: 0xfef08a })
+        );
+
+        this.bindHoverHighlight(
+            this.importButton,
+            null,
+            () => ({ fillColor: 0x78350f, fillAlpha: 0.95, labelTint: 0xffffff }),
+            () => ({ fillColor: 0x92400e, fillAlpha: 0.98, labelTint: 0xfef08a })
+        );
+
+        this.resetButton.on('pointerover', () => {
+            if (!this.resetLabel.visible) {
+                this.resetIcon.setTint(0xfef08a);
+                this.resetHoverLabel.setVisible(true);
+            }
+        });
+        this.resetButton.on('pointerout', () => {
+            if (!this.resetLabel.visible) {
+                this.resetIcon.clearTint();
+            }
+            this.resetHoverLabel.setVisible(false);
+        });
+
+        this.exportButton.on('pointerover', () => {
+            this.exportIcon.setTint(0xfef08a);
+            this.exportLabel.setVisible(true);
+        });
+        this.exportButton.on('pointerout', () => {
+            this.exportIcon.clearTint();
+            this.exportLabel.setVisible(false);
+        });
+
+        this.importButton.on('pointerover', () => {
+            this.importIcon.setTint(0xfef08a);
+            this.importLabel.setVisible(true);
+        });
+        this.importButton.on('pointerout', () => {
+            this.importIcon.clearTint();
+            this.importLabel.setVisible(false);
+        });
+
+        this.bindHoverHighlight(
+            this.searchButton,
+            this.searchLabel,
+            () => ({ fillColor: 0x0f172a, fillAlpha: 0.95, labelTint: 0xffffff }),
+            () => ({ fillColor: 0x1e293b, fillAlpha: 0.98, labelTint: 0xfef08a })
+        );
 
         this.buildDeckSlotButtons();
         this.buildCategoryButtons();
@@ -444,6 +549,7 @@ export class DeckBuilder extends Scene
         this.setSearchMenuVisible(false);
         this.hideDeckCardPreview();
         this.updateSummaryText();
+        this.positionDeckTransferButtons();
 
         this.prevPageButton.on('pointerdown', () => {
             if (this.state.pageIndex <= 0) {
@@ -464,6 +570,10 @@ export class DeckBuilder extends Scene
 
         this.saveButton.on('pointerdown', () => {
             void this.saveDeck();
+        });
+
+        this.resetButton.on('pointerdown', () => {
+            this.handleResetDeckButtonClick();
         });
 
         this.exportButton.on('pointerdown', () => {
@@ -494,6 +604,11 @@ export class DeckBuilder extends Scene
         };
         this.input.on('pointerdown', this.pointerDownHandler);
 
+        this.gameObjectDownHandler = (pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.GameObject) => {
+            this.handleGlobalGameObjectDown(pointer, gameObject);
+        };
+        this.input.on('gameobjectdown', this.gameObjectDownHandler);
+
         const sessionId = this.getStoredSessionId();
         if (sessionId) {
             this.startAuthSessionPush(sessionId);
@@ -510,7 +625,7 @@ export class DeckBuilder extends Scene
         const titleSize = Math.max(DECK_BUILDER_TEXT_LAYOUT.slotTitleFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.slotTitleFontSizeBase * UI_SCALE));
         const labelSize = Math.max(DECK_BUILDER_TEXT_LAYOUT.slotLabelFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.slotLabelFontSizeBase * UI_SCALE));
 
-        this.add.bitmapText(panelX, Math.round(startY - 58 * UI_SCALE), 'minogram', 'SAVED DECKS', titleSize)
+        this.add.text(panelX, Math.round(startY - 58 * UI_SCALE), 'SAVED DECKS').setFontSize(titleSize)
             .setOrigin(0.5)
             .setTint(0xffffff);
 
@@ -520,13 +635,36 @@ export class DeckBuilder extends Scene
                 .setStrokeStyle(2, 0xffffff, 0.55)
                 .setInteractive({ useHandCursor: true });
 
-            const label = this.add.bitmapText(panelX, y, 'minogram', this.defaultDeckName(i), labelSize)
+            const label = this.add.text(panelX, y, this.defaultDeckName(i)).setFontSize(labelSize)
                 .setOrigin(0.5)
                 .setTint(0xe2e8f0);
 
             body.on('pointerdown', () => {
                 void this.selectDeckSlot(i);
             });
+
+            this.bindHoverHighlight(
+                body,
+                label,
+                () => {
+                    const slotDeck = this.slotDecks[i] ?? null;
+                    const active = slotDeck !== null && slotDeck.deckId === this.state.deckId;
+                    return {
+                        fillColor: active ? 0x1d4ed8 : 0x0b1220,
+                        fillAlpha: active ? 0.95 : 0.88,
+                        labelTint: active ? 0xfef08a : 0xe2e8f0,
+                    };
+                },
+                () => {
+                    const slotDeck = this.slotDecks[i] ?? null;
+                    const active = slotDeck !== null && slotDeck.deckId === this.state.deckId;
+                    return {
+                        fillColor: active ? 0x2563eb : 0x1e293b,
+                        fillAlpha: 0.98,
+                        labelTint: 0xfef08a,
+                    };
+                }
+            );
 
             this.deckSlotButtons.push({ index: i, body, label });
         }
@@ -557,7 +695,7 @@ export class DeckBuilder extends Scene
                 .setStrokeStyle(2, 0xffffff, 0.65)
                 .setInteractive({ useHandCursor: true });
 
-            const label = this.add.bitmapText(x, y, 'minogram', def.label, fontSize)
+            const label = this.add.text(x, y, def.label).setFontSize(fontSize)
                 .setOrigin(0.5)
                 .setTint(0xffffff);
 
@@ -572,12 +710,87 @@ export class DeckBuilder extends Scene
                 this.updateSummaryText();
             });
 
+            this.bindHoverHighlight(
+                body,
+                label,
+                () => {
+                    const active = this.state.activeCategory === def.category;
+                    return {
+                        fillColor: active ? 0x0f766e : 0x0f172a,
+                        fillAlpha: active ? 0.95 : 0.9,
+                        labelTint: active ? 0xfef08a : 0xffffff,
+                    };
+                },
+                () => ({
+                    fillColor: 0x1e293b,
+                    fillAlpha: 0.98,
+                    labelTint: 0xfef08a,
+                })
+            );
+
             this.categoryButtons.push({
                 category: def.category,
                 body,
                 label,
             });
         }
+    }
+
+    private handleResetDeckButtonClick (): void
+    {
+        if (!this.state.deckId || this.busy) {
+            return;
+        }
+
+        if (this.resetDeckConfirmTimer) {
+            this.state.countsByCardId.clear();
+            this.persistCurrentDeckDraft();
+            this.refreshDeckSlotButtons();
+            this.renderRows();
+            this.updateSummaryText();
+            this.hideDeckCardPreview();
+            this.subtitle.setText(`Reset ${this.state.deckName.toUpperCase()} to 0 cards. Save to persist.`);
+            this.disarmResetDeckConfirm();
+            return;
+        }
+
+        this.resetDeckConfirmSecondsRemaining = DECK_BUILDER_TRANSFER_ICON_LAYOUT.resetConfirmWindowSeconds;
+        this.resetHoverLabel.setVisible(false);
+        this.resetIcon.setVisible(false);
+        this.resetIcon.clearTint();
+        this.resetLabel
+            .setVisible(true)
+            .setText(`${this.resetDeckConfirmSecondsRemaining}s`);
+        this.subtitle.setText(`Click reset again within ${this.resetDeckConfirmSecondsRemaining}s to confirm.`);
+
+        this.resetDeckConfirmTimer = this.time.addEvent({
+            delay: 1000,
+            loop: true,
+            callback: () => {
+                this.resetDeckConfirmSecondsRemaining = Math.max(0, this.resetDeckConfirmSecondsRemaining - 1);
+                if (this.resetDeckConfirmSecondsRemaining <= 0) {
+                    this.disarmResetDeckConfirm();
+                    this.updateSummaryText();
+                    return;
+                }
+
+                this.resetLabel.setText(`${this.resetDeckConfirmSecondsRemaining}s`);
+            }
+        });
+    }
+
+    private disarmResetDeckConfirm (): void
+    {
+        if (this.resetDeckConfirmTimer) {
+            this.resetDeckConfirmTimer.remove(false);
+            this.resetDeckConfirmTimer = null;
+        }
+
+        this.resetDeckConfirmSecondsRemaining = 0;
+        this.resetHoverLabel.setVisible(false);
+        this.resetLabel.setVisible(false).setText('');
+        this.resetIcon.setVisible(true);
+        this.resetIcon.clearTint();
     }
 
     private buildCharacterTypeButtons (): void
@@ -602,13 +815,14 @@ export class DeckBuilder extends Scene
 
         for (let i = 0; i < types.length; i += 1) {
             const def = types[i];
+            const buttonCardType = def.cardType;
             const x = startX + (i * spacing);
 
             const body = this.add.rectangle(x, y, width, height, 0x0b1220, 0.88)
                 .setStrokeStyle(2, 0xffffff, 0.5)
                 .setInteractive({ useHandCursor: true });
 
-            const label = this.add.bitmapText(x, y, 'minogram', def.label, fontSize)
+            const label = this.add.text(x, y, def.label).setFontSize(fontSize)
                 .setOrigin(0.5)
                 .setTint(0xffffff);
 
@@ -622,6 +836,25 @@ export class DeckBuilder extends Scene
                 this.renderRows();
                 this.updateSummaryText();
             });
+
+            this.bindHoverHighlight(
+                body,
+                label,
+                () => {
+                    const active = buttonCardType === this.state.activeCharacterCardType;
+                    return {
+                        fillColor: active ? 0x1d4ed8 : 0x0b1220,
+                        fillAlpha: active ? 0.95 : 0.88,
+                        labelTint: active ? 0xfef08a : 0xffffff,
+                    };
+                },
+                () => ({
+                    fillColor: 0x1e293b,
+                    fillAlpha: 0.98,
+                    labelTint: 0xfef08a,
+                }),
+                () => this.state.activeCategory === 'character'
+            );
 
             this.characterTypeButtons.push({
                 cardType: def.cardType,
@@ -652,34 +885,16 @@ export class DeckBuilder extends Scene
                 .setStrokeStyle(2, 0xffffff, 0.7)
                 .setInteractive({ useHandCursor: true });
 
-            const iconLabel = this.add.bitmapText(
-                iconBody.x,
-                iconBody.y,
-                'minogram',
-                '',
-                Math.max(DECK_BUILDER_TEXT_LAYOUT.rowIconFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.rowIconFontSizeBase * UI_SCALE))
-            )
+            const iconLabel = this.add.text(iconBody.x, iconBody.y, '').setFontSize(Math.max(DECK_BUILDER_TEXT_LAYOUT.rowIconFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.rowIconFontSizeBase * UI_SCALE)))
                 .setOrigin(0.5)
                 .setTint(0xffffff)
                 .setInteractive({ useHandCursor: true });
 
-            const cardName = this.add.bitmapText(
-                Math.round(GAME_CENTER_X - 190 * UI_SCALE),
-                y,
-                'minogram',
-                '',
-                Math.max(DECK_BUILDER_TEXT_LAYOUT.rowCardNameFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.rowCardNameFontSizeBase * UI_SCALE))
-            )
+            const cardName = this.add.text(Math.round(GAME_CENTER_X - 190 * UI_SCALE), y, '').setFontSize(Math.max(DECK_BUILDER_TEXT_LAYOUT.rowCardNameFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.rowCardNameFontSizeBase * UI_SCALE)))
                 .setOrigin(0, 0.5)
                 .setTint(0xffffff);
 
-            const countLabel = this.add.bitmapText(
-                Math.round(GAME_CENTER_X + 148 * UI_SCALE),
-                y,
-                'minogram',
-                '0',
-                Math.max(DECK_BUILDER_TEXT_LAYOUT.rowCountFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.rowCountFontSizeBase * UI_SCALE))
-            )
+            const countLabel = this.add.text(Math.round(GAME_CENTER_X + 148 * UI_SCALE), y, '0').setFontSize(Math.max(DECK_BUILDER_TEXT_LAYOUT.rowCountFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.rowCountFontSizeBase * UI_SCALE)))
                 .setOrigin(0.5)
                 .setTint(0xffffff);
 
@@ -694,13 +909,7 @@ export class DeckBuilder extends Scene
                 .setStrokeStyle(2, 0xffffff, 0.75)
                 .setInteractive({ useHandCursor: true });
 
-            const plusLabel = this.add.bitmapText(
-                plusButton.x,
-                plusButton.y,
-                'minogram',
-                '+',
-                Math.max(DECK_BUILDER_TEXT_LAYOUT.rowAdjustFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.rowAdjustFontSizeBase * UI_SCALE))
-            )
+            const plusLabel = this.add.text(plusButton.x, plusButton.y, '+').setFontSize(Math.max(DECK_BUILDER_TEXT_LAYOUT.rowAdjustFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.rowAdjustFontSizeBase * UI_SCALE)))
                 .setOrigin(0.5)
                 .setTint(0xffffff);
 
@@ -724,6 +933,37 @@ export class DeckBuilder extends Scene
                 this.tryAddCardToDeck(row.card);
             });
 
+            this.bindHoverHighlight(
+                plusButton,
+                plusLabel,
+                () => ({
+                    fillColor: 0x0f766e,
+                    fillAlpha: this.canAddCardToDeck(row.card) ? 0.95 : 0.45,
+                    labelTint: 0xffffff,
+                    labelAlpha: this.canAddCardToDeck(row.card) ? 1 : 0.45,
+                }),
+                () => ({
+                    fillColor: 0x0d9488,
+                    fillAlpha: 0.98,
+                    labelTint: 0xfef08a,
+                }),
+                () => this.canAddCardToDeck(row.card)
+            );
+
+            const applyIconBaseStyle = (): void => {
+                iconBody.setFillStyle(0x1e293b, 0.95);
+                iconLabel.setTint(0xffffff);
+            };
+            const applyIconHoverStyle = (): void => {
+                iconBody.setFillStyle(0x334155, 0.98);
+                iconLabel.setTint(0xfef08a);
+            };
+
+            iconBody.on('pointerover', applyIconHoverStyle);
+            iconBody.on('pointerout', applyIconBaseStyle);
+            iconLabel.on('pointerover', applyIconHoverStyle);
+            iconLabel.on('pointerout', applyIconBaseStyle);
+
             const showPreview = (pointer?: Phaser.Input.Pointer) => {
                 if (!row.card) {
                     return;
@@ -738,6 +978,8 @@ export class DeckBuilder extends Scene
             iconLabel.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
                 showPreview(pointer);
             });
+
+            applyIconBaseStyle();
 
             this.rows.push(row);
         }
@@ -754,30 +996,18 @@ export class DeckBuilder extends Scene
             .setStrokeStyle(2, 0xffffff, 0.8)
             .setDepth(10);
 
-        this.add.bitmapText(
-            panelX,
-            panelY - Math.round(panelHeight * 0.5) + Math.round(DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.titleOffsetYBase * UI_SCALE),
-            'minogram',
-            'CURRENT DECK',
-            Math.max(
+        this.add.text(panelX, panelY - Math.round(panelHeight * 0.5) + Math.round(DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.titleOffsetYBase * UI_SCALE), 'CURRENT DECK').setFontSize(Math.max(
                 DECK_BUILDER_CURRENT_DECK_PREVIEW_TEXT_LAYOUT.titleFontSizeMin,
                 Math.round(DECK_BUILDER_CURRENT_DECK_PREVIEW_TEXT_LAYOUT.titleFontSizeBase * UI_SCALE)
-            )
-        )
+            ))
             .setOrigin(0.5)
             .setTint(0xffffff)
             .setDepth(11);
 
-        this.currentDeckHint = this.add.bitmapText(
-            panelX,
-            panelY - Math.round(panelHeight * 0.5) + Math.round(DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.hintOffsetYBase * UI_SCALE),
-            'minogram',
-            '',
-            Math.max(
+        this.currentDeckHint = this.add.text(panelX, panelY - Math.round(panelHeight * 0.5) + Math.round(DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.hintOffsetYBase * UI_SCALE), '').setFontSize(Math.max(
                 DECK_BUILDER_CURRENT_DECK_PREVIEW_TEXT_LAYOUT.hintFontSizeMin,
                 Math.round(DECK_BUILDER_CURRENT_DECK_PREVIEW_TEXT_LAYOUT.hintFontSizeBase * UI_SCALE)
-            )
-        )
+            ))
             .setOrigin(0.5)
             .setTint(0xcbd5e1)
             .setDepth(11);
@@ -878,16 +1108,10 @@ export class DeckBuilder extends Scene
         let cursorY = this.currentDeckHint.y + Math.round(DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.listTopOffsetBase * UI_SCALE);
 
         if (grouped.length === 0) {
-            const empty = this.add.bitmapText(
-                this.currentDeckPanel.x,
-                cursorY + Math.round(DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.emptyOffsetYBase * UI_SCALE),
-                'minogram',
-                'ADD CARDS USING +',
-                Math.max(
+            const empty = this.add.text(this.currentDeckPanel.x, cursorY + Math.round(DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.emptyOffsetYBase * UI_SCALE), 'ADD CARDS USING +').setFontSize(Math.max(
                     DECK_BUILDER_CURRENT_DECK_PREVIEW_TEXT_LAYOUT.emptyStateFontSizeMin,
                     Math.round(DECK_BUILDER_CURRENT_DECK_PREVIEW_TEXT_LAYOUT.emptyStateFontSizeBase * UI_SCALE)
-                )
-            )
+                ))
                 .setOrigin(0.5)
                 .setTint(0x94a3b8)
                 .setDepth(11);
@@ -901,13 +1125,7 @@ export class DeckBuilder extends Scene
                 break;
             }
 
-            const sectionTitle = this.add.bitmapText(
-                panelLeft,
-                cursorY,
-                'minogram',
-                this.getCategoryLabel(group.category),
-                headerFontSize
-            )
+            const sectionTitle = this.add.text(panelLeft, cursorY, this.getCategoryLabel(group.category)).setFontSize(headerFontSize)
                 .setOrigin(0, 0.5)
                 .setTint(0xf8fafc)
                 .setDepth(11);
@@ -942,34 +1160,21 @@ export class DeckBuilder extends Scene
                     .setDepth(11)
                     .setInteractive({ useHandCursor: true });
 
-                const icon = this.add.bitmapText(
-                    x,
-                    y - Math.round(tileHeight * DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.iconOffsetYRatio),
-                    'minogram',
-                    card.iconFallback,
-                    iconFontSize
-                )
+                const icon = this.add.text(x, y - Math.round(tileHeight * DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.iconOffsetYRatio), card.iconFallback).setFontSize(iconFontSize)
                     .setOrigin(0.5)
                     .setTint(0xffffff)
                     .setDepth(12)
                     .setInteractive({ useHandCursor: true });
 
-                const name = this.add.bitmapText(
-                    x - Math.round(tileWidth * DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.nameOffsetXRatio),
-                    y + Math.round(tileHeight * DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.nameOffsetYRatio),
-                    'minogram',
-                    '',
-                    nameFontSize
-                )
+                const name = this.add.text(x - Math.round(tileWidth * DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.nameOffsetXRatio), y + Math.round(tileHeight * DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.nameOffsetYRatio), '').setFontSize(nameFontSize)
                     .setOrigin(0, 0.5)
                     .setTint(0xf8fafc)
                     .setDepth(12)
                     .setInteractive({ useHandCursor: true });
 
                 const tileNameMaxWidth = Math.round(tileWidth * DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.tileNameMaxWidthRatio);
-                const tileNameFit = fitBitmapTextToMultiLine({
+                const tileNameFit = fitTextToMultiLine({
                     scene: this,
-                    font: 'minogram',
                     text: card.label.toUpperCase(),
                     preferredSize: nameFontSize,
                     minSize: Math.max(7, Math.round(nameFontSize * 0.7)),
@@ -991,13 +1196,7 @@ export class DeckBuilder extends Scene
                     .setDepth(12)
                     .setInteractive({ useHandCursor: true });
 
-                const removeText = this.add.bitmapText(
-                    removeButton.x,
-                    removeButton.y,
-                    'minogram',
-                    '-',
-                    removeFontSize
-                )
+                const removeText = this.add.text(removeButton.x, removeButton.y, '-').setFontSize(removeFontSize)
                     .setOrigin(0.5)
                     .setTint(0xffffff)
                     .setDepth(13)
@@ -1006,6 +1205,19 @@ export class DeckBuilder extends Scene
                 const openPreview = (pointer?: Phaser.Input.Pointer) => {
                     this.showDeckCardPreview(card, pointer);
                 };
+
+                const applyTileBaseStyle = (): void => {
+                    body.setFillStyle(this.getCategoryColor(card.category), 0.95);
+                    icon.setTint(0xffffff);
+                    name.setTint(0xf8fafc);
+                };
+
+                const applyTileHoverStyle = (): void => {
+                    body.setFillStyle(0x1e293b, 0.98);
+                    icon.setTint(0xfef08a);
+                    name.setTint(0xfef08a);
+                };
+
                 body.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
                     openPreview(pointer);
                 });
@@ -1016,6 +1228,13 @@ export class DeckBuilder extends Scene
                     openPreview(pointer);
                 });
 
+                body.on('pointerover', applyTileHoverStyle);
+                body.on('pointerout', applyTileBaseStyle);
+                icon.on('pointerover', applyTileHoverStyle);
+                icon.on('pointerout', applyTileBaseStyle);
+                name.on('pointerover', applyTileHoverStyle);
+                name.on('pointerout', applyTileBaseStyle);
+
                 removeButton.on('pointerdown', () => {
                     this.tryRemoveCardFromDeck(card);
                 });
@@ -1023,6 +1242,21 @@ export class DeckBuilder extends Scene
                 removeText.on('pointerdown', () => {
                     this.tryRemoveCardFromDeck(card);
                 });
+
+                this.bindHoverHighlight(
+                    removeButton,
+                    removeText,
+                    () => ({ fillColor: 0x020617, fillAlpha: 0.95, labelTint: 0xffffff }),
+                    () => ({ fillColor: 0x334155, fillAlpha: 0.98, labelTint: 0xfef08a })
+                );
+                removeText.on('pointerover', () => {
+                    removeButton.emit('pointerover');
+                });
+                removeText.on('pointerout', () => {
+                    removeButton.emit('pointerout');
+                });
+
+                applyTileBaseStyle();
 
                 this.currentDeckCardObjects.push(body, icon, name, removeButton, removeText);
             }
@@ -1170,6 +1404,20 @@ export class DeckBuilder extends Scene
         this.hideDeckCardPreview();
     }
 
+    private handleGlobalGameObjectDown (_pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.GameObject): void
+    {
+        if (!this.resetDeckConfirmTimer) {
+            return;
+        }
+
+        if (gameObject === this.resetButton) {
+            return;
+        }
+
+        this.disarmResetDeckConfirm();
+        this.updateSummaryText();
+    }
+
     private buildSearchMenu (): void
     {
         const panelWidth = Math.round(620 * UI_SCALE);
@@ -1201,35 +1449,17 @@ export class DeckBuilder extends Scene
             .setDepth(1201)
             .setInteractive({ useHandCursor: true });
 
-        this.searchTitle = this.add.bitmapText(
-            panelX,
-            panelTop + Math.round(30 * UI_SCALE),
-            'minogram',
-            'CARD SEARCH',
-            Math.max(DECK_BUILDER_TEXT_LAYOUT.searchTitleFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.searchTitleFontSizeBase * UI_SCALE))
-        )
+        this.searchTitle = this.add.text(panelX, panelTop + Math.round(30 * UI_SCALE), 'CARD SEARCH').setFontSize(Math.max(DECK_BUILDER_TEXT_LAYOUT.searchTitleFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.searchTitleFontSizeBase * UI_SCALE)))
             .setOrigin(0.5)
             .setTint(0xffffff)
             .setDepth(1202);
 
-        this.searchHint = this.add.bitmapText(
-            panelX,
-            panelTop + Math.round(58 * UI_SCALE),
-            'minogram',
-            'Type to search all cards. Enter = add first result. Esc = close.',
-            Math.max(DECK_BUILDER_TEXT_LAYOUT.searchHintFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.searchHintFontSizeBase * UI_SCALE))
-        )
+        this.searchHint = this.add.text(panelX, panelTop + Math.round(58 * UI_SCALE), 'Type to search all cards. Enter = add first result. Esc = close.').setFontSize(Math.max(DECK_BUILDER_TEXT_LAYOUT.searchHintFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.searchHintFontSizeBase * UI_SCALE)))
             .setOrigin(0.5)
             .setTint(0xcbd5e1)
             .setDepth(1202);
 
-        this.searchQueryLabel = this.add.bitmapText(
-            panelX - Math.round(panelWidth * 0.5) + Math.round(22 * UI_SCALE),
-            panelTop + Math.round(88 * UI_SCALE),
-            'minogram',
-            '',
-            Math.max(DECK_BUILDER_TEXT_LAYOUT.searchQueryFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.searchQueryFontSizeBase * UI_SCALE))
-        )
+        this.searchQueryLabel = this.add.text(panelX - Math.round(panelWidth * 0.5) + Math.round(22 * UI_SCALE), panelTop + Math.round(88 * UI_SCALE), '').setFontSize(Math.max(DECK_BUILDER_TEXT_LAYOUT.searchQueryFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.searchQueryFontSizeBase * UI_SCALE)))
             .setOrigin(0, 0.5)
             .setTint(0xf8fafc)
             .setDepth(1202);
@@ -1246,13 +1476,7 @@ export class DeckBuilder extends Scene
             .setDepth(1202)
             .setInteractive({ useHandCursor: true });
 
-        this.searchSaveLabel = this.add.bitmapText(
-            this.searchSaveButton.x,
-            this.searchSaveButton.y,
-            'minogram',
-            'SAVE',
-            Math.max(DECK_BUILDER_TEXT_LAYOUT.searchButtonFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.searchButtonFontSizeBase * UI_SCALE))
-        )
+        this.searchSaveLabel = this.add.text(this.searchSaveButton.x, this.searchSaveButton.y, 'SAVE').setFontSize(Math.max(DECK_BUILDER_TEXT_LAYOUT.searchButtonFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.searchButtonFontSizeBase * UI_SCALE)))
             .setOrigin(0.5)
             .setTint(0xffffff)
             .setDepth(1203);
@@ -1269,13 +1493,7 @@ export class DeckBuilder extends Scene
             .setDepth(1202)
             .setInteractive({ useHandCursor: true });
 
-        this.searchClearLabel = this.add.bitmapText(
-            this.searchClearButton.x,
-            this.searchClearButton.y,
-            'minogram',
-            'CLEAR',
-            Math.max(DECK_BUILDER_TEXT_LAYOUT.searchButtonFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.searchButtonFontSizeBase * UI_SCALE))
-        )
+        this.searchClearLabel = this.add.text(this.searchClearButton.x, this.searchClearButton.y, 'CLEAR').setFontSize(Math.max(DECK_BUILDER_TEXT_LAYOUT.searchButtonFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.searchButtonFontSizeBase * UI_SCALE)))
             .setOrigin(0.5)
             .setTint(0xffffff)
             .setDepth(1203);
@@ -1292,13 +1510,7 @@ export class DeckBuilder extends Scene
             .setDepth(1202)
             .setInteractive({ useHandCursor: true });
 
-        this.searchCloseLabel = this.add.bitmapText(
-            this.searchCloseButton.x,
-            this.searchCloseButton.y,
-            'minogram',
-            'CLOSE',
-            Math.max(DECK_BUILDER_TEXT_LAYOUT.searchButtonFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.searchButtonFontSizeBase * UI_SCALE))
-        )
+        this.searchCloseLabel = this.add.text(this.searchCloseButton.x, this.searchCloseButton.y, 'CLOSE').setFontSize(Math.max(DECK_BUILDER_TEXT_LAYOUT.searchButtonFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.searchButtonFontSizeBase * UI_SCALE)))
             .setOrigin(0.5)
             .setTint(0xffffff)
             .setDepth(1203);
@@ -1326,35 +1538,17 @@ export class DeckBuilder extends Scene
                 .setStrokeStyle(1, 0xffffff, 0.18)
                 .setDepth(1202);
 
-            const cardName = this.add.bitmapText(
-                nameX,
-                y - Math.round(7 * UI_SCALE),
-                'minogram',
-                '',
-                Math.max(DECK_BUILDER_TEXT_LAYOUT.searchRowNameFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.searchRowNameFontSizeBase * UI_SCALE))
-            )
+            const cardName = this.add.text(nameX, y - Math.round(7 * UI_SCALE), '').setFontSize(Math.max(DECK_BUILDER_TEXT_LAYOUT.searchRowNameFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.searchRowNameFontSizeBase * UI_SCALE)))
                 .setOrigin(0, 0.5)
                 .setTint(0xffffff)
                 .setDepth(1203);
 
-            const cardMeta = this.add.bitmapText(
-                nameX,
-                y + Math.round(9 * UI_SCALE),
-                'minogram',
-                '',
-                Math.max(DECK_BUILDER_TEXT_LAYOUT.searchRowMetaFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.searchRowMetaFontSizeBase * UI_SCALE))
-            )
+            const cardMeta = this.add.text(nameX, y + Math.round(9 * UI_SCALE), '').setFontSize(Math.max(DECK_BUILDER_TEXT_LAYOUT.searchRowMetaFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.searchRowMetaFontSizeBase * UI_SCALE)))
                 .setOrigin(0, 0.5)
                 .setTint(0xcbd5e1)
                 .setDepth(1203);
 
-            const countLabel = this.add.bitmapText(
-                countX,
-                y,
-                'minogram',
-                '0',
-                Math.max(DECK_BUILDER_TEXT_LAYOUT.searchRowCountFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.searchRowCountFontSizeBase * UI_SCALE))
-            )
+            const countLabel = this.add.text(countX, y, '0').setFontSize(Math.max(DECK_BUILDER_TEXT_LAYOUT.searchRowCountFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.searchRowCountFontSizeBase * UI_SCALE)))
                 .setOrigin(0.5)
                 .setTint(0xffffff)
                 .setDepth(1204);
@@ -1371,13 +1565,7 @@ export class DeckBuilder extends Scene
                 .setDepth(1203)
                 .setInteractive({ useHandCursor: true });
 
-            const plusLabel = this.add.bitmapText(
-                plusButton.x,
-                plusButton.y,
-                'minogram',
-                '+',
-                Math.max(DECK_BUILDER_TEXT_LAYOUT.searchRowAdjustFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.searchRowAdjustFontSizeBase * UI_SCALE))
-            )
+            const plusLabel = this.add.text(plusButton.x, plusButton.y, '+').setFontSize(Math.max(DECK_BUILDER_TEXT_LAYOUT.searchRowAdjustFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.searchRowAdjustFontSizeBase * UI_SCALE)))
                 .setOrigin(0.5)
                 .setTint(0xffffff)
                 .setDepth(1204);
@@ -1401,6 +1589,19 @@ export class DeckBuilder extends Scene
                 this.tryAddCardToDeck(row.card);
             });
 
+            this.bindHoverHighlight(
+                plusButton,
+                plusLabel,
+                () => ({
+                    fillColor: 0x0f766e,
+                    fillAlpha: this.canAddCardToDeck(row.card) ? 0.95 : 0.45,
+                    labelTint: 0xffffff,
+                    labelAlpha: this.canAddCardToDeck(row.card) ? 1 : 0.45,
+                }),
+                () => ({ fillColor: 0x0d9488, fillAlpha: 0.98, labelTint: 0xfef08a }),
+                () => this.canAddCardToDeck(row.card)
+            );
+
             this.searchRows.push(row);
         }
 
@@ -1416,13 +1617,7 @@ export class DeckBuilder extends Scene
             .setDepth(1202)
             .setInteractive({ useHandCursor: true });
 
-        this.searchPrevLabel = this.add.bitmapText(
-            this.searchPrevButton.x,
-            this.searchPrevButton.y,
-            'minogram',
-            'PREV',
-            Math.max(DECK_BUILDER_TEXT_LAYOUT.searchPagerFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.searchPagerFontSizeBase * UI_SCALE))
-        )
+        this.searchPrevLabel = this.add.text(this.searchPrevButton.x, this.searchPrevButton.y, 'PREV').setFontSize(Math.max(DECK_BUILDER_TEXT_LAYOUT.searchPagerFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.searchPagerFontSizeBase * UI_SCALE)))
             .setOrigin(0.5)
             .setTint(0xffffff)
             .setDepth(1203);
@@ -1439,16 +1634,60 @@ export class DeckBuilder extends Scene
             .setDepth(1202)
             .setInteractive({ useHandCursor: true });
 
-        this.searchNextLabel = this.add.bitmapText(
-            this.searchNextButton.x,
-            this.searchNextButton.y,
-            'minogram',
-            'NEXT',
-            Math.max(DECK_BUILDER_TEXT_LAYOUT.searchPagerFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.searchPagerFontSizeBase * UI_SCALE))
-        )
+        this.searchNextLabel = this.add.text(this.searchNextButton.x, this.searchNextButton.y, 'NEXT').setFontSize(Math.max(DECK_BUILDER_TEXT_LAYOUT.searchPagerFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.searchPagerFontSizeBase * UI_SCALE)))
             .setOrigin(0.5)
             .setTint(0xffffff)
             .setDepth(1203);
+
+        this.bindHoverHighlight(
+            this.searchSaveButton,
+            this.searchSaveLabel,
+            () => ({ fillColor: 0x14532d, fillAlpha: 0.95, labelTint: 0xffffff }),
+            () => ({ fillColor: 0x166534, fillAlpha: 0.98, labelTint: 0xfef08a })
+        );
+
+        this.bindHoverHighlight(
+            this.searchClearButton,
+            this.searchClearLabel,
+            () => ({ fillColor: 0x334155, fillAlpha: 0.95, labelTint: 0xffffff }),
+            () => ({ fillColor: 0x475569, fillAlpha: 0.98, labelTint: 0xfef08a })
+        );
+
+        this.bindHoverHighlight(
+            this.searchCloseButton,
+            this.searchCloseLabel,
+            () => ({ fillColor: 0x7f1d1d, fillAlpha: 0.95, labelTint: 0xffffff }),
+            () => ({ fillColor: 0x991b1b, fillAlpha: 0.98, labelTint: 0xfef08a })
+        );
+
+        this.bindHoverHighlight(
+            this.searchPrevButton,
+            this.searchPrevLabel,
+            () => ({
+                fillColor: 0x0f172a,
+                fillAlpha: this.searchPageIndex > 0 ? 0.95 : 0.45,
+                labelTint: 0xffffff,
+                labelAlpha: this.searchPageIndex > 0 ? 1 : 0.45,
+            }),
+            () => ({ fillColor: 0x1e293b, fillAlpha: 0.98, labelTint: 0xfef08a }),
+            () => this.searchPageIndex > 0
+        );
+
+        this.bindHoverHighlight(
+            this.searchNextButton,
+            this.searchNextLabel,
+            () => {
+                const hasNext = this.searchPageIndex < Math.max(0, Math.ceil(this.getSearchFilteredCards().length / SEARCH_RESULTS_PER_PAGE) - 1);
+                return {
+                    fillColor: 0x0f172a,
+                    fillAlpha: hasNext ? 0.95 : 0.45,
+                    labelTint: 0xffffff,
+                    labelAlpha: hasNext ? 1 : 0.45,
+                };
+            },
+            () => ({ fillColor: 0x1e293b, fillAlpha: 0.98, labelTint: 0xfef08a }),
+            () => this.searchPageIndex < Math.max(0, Math.ceil(this.getSearchFilteredCards().length / SEARCH_RESULTS_PER_PAGE) - 1)
+        );
 
         this.searchBackdrop.on('pointerdown', () => {
             this.toggleSearchMenu(false);
@@ -1523,7 +1762,7 @@ export class DeckBuilder extends Scene
         }
 
         this.searchMenuVisible = visible;
-        this.searchButton.setFillStyle(visible ? 0x166534 : 0x14532d, 0.95);
+        this.searchButton.setFillStyle(visible ? 0x1e293b : 0x0f172a, 0.95);
     }
 
     private toggleSearchMenu (visible: boolean): void
@@ -1637,10 +1876,9 @@ export class DeckBuilder extends Scene
             const count = this.state.countsByCardId.get(card.id) ?? 0;
             row.countLabel.setText(String(count));
 
-            const maxCopies = this.getMaxCopiesForCard(card);
-            const totalCards = this.collectCards().length;
-            const canAdd = count < maxCopies && totalCards < DECK_REQUIRED_CARD_COUNT;
-            row.plusButton.setAlpha(canAdd ? 1 : 0.45);
+            const canAdd = this.canAddCardToDeck(card);
+            row.plusButton.setFillStyle(0x0f766e, canAdd ? 0.95 : 0.45);
+            row.plusLabel.setTint(0xffffff);
             row.plusLabel.setAlpha(canAdd ? 1 : 0.45);
         }
 
@@ -1913,6 +2151,59 @@ export class DeckBuilder extends Scene
             button.body.setFillStyle(active ? 0x1d4ed8 : 0x0b1220, active ? 0.95 : 0.88);
             button.label.setTint(active ? 0xfef08a : 0xe2e8f0);
         }
+
+        this.positionDeckTransferButtons();
+    }
+
+    private positionDeckTransferButtons (): void
+    {
+        if (!this.resetButton || !this.exportButton || !this.importButton || this.deckSlotButtons.length === 0) {
+            return;
+        }
+
+        const activeSlot = this.deckSlotButtons.find((button) => {
+            const slotDeck = this.slotDecks[button.index] ?? null;
+            return slotDeck !== null && slotDeck.deckId === this.state.deckId;
+        }) ?? this.deckSlotButtons[0];
+
+        const buttonSize = Math.round(DECK_BUILDER_TRANSFER_ICON_LAYOUT.buttonSizeBase * UI_SCALE);
+        const buttonGapX = Math.round(DECK_BUILDER_TRANSFER_ICON_LAYOUT.buttonGapXBase * UI_SCALE);
+        const buttonOffsetX = Math.round(DECK_BUILDER_TRANSFER_ICON_LAYOUT.buttonOffsetXBase * UI_SCALE);
+        const hoverLabelOffsetY = Math.round(DECK_BUILDER_TRANSFER_ICON_LAYOUT.hoverLabelOffsetYBase * UI_SCALE);
+        const hoverLabelSize = Math.max(
+            DECK_BUILDER_TRANSFER_ICON_LAYOUT.hoverLabelFontSizeMin,
+            Math.round(DECK_BUILDER_TRANSFER_ICON_LAYOUT.hoverLabelFontSizeBase * UI_SCALE)
+        );
+
+        const slotLeftX = activeSlot.body.x - Math.round(activeSlot.body.width * 0.5);
+        const importX = slotLeftX - buttonOffsetX - Math.round(buttonSize * 0.5);
+        const exportX = importX - buttonSize - buttonGapX;
+        const resetX = exportX - buttonSize - buttonGapX;
+        const buttonsY = activeSlot.body.y;
+
+        this.resetButton.setPosition(resetX, buttonsY);
+        this.resetIcon.setPosition(resetX, buttonsY);
+        this.resetLabel
+            .setPosition(resetX, buttonsY)
+            .setFontSize(Math.max(
+                DECK_BUILDER_TRANSFER_ICON_LAYOUT.resetCountdownFontSizeMin,
+                Math.round(DECK_BUILDER_TRANSFER_ICON_LAYOUT.resetCountdownFontSizeBase * UI_SCALE)
+            ));
+        this.resetHoverLabel
+            .setPosition(resetX, buttonsY - hoverLabelOffsetY)
+            .setFontSize(hoverLabelSize);
+
+        this.exportButton.setPosition(exportX, buttonsY);
+        this.exportIcon.setPosition(exportX, buttonsY);
+        this.exportLabel
+            .setPosition(exportX, buttonsY - hoverLabelOffsetY)
+            .setFontSize(hoverLabelSize);
+
+        this.importButton.setPosition(importX, buttonsY);
+        this.importIcon.setPosition(importX, buttonsY);
+        this.importLabel
+            .setPosition(importX, buttonsY - hoverLabelOffsetY)
+            .setFontSize(hoverLabelSize);
     }
 
     private renameCurrentDeck (): void
@@ -2163,6 +2454,11 @@ export class DeckBuilder extends Scene
 
             const count = this.state.countsByCardId.get(card.id) ?? 0;
             row.countLabel.setText(String(count));
+
+            const canAdd = this.canAddCardToDeck(card);
+            row.plusButton.setFillStyle(0x0f766e, canAdd ? 0.95 : 0.45);
+            row.plusLabel.setTint(0xffffff);
+            row.plusLabel.setAlpha(canAdd ? 1 : 0.45);
         }
 
         for (const button of this.categoryButtons) {
@@ -2254,6 +2550,66 @@ export class DeckBuilder extends Scene
             }
         }
         return cards;
+    }
+
+    private canAddCardToDeck (card: CardCatalogEntry | null): boolean
+    {
+        if (!card) {
+            return false;
+        }
+
+        const count = this.state.countsByCardId.get(card.id) ?? 0;
+        const maxCopies = this.getMaxCopiesForCard(card);
+        const totalCards = this.collectCards().length;
+        return count < maxCopies && totalCards < DECK_REQUIRED_CARD_COUNT;
+    }
+
+    private applyButtonStyle (
+        button: GameObjects.Rectangle,
+        label: GameObjects.Text | null | undefined,
+        style: DeckBuilderButtonStyle
+    ): void
+    {
+        button.setFillStyle(style.fillColor, style.fillAlpha);
+        if (!label) {
+            return;
+        }
+
+        if (typeof style.labelTint === 'number') {
+            label.setTint(style.labelTint);
+        }
+
+        if (typeof style.labelAlpha === 'number') {
+            label.setAlpha(style.labelAlpha);
+        }
+    }
+
+    private bindHoverHighlight (
+        button: GameObjects.Rectangle,
+        label: GameObjects.Text | null | undefined,
+        getBaseStyle: () => DeckBuilderButtonStyle,
+        getHoverStyle: () => DeckBuilderButtonStyle,
+        isEnabled?: () => boolean
+    ): void
+    {
+        const applyBaseStyle = (): void => {
+            this.applyButtonStyle(button, label, getBaseStyle());
+        };
+
+        button.on('pointerover', () => {
+            if (isEnabled && !isEnabled()) {
+                applyBaseStyle();
+                return;
+            }
+
+            this.applyButtonStyle(button, label, getHoverStyle());
+        });
+
+        button.on('pointerout', () => {
+            applyBaseStyle();
+        });
+
+        applyBaseStyle();
     }
 
     private getMaxCopiesForCard (card: CardCatalogEntry): number

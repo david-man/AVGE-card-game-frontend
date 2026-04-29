@@ -1,6 +1,6 @@
 import { Scene } from 'phaser';
 import { GAME_INPUT_REVEAL_OVERLAY, GAME_INPUT_SELECTION_OVERLAY, GAME_OVERLAY_DEPTHS } from '../../config';
-import { fitBitmapTextToMultiLine } from './bitmapTextFit';
+import { fitTextToMultiLine } from './textFit';
 
 type OverlayCloseCallback = () => void;
 type OverlayCardClickCallback = (cardId: string) => void;
@@ -174,16 +174,16 @@ export class DisplayInputOverlay
             .setDepth(overlayDepth)
             .setInteractive({ useHandCursor: false });
 
-        const title = this.scene.add.bitmapText(panelX, panelY - Math.round(panelHeight * 0.36), 'minogram', `${playerLabel}`, titleFontSize)
+        const title = this.scene.add.text(panelX, panelY - Math.round(panelHeight * 0.36), `${playerLabel}`).setFontSize(titleFontSize)
             .setOrigin(0.5)
             .setDepth(overlayDepth + 1)
-            .setMaxWidth(Math.round(panelWidth * 0.86))
+            .setWordWrapWidth(Math.round(panelWidth * 0.86))
             .setInteractive({ useHandCursor: false });
 
-        const body = this.scene.add.bitmapText(panelX - Math.round(panelWidth * 0.42), panelY - Math.round(panelHeight * 0.16), 'minogram', message, bodyFontSize)
+        const body = this.scene.add.text(panelX - Math.round(panelWidth * 0.42), panelY - Math.round(panelHeight * 0.16), message).setFontSize(bodyFontSize)
             .setOrigin(0, 0)
             .setDepth(overlayDepth + 1)
-            .setMaxWidth(Math.round(panelWidth * 0.84))
+            .setWordWrapWidth(Math.round(panelWidth * 0.84))
             .setInteractive({ useHandCursor: false });
 
         const closeX = panelX + Math.round(panelWidth * 0.5) - Math.round(closeButtonSize * 0.7);
@@ -194,7 +194,7 @@ export class DisplayInputOverlay
             .setDepth(overlayDepth + 2)
             .setInteractive({ useHandCursor: true });
 
-        const closeLabel = this.scene.add.bitmapText(closeX, closeY, 'minogram', 'X', closeFontSize)
+        const closeLabel = this.scene.add.text(closeX, closeY, 'X').setFontSize(closeFontSize)
             .setOrigin(0.5)
             .setDepth(overlayDepth + 3);
 
@@ -329,16 +329,10 @@ export class DisplayInputOverlay
 
 
         const messageText = revealMessage
-            ? this.scene.add.bitmapText(
-                panelX - Math.round(messageMaxWidth / 2),
-                messageTopY,
-                'minogram',
-                revealMessage,
-                messageFontSize,
-            )
+            ? this.scene.add.text(panelX - Math.round(messageMaxWidth / 2), messageTopY, revealMessage).setFontSize(messageFontSize)
                 .setOrigin(0, 0)
                 .setDepth(overlayDepth + 1)
-                .setMaxWidth(messageMaxWidth)
+                .setWordWrapWidth(messageMaxWidth)
                 .setInteractive({ useHandCursor: false })
             : null;
         messageText?.on('pointerdown', cancelTimeoutFromInteraction);
@@ -349,7 +343,7 @@ export class DisplayInputOverlay
         }
 
         if (cards.length === 0) {
-            const emptyText = this.scene.add.bitmapText(panelX, panelY, 'minogram', '(NO CARDS)', Math.max(22, Math.round(panelWidth * 0.04)))
+            const emptyText = this.scene.add.text(panelX, panelY, '(NO CARDS)').setFontSize(Math.max(22, Math.round(panelWidth * 0.04)))
                 .setOrigin(0.5)
                 .setDepth(overlayDepth + 1);
             emptyText.setY(Math.round(gridTopY + (availableHeight / 2)));
@@ -421,39 +415,25 @@ export class DisplayInputOverlay
                 const body = this.scene.add.rectangle(0, 0, cardWidth, cardHeight, card.cardColor, 1)
                     .setStrokeStyle(3, 0xffffff, 0.95);
 
-                const classLabelLayout = fitBitmapTextToMultiLine({
+                const classLabelLayout = fitTextToMultiLine({
                     scene: this.scene,
-                    font: 'minogram',
                     text: normalizedClassLabel,
                     preferredSize: Math.min(cardLabelFontSize, itemLabelPreferredSize),
                     minSize: 7,
                     maxWidth: itemTextMaxWidth,
                     maxLines: 3
                 });
-                const idText = this.scene.add.bitmapText(
-                    0,
-                    -Math.round(cardHeight * 0.2),
-                    'minogram',
-                    classLabelLayout.text,
-                    classLabelLayout.fontSize
-                ).setOrigin(0.5).setCenterAlign();
+                const idText = this.scene.add.text(0, -Math.round(cardHeight * 0.2), classLabelLayout.text).setFontSize(classLabelLayout.fontSize).setOrigin(0.5).setAlign('center');
 
-                const typeLabelLayout = fitBitmapTextToMultiLine({
+                const typeLabelLayout = fitTextToMultiLine({
                     scene: this.scene,
-                    font: 'minogram',
                     text: normalizedTypeLabel,
                     preferredSize: Math.min(cardSubLabelFontSize, itemSubLabelPreferredSize),
                     minSize: 6,
                     maxWidth: itemTextMaxWidth,
                     maxLines: 2
                 });
-                const typeText = this.scene.add.bitmapText(
-                    0,
-                    Math.round(cardHeight * 0.23),
-                    'minogram',
-                    typeLabelLayout.text,
-                    typeLabelLayout.fontSize
-                ).setOrigin(0.5).setCenterAlign();
+                const typeText = this.scene.add.text(0, Math.round(cardHeight * 0.23), typeLabelLayout.text).setFontSize(typeLabelLayout.fontSize).setOrigin(0.5).setAlign('center');
 
                 const cardContainer = this.scene.add.container(x, y, [body, idText, typeText])
                     .setDepth(overlayDepth + 1);
@@ -479,7 +459,7 @@ export class DisplayInputOverlay
             .setDepth(overlayDepth + 2)
             .setInteractive({ useHandCursor: true });
 
-        const closeLabel = this.scene.add.bitmapText(closeX, closeY, 'minogram', 'X', closeFontSize)
+        const closeLabel = this.scene.add.text(closeX, closeY, 'X').setFontSize(closeFontSize)
             .setOrigin(0.5)
             .setDepth(overlayDepth + 3);
 
@@ -560,12 +540,12 @@ export class DisplayInputOverlay
             .setStrokeStyle(3, 0xffffff, 0.9)
             .setDepth(overlayDepth);
 
-        const title = this.scene.add.bitmapText(panelX, panelY - Math.round(panelHeight * 0.31), 'minogram', 'WINNER:', titleFontSize)
+        const title = this.scene.add.text(panelX, panelY - Math.round(panelHeight * 0.31), 'WINNER:').setFontSize(titleFontSize)
             .setOrigin(0.5)
             .setDepth(overlayDepth + 1)
             .setTint(0xffffff);
 
-        const winnerText = this.scene.add.bitmapText(panelX, panelY - Math.round(panelHeight * 0.08), 'minogram', winnerLabel, winnerFontSize)
+        const winnerText = this.scene.add.text(panelX, panelY - Math.round(panelHeight * 0.08), winnerLabel).setFontSize(winnerFontSize)
             .setOrigin(0.5)
             .setDepth(overlayDepth + 1)
             .setTint(0xffffff);
@@ -576,7 +556,7 @@ export class DisplayInputOverlay
             .setDepth(overlayDepth + 2)
             .setInteractive({ useHandCursor: true });
 
-        const menuLabel = this.scene.add.bitmapText(panelX, buttonY, 'minogram', 'MAIN MENU', buttonFontSize)
+        const menuLabel = this.scene.add.text(panelX, buttonY, 'MAIN MENU').setFontSize(buttonFontSize)
             .setOrigin(0.5)
             .setDepth(overlayDepth + 3)
             .setTint(0xffffff);

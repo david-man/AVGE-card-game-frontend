@@ -1100,7 +1100,7 @@ export type BackendEntitiesSetup = {
     roundNumber: number;
     gamePhase?: 'no-input' | 'phase2' | 'atk';
     playerTurn?: 'p1' | 'p2';
-    playerView?: 'admin' | 'p1' | 'p2' | 'spectator';
+    playerView?: 'p1' | 'p2' | 'spectator';
     players?: Partial<Record<'p1' | 'p2', BackendPlayerSetup>>;
 };
 
@@ -1625,9 +1625,9 @@ export const parseBackendEntitiesSetup = (value: unknown): BackendEntitiesSetup 
         : undefined;
 
     const playerView =
-        payload.playerView === 'admin' || payload.playerView === 'p1' || payload.playerView === 'p2' || payload.playerView === 'spectator'
+        payload.playerView === 'p1' || payload.playerView === 'p2' || payload.playerView === 'spectator'
             ? payload.playerView
-            : payload.player_view === 'admin' || payload.player_view === 'p1' || payload.player_view === 'p2' || payload.player_view === 'spectator'
+            : payload.player_view === 'p1' || payload.player_view === 'p2' || payload.player_view === 'spectator'
                 ? payload.player_view
             : undefined;
 

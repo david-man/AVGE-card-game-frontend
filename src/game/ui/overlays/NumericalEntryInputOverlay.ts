@@ -1,6 +1,6 @@
 import { Scene } from 'phaser';
 import { GAME_INPUT_OVERLAY_HEADER_LAYOUT, GAME_INPUT_SELECTION_OVERLAY, GAME_OVERLAY_DEPTHS } from '../../config';
-import { fitBitmapTextToSingleLine } from './bitmapTextFit';
+import { fitTextToSingleLine } from './textFit';
 
 type NumericalSubmitCallback = (value: number) => void;
 type NumericalBackgroundClickCallback = () => void;
@@ -10,11 +10,11 @@ export class NumericalEntryInputOverlay
     private scene: Scene;
     private inputLockOverlay: Phaser.GameObjects.Rectangle;
     private backdrop: Phaser.GameObjects.Rectangle | null;
-    private titleText: Phaser.GameObjects.BitmapText | null;
-    private hintText: Phaser.GameObjects.BitmapText | null;
-    private valueText: Phaser.GameObjects.BitmapText | null;
+    private titleText: Phaser.GameObjects.Text | null;
+    private hintText: Phaser.GameObjects.Text | null;
+    private valueText: Phaser.GameObjects.Text | null;
     private panel: Phaser.GameObjects.Rectangle | null;
-    private submitButton: { body: Phaser.GameObjects.Rectangle; label: Phaser.GameObjects.BitmapText } | null;
+    private submitButton: { body: Phaser.GameObjects.Rectangle; label: Phaser.GameObjects.Text } | null;
     private currentValue: string;
     private onSubmit: NumericalSubmitCallback | null;
     private onBackgroundClick: NumericalBackgroundClickCallback | null;
@@ -90,9 +90,8 @@ export class NumericalEntryInputOverlay
             GAME_INPUT_OVERLAY_HEADER_LAYOUT.titleFontSizeMin,
             Math.round(this.scene.scale.width * GAME_INPUT_OVERLAY_HEADER_LAYOUT.titleFontSizeRatio)
         );
-        const fittedTitleFontSize = fitBitmapTextToSingleLine({
+        const fittedTitleFontSize = fitTextToSingleLine({
             scene: this.scene,
-            font: 'minogram',
             text: topMessage,
             preferredSize: titleFontSize,
             minSize: 10,
@@ -106,9 +105,8 @@ export class NumericalEntryInputOverlay
         );
         const valueFontSize = Math.max(28, Math.round(panelWidth * 0.08));
         const hintMessage = 'Type a number and press Enter or Submit';
-        const fittedHintFontSize = fitBitmapTextToSingleLine({
+        const fittedHintFontSize = fitTextToSingleLine({
             scene: this.scene,
-            font: 'minogram',
             text: hintMessage,
             preferredSize: hintFontSize,
             minSize: GAME_INPUT_OVERLAY_HEADER_LAYOUT.hintFitMinSize,
@@ -136,34 +134,16 @@ export class NumericalEntryInputOverlay
             .setStrokeStyle(3, 0xffffff, 0.85)
             .setDepth(overlayDepth);
 
-        this.titleText = this.scene.add.bitmapText(
-            panelX,
-            panelY - Math.round(panelHeight * 0.36),
-            'minogram',
-            topMessage,
-            fittedTitleFontSize
-        )
+        this.titleText = this.scene.add.text(panelX, panelY - Math.round(panelHeight * 0.36), topMessage).setFontSize(fittedTitleFontSize)
             .setOrigin(0.5)
             .setDepth(overlayDepth + 1);
 
-        this.hintText = this.scene.add.bitmapText(
-            panelX,
-            panelY - Math.round(panelHeight * 0.1),
-            'minogram',
-            hintMessage,
-            fittedHintFontSize
-        )
+        this.hintText = this.scene.add.text(panelX, panelY - Math.round(panelHeight * 0.1), hintMessage).setFontSize(fittedHintFontSize)
             .setOrigin(0.5)
             .setDepth(overlayDepth + 1)
-            .setMaxWidth(Math.round(panelWidth * 0.86));
+            .setWordWrapWidth(Math.round(panelWidth * 0.86));
 
-        this.valueText = this.scene.add.bitmapText(
-            panelX,
-            panelY + Math.round(panelHeight * 0.1),
-            'minogram',
-            '_',
-            valueFontSize
-        )
+        this.valueText = this.scene.add.text(panelX, panelY + Math.round(panelHeight * 0.1), '_').setFontSize(valueFontSize)
             .setOrigin(0.5)
             .setDepth(overlayDepth + 2);
 
@@ -174,13 +154,7 @@ export class NumericalEntryInputOverlay
             .setStrokeStyle(2, 0xffffff, 0.5)
             .setDepth(overlayDepth + 1)
             .setInteractive({ useHandCursor: true });
-        const submitLabel = this.scene.add.bitmapText(
-            panelX,
-            submitY,
-            'minogram',
-            'SUBMIT',
-            Math.max(GAME_INPUT_SELECTION_OVERLAY.submitLabelFontSizeMin, Math.round(valueFontSize * 0.5))
-        )
+        const submitLabel = this.scene.add.text(panelX, submitY, 'SUBMIT').setFontSize(Math.max(GAME_INPUT_SELECTION_OVERLAY.submitLabelFontSizeMin, Math.round(valueFontSize * 0.5)))
             .setOrigin(0.5)
             .setDepth(overlayDepth + 2);
 

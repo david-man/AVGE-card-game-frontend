@@ -2,7 +2,7 @@ import { Scene } from 'phaser';
 
 import { Card } from './index';
 import { CARDHOLDER_LAYOUT_SIDE_PADDING_MULTIPLIER, ENTITY_VISUALS, GAME_DEPTHS, UI_SCALE } from '../config';
-import { fitBitmapTextToSingleLine } from '../ui/overlays/bitmapTextFit';
+import { fitTextToSingleLine } from '../ui/overlays/textFit';
 
 export type CardHolderConfig = {
     id: string;
@@ -24,7 +24,7 @@ export class CardHolder
     readonly height: number;
     readonly zone: Phaser.GameObjects.Zone;
     readonly background: Phaser.GameObjects.Rectangle;
-    readonly labelText: Phaser.GameObjects.BitmapText;
+    readonly labelText: Phaser.GameObjects.Text;
 
     readonly cards: Card[];
 
@@ -47,16 +47,15 @@ export class CardHolder
             .setData('zoneId', config.id);
 
         const preferredLabelSize = Math.max(ENTITY_VISUALS.cardHolderLabelMinSize, Math.round(ENTITY_VISUALS.cardHolderLabelBaseSize * UI_SCALE));
-        this.labelText = scene.add.bitmapText(config.x, config.y, 'minogram', config.label, preferredLabelSize)
+        this.labelText = scene.add.text(config.x, config.y, config.label).setFontSize(preferredLabelSize)
             .setOrigin(0.5)
-            .setCenterAlign()
+            .setAlign('center')
             .setTint(ENTITY_VISUALS.cardHolderLabelTint)
             .setAlpha(ENTITY_VISUALS.cardHolderLabelAlpha)
             .setDepth(ENTITY_VISUALS.cardHolderLabelDepth);
 
-        this.labelText.setFontSize(fitBitmapTextToSingleLine({
+        this.labelText.setFontSize(fitTextToSingleLine({
             scene,
-            font: 'minogram',
             text: config.label,
             preferredSize: preferredLabelSize,
             minSize: Math.max(ENTITY_VISUALS.cardHolderLabelMinSize, Math.round(preferredLabelSize * 0.72)),

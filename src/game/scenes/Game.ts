@@ -24,8 +24,8 @@ import { InputOverlayController } from '../ui/InputOverlayController';
 import { PhaseHudController } from '../ui/PhaseHudController';
 import { PlayerStatsHudController } from '../ui/PlayerStatsHudController';
 import { SurrenderController } from '../ui/SurrenderController';
-import { fitBitmapTextToTwoLines } from '../ui/overlays/bitmapTextFit';
-import { fitBitmapTextToSingleLine } from '../ui/overlays/bitmapTextFit';
+import { fitTextToTwoLines } from '../ui/overlays/textFit';
+import { fitTextToSingleLine } from '../ui/overlays/textFit';
 import {
     BASE_HEIGHT,
     BASE_WIDTH,
@@ -38,10 +38,12 @@ import {
     GAME_DEPTHS,
     GAME_EXPLOSION,
     GAME_HP_PULSE_ANIMATION,
+    GAME_INIT_COUNTDOWN_OVERLAY,
     GAME_LAYOUT,
     GAME_OVERLAY_DEPTHS,
     GAME_SCENE_VISUALS,
     GAME_SHUFFLE_ANIMATION,
+    GAME_SURRENDER_BUTTON_LAYOUT,
     ENERGY_TOKEN_DEPTHS,
     CARDHOLDER_BASE_WIDTH,
     GAME_STATUS_TEXT_LAYOUT,
@@ -57,7 +59,7 @@ import {
     UI_SCALE
 } from '../config';
 
-type ViewMode = PlayerId | 'admin' | 'spectator';
+type ViewMode = PlayerId | 'spectator';
 type GamePhase = 'no-input' | 'phase2' | 'atk';
 type PhaseHudGamePhase = GamePhase | 'init';
 type CardActionKey = 'atk1' | 'atk2' | 'active';
@@ -127,8 +129,15 @@ export class Game extends Scene
     commandProcessor: GameCommandProcessor;
     boardInputEnabled: boolean;
     inputLockOverlay: Phaser.GameObjects.Rectangle;
+    initStartCountdownOverlay: Phaser.GameObjects.Rectangle;
+    initStartCountdownText: Phaser.GameObjects.Text;
+    initStartCountdownTimer: Phaser.Time.TimerEvent | null;
+    initStartCountdownTween: Phaser.Tweens.Tween | null;
+    initStartCountdownBackdropTween: Phaser.Tweens.Tween | null;
+    initStartCountdownAnimationLocked: boolean;
+    initStartCountdownAckGateActive: boolean;
     opponentDisconnectBackdrop: Phaser.GameObjects.Rectangle;
-    opponentDisconnectText: Phaser.GameObjects.BitmapText;
+    opponentDisconnectText: Phaser.GameObjects.Text;
     inputOverlayController: InputOverlayController;
     boardInteractionController: BoardInteractionController;
     cardPreviewController: CardPreviewController;
@@ -177,12 +186,12 @@ export class Game extends Scene
     cardActionButtons: Array<{
         key: CardActionKey;
         body: Phaser.GameObjects.Arc;
-        label: Phaser.GameObjects.BitmapText;
+        label: Phaser.GameObjects.Text;
     }>;
     cardActionSourceByKey: Partial<Record<CardActionKey, Card | null>>;
     phaseStateActionButton: {
         body: Phaser.GameObjects.Rectangle;
-        label: Phaser.GameObjects.BitmapText;
+        label: Phaser.GameObjects.Text;
         action: 'phase2-attack' | 'atk-skip' | 'init-done' | null;
     } | null;
 
@@ -194,12 +203,11 @@ export class Game extends Scene
     preload ()
     {
         this.load.setPath('assets');
-        this.load.image('background', 'bg.png');
+        this.load.image('board-background', 'background/base_board.png');
         this.load.image('logo', 'logo.png');
         this.load.image('minecraftfont', 'minecraftfont.png');
         this.load.image('font2bitmap', 'font2bitmap.png');
-        this.load.image('pixelviolin', 'pixelviolin.jpg');
-        this.load.bitmapFont('minogram', 'minogram_6x10.png', 'minogram_6x10.xml');
+        this.load.image(GAME_SURRENDER_BUTTON_LAYOUT.iconKey, GAME_SURRENDER_BUTTON_LAYOUT.iconPath);
         InputOverlayController.preloadDiceAssets(this);
     }
 
@@ -207,10 +215,10 @@ export class Game extends Scene
     {
         this.camera = this.cameras.main;
         this.camera.setBackgroundColor(GAME_SCENE_VISUALS.backgroundColor);
-        this.camera.roundPixels = true;
+        this.camera.roundPixels = false;
         this.camera.fadeIn(220, 0, 0, 0);
 
-        this.background = this.add.image(GAME_CENTER_X, GAME_CENTER_Y, 'background');
+        this.background = this.add.image(GAME_CENTER_X, GAME_CENTER_Y, 'board-background');
         this.background.setDisplaySize(GAME_WIDTH, GAME_HEIGHT);
         this.background.setAlpha(GAME_SCENE_VISUALS.backgroundAlpha);
 
@@ -228,6 +236,7 @@ export class Game extends Scene
         ) => {
             event.stopPropagation();
         });
+        this.createInitStartCountdownOverlay();
         this.opponentDisconnectBackdrop = this.add.rectangle(
             GAME_CENTER_X,
             GAME_CENTER_Y,
@@ -239,19 +248,13 @@ export class Game extends Scene
             .setStrokeStyle(2, 0xffffff, 0.85)
             .setDepth(GAME_OVERLAY_DEPTHS.opponentDisconnectBackdrop)
             .setVisible(false);
-        this.opponentDisconnectText = this.add.bitmapText(
-            GAME_CENTER_X,
-            GAME_CENTER_Y,
-            'minogram',
-            'Other player disconnected. Waiting for reconnection...',
-            Math.max(
+        this.opponentDisconnectText = this.add.text(GAME_CENTER_X, GAME_CENTER_Y, 'Other player disconnected. Waiting for reconnection...').setFontSize(Math.max(
                 GAME_STATUS_TEXT_LAYOUT.opponentDisconnectFontSizeMin,
                 Math.round(GAME_STATUS_TEXT_LAYOUT.opponentDisconnectFontSizeBase * UI_SCALE)
-            )
-        )
+            ))
             .setOrigin(0.5)
-            .setCenterAlign()
-            .setMaxWidth(Math.round(GAME_WIDTH * 0.64))
+            .setAlign('center')
+            .setWordWrapWidth(Math.round(GAME_WIDTH * 0.64))
             .setDepth(GAME_OVERLAY_DEPTHS.opponentDisconnectText)
             .setVisible(false);
         this.inputOverlayController = new InputOverlayController(this, this.inputLockOverlay);
@@ -402,6 +405,7 @@ export class Game extends Scene
         this.startServiceHealthMonitor();
 
         this.events.once('shutdown', () => {
+            this.stopInitStartCountdownAnimation();
             this.clearAllCardHpPulseAnimations();
             this.stopServiceHealthMonitor();
             this.stopAuthSessionPush();
@@ -627,7 +631,7 @@ export class Game extends Scene
             return;
         }
 
-        if (!this.isInteractionLockedByAnimation()) {
+        if (!this.isInteractionLockedByAnimation() && !this.initStartCountdownAckGateActive) {
             this.flushPendingBackendEvents();
         }
     }
@@ -659,6 +663,10 @@ export class Game extends Scene
             return;
         }
 
+        if (this.commandExecutionInProgress || this.isInteractionLockedByAnimation() || this.initStartCountdownAckGateActive) {
+            return;
+        }
+
         const pending = this.pendingBackendEvents.splice(0, this.pendingBackendEvents.length);
         console.info('[ACK_TRACE][Game] flush_pending_events', {
             flushedCount: pending.length,
@@ -679,7 +687,7 @@ export class Game extends Scene
     public setCommandExecutionInProgress (inProgress: boolean): void
     {
         this.commandExecutionInProgress = inProgress;
-        if (!inProgress && !this.isInteractionLockedByAnimation()) {
+        if (!inProgress && !this.isInteractionLockedByAnimation() && !this.initStartCountdownAckGateActive) {
             this.flushPendingBackendEvents();
         }
     }
@@ -1493,7 +1501,8 @@ export class Game extends Scene
                 width: this.objectWidth,
                 height: this.objectHeight,
                 flipped: false,
-                attachedToCardId: cardDef.attachedToCardId
+                attachedToCardId: cardDef.attachedToCardId,
+                deferLayoutAndRedraw: true
             });
 
             if (!result.ok) {
@@ -1513,7 +1522,8 @@ export class Game extends Scene
                 ownerId: tokenDef.ownerId,
                 holderId: tokenDef.holderId,
                 radius: this.getDefaultEnergyTokenRadius(),
-                attachedToCardId: tokenDef.attachedToCardId
+                attachedToCardId: tokenDef.attachedToCardId,
+                deferLayout: true
             });
 
             if (!result.ok) {
@@ -1522,7 +1532,7 @@ export class Game extends Scene
         }
 
         const payloadView =
-            setup.playerView === 'admin' || setup.playerView === 'p1' || setup.playerView === 'p2' || setup.playerView === 'spectator'
+            setup.playerView === 'p1' || setup.playerView === 'p2' || setup.playerView === 'spectator'
                 ? setup.playerView
                 : null;
         const slotView = this.protocolClientSlot === 'p1' || this.protocolClientSlot === 'p2'
@@ -1590,6 +1600,185 @@ export class Game extends Scene
         this.cardPreviewController.create(this.objectWidth, this.objectHeight);
     }
 
+    private createInitStartCountdownOverlay (): void
+    {
+        const overlayDepth = Math.max(
+            GAME_OVERLAY_DEPTHS.overlayBase + GAME_INIT_COUNTDOWN_OVERLAY.depthOffset,
+            this.inputLockOverlay.depth + 1
+        );
+
+        this.initStartCountdownOverlay = this.add.rectangle(
+            GAME_CENTER_X,
+            GAME_CENTER_Y,
+            GAME_WIDTH,
+            GAME_HEIGHT,
+            GAME_SCENE_VISUALS.inputLockColor,
+            GAME_INIT_COUNTDOWN_OVERLAY.backdropAlpha
+        )
+            .setDepth(overlayDepth)
+            .setInteractive({ useHandCursor: false })
+            .setVisible(false)
+            .setAlpha(0);
+
+        this.initStartCountdownOverlay.on('pointerdown', (
+            _pointer: Phaser.Input.Pointer,
+            _localX: number,
+            _localY: number,
+            event: Phaser.Types.Input.EventData
+        ) => {
+            event.stopPropagation();
+        });
+
+        const numberFontSize = Math.max(
+            GAME_INIT_COUNTDOWN_OVERLAY.fontSizeMin,
+            Math.round(GAME_INIT_COUNTDOWN_OVERLAY.numberFontSizeBase * UI_SCALE)
+        );
+
+        this.initStartCountdownText = this.add.text(GAME_CENTER_X, GAME_CENTER_Y, '')
+            .setFontSize(numberFontSize)
+            .setOrigin(0.5)
+            .setAlign('center')
+            .setDepth(overlayDepth + 1)
+            .setTint(GAME_INIT_COUNTDOWN_OVERLAY.numberTint)
+            .setVisible(false)
+            .setAlpha(0);
+
+        this.initStartCountdownTimer = null;
+        this.initStartCountdownTween = null;
+        this.initStartCountdownBackdropTween = null;
+        this.initStartCountdownAnimationLocked = false;
+        this.initStartCountdownAckGateActive = false;
+    }
+
+    private stopInitStartCountdownAnimation (): void
+    {
+        if (this.initStartCountdownTimer) {
+            this.initStartCountdownTimer.remove(false);
+            this.initStartCountdownTimer = null;
+        }
+
+        if (this.initStartCountdownTween) {
+            this.initStartCountdownTween.remove();
+            this.initStartCountdownTween = null;
+        }
+
+        if (this.initStartCountdownBackdropTween) {
+            this.initStartCountdownBackdropTween.remove();
+            this.initStartCountdownBackdropTween = null;
+        }
+
+        this.initStartCountdownOverlay
+            .setVisible(false)
+            .setAlpha(0);
+        this.initStartCountdownText
+            .setVisible(false)
+            .setAlpha(0)
+            .setScale(1);
+
+        const hadAckGate = this.initStartCountdownAckGateActive;
+        this.initStartCountdownAckGateActive = false;
+
+        if (this.initStartCountdownAnimationLocked) {
+            this.initStartCountdownAnimationLocked = false;
+            this.endSceneAnimation();
+            return;
+        }
+
+        if (hadAckGate && !this.commandExecutionInProgress && !this.isInteractionLockedByAnimation()) {
+            this.flushPendingBackendEvents();
+        }
+    }
+
+    private playInitStartCountdownAnimation (): void
+    {
+        this.stopInitStartCountdownAnimation();
+        this.initStartCountdownAnimationLocked = true;
+        this.beginSceneAnimation();
+
+        this.initStartCountdownOverlay
+            .setVisible(true)
+            .setAlpha(0);
+        this.initStartCountdownText
+            .setVisible(true)
+            .setText('')
+            .setAlpha(0)
+            .setScale(1);
+
+        this.initStartCountdownBackdropTween = this.tweens.add({
+            targets: this.initStartCountdownOverlay,
+            alpha: GAME_INIT_COUNTDOWN_OVERLAY.backdropAlpha,
+            duration: GAME_INIT_COUNTDOWN_OVERLAY.backdropFadeInMs,
+            ease: 'Sine.easeOut'
+        });
+
+        let messageIndex = 0;
+        const runStep = (): void => {
+            if (messageIndex >= GAME_INIT_COUNTDOWN_OVERLAY.messages.length) {
+                this.initStartCountdownBackdropTween = this.tweens.add({
+                    targets: this.initStartCountdownOverlay,
+                    alpha: 0,
+                    duration: GAME_INIT_COUNTDOWN_OVERLAY.backdropFadeOutMs,
+                    ease: 'Sine.easeIn',
+                    onComplete: () => {
+                        this.stopInitStartCountdownAnimation();
+                    }
+                });
+                return;
+            }
+
+            const message = GAME_INIT_COUNTDOWN_OVERLAY.messages[messageIndex];
+            const isFinalStep = messageIndex === GAME_INIT_COUNTDOWN_OVERLAY.messages.length - 1;
+            const holdDuration = isFinalStep
+                ? GAME_INIT_COUNTDOWN_OVERLAY.fightHoldMs
+                : GAME_INIT_COUNTDOWN_OVERLAY.numberHoldMs;
+            const baseFontSize = isFinalStep
+                ? GAME_INIT_COUNTDOWN_OVERLAY.fightFontSizeBase
+                : GAME_INIT_COUNTDOWN_OVERLAY.numberFontSizeBase;
+            const fontSize = Math.max(
+                GAME_INIT_COUNTDOWN_OVERLAY.fontSizeMin,
+                Math.round(baseFontSize * UI_SCALE)
+            );
+
+            this.initStartCountdownText
+                .setText(message)
+                .setFontSize(fontSize)
+                .setTint(isFinalStep ? GAME_INIT_COUNTDOWN_OVERLAY.fightTint : GAME_INIT_COUNTDOWN_OVERLAY.numberTint)
+                .setScale(GAME_INIT_COUNTDOWN_OVERLAY.popStartScale)
+                .setAlpha(0);
+
+            const popDuration = GAME_INIT_COUNTDOWN_OVERLAY.popDurationMs;
+            const fadeOutDuration = GAME_INIT_COUNTDOWN_OVERLAY.fadeOutDurationMs;
+            const holdAfterPopMs = Math.max(0, holdDuration - popDuration - fadeOutDuration);
+
+            this.tweens.killTweensOf(this.initStartCountdownText);
+            messageIndex += 1;
+
+            this.initStartCountdownTween = this.tweens.add({
+                targets: this.initStartCountdownText,
+                alpha: 1,
+                scaleX: 1,
+                scaleY: 1,
+                duration: popDuration,
+                ease: 'Back.easeOut',
+                onComplete: () => {
+                    this.initStartCountdownTween = this.tweens.add({
+                        targets: this.initStartCountdownText,
+                        alpha: 0,
+                        duration: fadeOutDuration,
+                        delay: holdAfterPopMs,
+                        ease: 'Sine.easeIn',
+                        onComplete: () => {
+                            runStep();
+                        }
+                    });
+                }
+            });
+            this.initStartCountdownTimer = null;
+        };
+
+        runStep();
+    }
+
     private createCardActionButtons (): void
     {
         const radius = Math.max(12, Math.round((GAME_CARD_ACTION_BUTTON_LAYOUT.buttonRadiusBase / BASE_WIDTH) * GAME_WIDTH));
@@ -1623,8 +1812,9 @@ export class Game extends Scene
                 .setInteractive({ useHandCursor: true })
                 .setVisible(false);
 
-            const label = this.add.bitmapText(x, y, 'minogram', def.text, fontSize)
+            const label = this.add.text(x, y, def.text).setFontSize(fontSize)
                 .setOrigin(0.5)
+                .setAlign('center')
                 .setTint(GAME_CARD_ACTION_BUTTON_LAYOUT.textTint)
                 .setDepth(GAME_DEPTHS.terminalInputText + 1)
                 .setVisible(false);
@@ -1635,6 +1825,8 @@ export class Game extends Scene
 
             body.on('pointerover', () => {
                 this.tweens.killTweensOf([body, label]);
+                body.setFillStyle(0x1e293b, 0.98);
+                label.setTint(0xfef08a);
                 this.tweens.add({
                     targets: [body, label],
                     scaleX: GAME_CARD_ACTION_BUTTON_LAYOUT.hoverScale,
@@ -1646,6 +1838,8 @@ export class Game extends Scene
 
             body.on('pointerout', () => {
                 this.tweens.killTweensOf([body, label]);
+                body.setFillStyle(GAME_CARD_ACTION_BUTTON_LAYOUT.fillColor, GAME_CARD_ACTION_BUTTON_LAYOUT.fillAlpha);
+                label.setTint(GAME_CARD_ACTION_BUTTON_LAYOUT.textTint);
                 this.tweens.add({
                     targets: [body, label],
                     scaleX: 1,
@@ -1667,11 +1861,12 @@ export class Game extends Scene
 
     private refreshSurrenderButton (): void
     {
+        const effectiveViewMode: ViewMode = this.isPregameInitActive() ? 'spectator' : this.activeViewMode;
         const handHolder =
-            this.activeViewMode === 'p1' || this.activeViewMode === 'p2'
-                ? this.cardHolderById[`${this.activeViewMode}-hand`]
+            effectiveViewMode === 'p1' || effectiveViewMode === 'p2'
+                ? this.cardHolderById[`${effectiveViewMode}-hand`]
                 : undefined;
-        this.surrenderController.refresh(this.activeViewMode, handHolder);
+        this.surrenderController.refresh(effectiveViewMode, handHolder);
         this.refreshCardActionButtons();
     }
 
@@ -1701,7 +1896,7 @@ export class Game extends Scene
             .setVisible(false)
             .setInteractive({ useHandCursor: true });
 
-        const label = this.add.bitmapText(0, 0, 'minogram', '-> attack', fontSize)
+        const label = this.add.text(0, 0, '-> attack').setFontSize(fontSize)
             .setOrigin(1, 0)
             .setTint(0xffffff)
             .setDepth(315)
@@ -1709,6 +1904,16 @@ export class Game extends Scene
 
         body.on('pointerdown', () => {
             this.handlePhaseStateActionButtonClick();
+        });
+
+        body.on('pointerover', () => {
+            body.setFillStyle(0x1e293b, 0.98);
+            label.setTint(0xfef08a);
+        });
+
+        body.on('pointerout', () => {
+            body.setFillStyle(0x0b132b, 0.9);
+            label.setTint(0xffffff);
         });
 
         this.phaseStateActionButton = {
@@ -1819,7 +2024,7 @@ export class Game extends Scene
             return;
         }
 
-        const isCurrentTurnView = this.activeViewMode === 'admin' || this.activeViewMode === this.playerTurn;
+        const isCurrentTurnView = this.activeViewMode === this.playerTurn;
         const isPlayerView = this.activeViewMode === 'p1' || this.activeViewMode === 'p2';
         if (this.isPregameInitActive()) {
             if (!isPlayerView) {
@@ -1899,9 +2104,8 @@ export class Game extends Scene
             Math.round(textPreferred * 0.72)
         );
         const maxTextWidth = Math.max(24, maxWidth - (xPadding * 2));
-        const fittedSize = fitBitmapTextToSingleLine({
+        const fittedSize = fitTextToSingleLine({
             scene: this,
-            font: 'minogram',
             text: buttonText,
             preferredSize: textPreferred,
             minSize: textMin,
@@ -1944,6 +2148,7 @@ export class Game extends Scene
         this.opponentInitSetupConfirmed = opponentReady;
 
         if (stage === 'init') {
+            this.stopInitStartCountdownAnimation();
             this.waitingForOpponent = false;
             this.setOpponentDisconnectedState(false);
             this.setInputAcknowledged(true);
@@ -1956,9 +2161,12 @@ export class Game extends Scene
         }
         else if (previousStage === 'init') {
             this.appendTerminalLine('Both players finished setup. Starting game...');
+            this.initStartCountdownAckGateActive = true;
+            this.playInitStartCountdownAnimation();
         }
 
         this.applyCardVisibilityByView();
+        this.refreshSurrenderButton();
         this.refreshPhaseHud();
     }
 
@@ -2199,14 +2407,16 @@ export class Game extends Scene
         const attackCard = selectedCard && selectedIsActiveSlot
             ? selectedCard
             : (this.gamePhase === 'atk' ? currentTurnActiveCard : null);
-        const canControlTurnActions = this.activeViewMode === 'admin' || this.activeViewMode === this.playerTurn;
+        const canControlTurnActions = this.activeViewMode === this.playerTurn;
 
-        const abilityCard = selectedCard ?? currentTurnActiveCard;
-        const abilityIsEligibleZone = abilityCard ? /-(hand|bench|active)$/.test(abilityCard.getZoneId()) : false;
-        const canUseAbilityCardActions = Boolean(abilityCard && (this.activeViewMode === 'admin' || abilityCard.getOwnerId() === this.activeViewMode));
+        const abilityCard = selectedCard;
+        const abilityIsEligibleZone = abilityCard
+            ? (abilityCard.getZoneId() === `${this.activeViewMode}-deck` || abilityCard.getZoneId() === `${this.activeViewMode}-active`)
+            : false;
+        const canUseAbilityCardActions = Boolean(abilityCard && abilityCard.getOwnerId() === this.activeViewMode);
         const showAtk1 = Boolean(attackCard && this.gamePhase === 'atk' && canControlTurnActions && attackCard.getCardType() === 'character' && attackCard.getOwnerId() === this.playerTurn && attackCard.hasAttackOne());
         const showAtk2 = Boolean(attackCard && this.gamePhase === 'atk' && canControlTurnActions && attackCard.getCardType() === 'character' && attackCard.getOwnerId() === this.playerTurn && attackCard.hasAttackTwo());
-        const showActive = Boolean(abilityCard && canUseAbilityCardActions && abilityCard.getCardType() === 'character' && abilityIsEligibleZone && abilityCard.hasActiveAbility());
+        const showActive = Boolean(!this.isPregameInitActive() && abilityCard && canUseAbilityCardActions && abilityCard.getCardType() === 'character' && abilityIsEligibleZone && abilityCard.hasActiveAbility());
 
         const radius = Math.max(12, Math.round((GAME_CARD_ACTION_BUTTON_LAYOUT.buttonRadiusBase / BASE_WIDTH) * GAME_WIDTH));
         const leftMargin = Math.round((GAME_CARD_ACTION_BUTTON_LAYOUT.leftMarginBase / BASE_WIDTH) * GAME_WIDTH);
@@ -2226,7 +2436,7 @@ export class Game extends Scene
             };
         };
 
-        const buttonByKey = new Map<CardActionKey, { key: CardActionKey; body: Phaser.GameObjects.Arc; label: Phaser.GameObjects.BitmapText }>();
+        const buttonByKey = new Map<CardActionKey, { key: CardActionKey; body: Phaser.GameObjects.Arc; label: Phaser.GameObjects.Text }>();
 
         for (const button of this.cardActionButtons) {
             const visible =
@@ -2236,9 +2446,8 @@ export class Game extends Scene
 
             const labelSourceCard = button.key === 'active' ? abilityCard : attackCard;
             if (visible && labelSourceCard) {
-                const fittedLabel = fitBitmapTextToTwoLines({
+                const fittedLabel = fitTextToTwoLines({
                     scene: this,
-                    font: 'minogram',
                     text: this.getCardActionButtonLabel(labelSourceCard, button.key),
                     preferredSize: labelPreferredSize,
                     minSize: labelMinSize,
@@ -2362,7 +2571,7 @@ export class Game extends Scene
             // wait for in-flight scene animations (for example HP pulse/hurt
             // effects). Otherwise backend can advance to the next command
             // before both clients finish visualizing the current one.
-            if (this.commandExecutionInProgress || this.isInteractionLockedByAnimation()) {
+            if (this.commandExecutionInProgress || this.isInteractionLockedByAnimation() || this.initStartCountdownAckGateActive) {
                 this.pendingBackendEvents.push({
                     eventType,
                     responseData,
@@ -2582,7 +2791,7 @@ export class Game extends Scene
             repeat: GAME_LAYOUT.selectionResyncRepeats,
             callback: () => {
                 this.updateAttachedChildrenPositions(card);
-                this.redrawAllCardMarks();
+                this.redrawCardAndAttachments(card);
             }
         });
     }
@@ -2694,10 +2903,6 @@ export class Game extends Scene
             return this.isZoneVisibleInSpectator(zoneId);
         }
 
-        if (viewMode === 'admin') {
-            return true;
-        }
-
         if (this.isPregameInitActive()) {
             const isOwnerView = ownerId === viewMode;
             const isHand = zoneId === `${ownerId}-hand`;
@@ -2747,10 +2952,6 @@ export class Game extends Scene
 
         if (this.activeViewMode === 'spectator') {
             return false;
-        }
-
-        if (this.activeViewMode === 'admin') {
-            return true;
         }
 
         if (card.isTurnedOver()) {
@@ -2820,10 +3021,6 @@ export class Game extends Scene
 
         if (this.activeViewMode === 'spectator') {
             return false;
-        }
-
-        if (this.activeViewMode === 'admin') {
-            return true;
         }
 
         if (this.isInitWaitingForOpponent()) {
@@ -2929,10 +3126,6 @@ export class Game extends Scene
 
     public parseViewModeArg (rawMode: string): ViewMode | null
     {
-        if (rawMode === 'admin') {
-            return 'admin';
-        }
-
         if (rawMode === 'spectator' || rawMode === 'spec') {
             return 'spectator';
         }
@@ -2964,6 +3157,7 @@ export class Game extends Scene
         holderId: string;
         radius: number;
         attachedToCardId: string | null;
+        deferLayout?: boolean;
     }): { ok: boolean; error?: string; token?: EnergyToken }
     {
         if (this.energyTokenById[options.id]) {
@@ -3009,7 +3203,9 @@ export class Game extends Scene
             this.attachEnergyTokenToCard(token, parent);
         }
 
-        this.layoutEnergyTokensInZone(options.holderId);
+        if (options.deferLayout !== true) {
+            this.layoutEnergyTokensInZone(options.holderId);
+        }
         return { ok: true, token };
     }
 
@@ -3038,6 +3234,7 @@ export class Game extends Scene
         height: number;
         flipped: boolean;
         attachedToCardId: string | null;
+        deferLayoutAndRedraw?: boolean;
     }): { ok: boolean; error?: string; card?: Card }
     {
         if (this.cardById[options.id]) {
@@ -3119,18 +3316,16 @@ export class Game extends Scene
             this.attachCardToCard(card, parentCard);
         }
 
-        this.layoutAllHolders();
-        this.redrawAllCardMarks();
+        if (options.deferLayoutAndRedraw !== true) {
+            this.layoutAllHolders();
+            this.redrawAllCardMarks();
+        }
 
         return { ok: true, card };
     }
 
     private getViewModeLabel (viewMode: ViewMode): string
     {
-        if (viewMode === 'admin') {
-            return 'ADMIN';
-        }
-
         if (viewMode === 'spectator') {
             return 'SPECTATOR';
         }
@@ -3151,10 +3346,6 @@ export class Game extends Scene
         };
 
         const resolvePerspectiveLabel = (ownerId: PlayerId, pileName: string): string => {
-            if (this.activeViewMode === 'admin') {
-                return `${ownerId} ${pileName}`.toUpperCase();
-            }
-
             if (this.activeViewMode === 'spectator') {
                 return `${ownerId} ${pileName}`.toUpperCase();
             }
@@ -3165,32 +3356,30 @@ export class Game extends Scene
 
         const setCardHolderLabel = (holder: CardHolder, label: string): void => {
             const preferredSize = Math.max(ENTITY_VISUALS.cardHolderLabelMinSize, Math.round(ENTITY_VISUALS.cardHolderLabelBaseSize * UI_SCALE));
-            const fitted = fitBitmapTextToTwoLines({
+            const fitted = fitTextToTwoLines({
                 scene: this,
-                font: 'minogram',
                 text: label,
                 preferredSize,
                 minSize: Math.max(ENTITY_VISUALS.cardHolderLabelMinSize, Math.round(preferredSize * 0.72)),
                 maxWidth: Math.max(10, Math.round(holder.width * 0.9))
             });
             holder.labelText
-                .setCenterAlign()
+                .setAlign('center')
                 .setText(fitted.text)
                 .setFontSize(fitted.fontSize);
         };
 
         const setEnergyHolderLabel = (holder: EnergyHolder, label: string): void => {
             const preferredSize = Math.max(ENTITY_VISUALS.energyHolderLabelMinSize, Math.round(ENTITY_VISUALS.energyHolderLabelBaseSize * UI_SCALE));
-            const fitted = fitBitmapTextToTwoLines({
+            const fitted = fitTextToTwoLines({
                 scene: this,
-                font: 'minogram',
                 text: label,
                 preferredSize,
                 minSize: Math.max(ENTITY_VISUALS.energyHolderLabelMinSize, Math.round(preferredSize * 0.72)),
                 maxWidth: Math.max(10, Math.round(holder.width * 0.9))
             });
             holder.labelText
-                .setCenterAlign()
+                .setAlign('center')
                 .setText(fitted.text)
                 .setFontSize(fitted.fontSize);
         };
@@ -3230,6 +3419,35 @@ export class Game extends Scene
     {
         for (const card of this.cards) {
             card.redrawMarks();
+        }
+
+        if (this.selectedCard) {
+            this.showCardPreview(this.selectedCard);
+        }
+    }
+
+    public redrawCardAndAttachments (card: Card): void
+    {
+        const stack: Card[] = [card];
+        const visited = new Set<string>();
+
+        while (stack.length > 0) {
+            const current = stack.pop();
+            if (!current) {
+                continue;
+            }
+
+            if (visited.has(current.id)) {
+                continue;
+            }
+
+            visited.add(current.id);
+            current.redrawMarks();
+
+            const attachedChildren = this.getAttachedChildren(current.id);
+            for (const child of attachedChildren) {
+                stack.push(child);
+            }
         }
 
         if (this.selectedCard) {
@@ -3820,16 +4038,14 @@ export class Game extends Scene
     public resolveBoomTextureKey (rawAssetName?: string): string | null
     {
         if (!rawAssetName) {
-            return 'pixelviolin';
+            return 'logo';
         }
 
         const key = rawAssetName.toLowerCase();
         const aliases: Record<string, string> = {
-            pixelviolin: 'pixelviolin',
-            'pixelviolin.jpg': 'pixelviolin',
             background: 'background',
             bg: 'background',
-            'bg.png': 'background',
+            'background/background_element.png': 'background',
             logo: 'logo',
             'logo.png': 'logo',
             minecraftfont: 'minecraftfont',
@@ -3846,7 +4062,7 @@ export class Game extends Scene
         return this.textures.exists(resolved) ? resolved : null;
     }
 
-    public playPixelViolinExplosion (card: Card, textureKey: string): void
+    public playBoomExplosion (card: Card, textureKey: string): void
     {
         const durationMs = GAME_EXPLOSION.durationMs;
         const count = GAME_EXPLOSION.count;

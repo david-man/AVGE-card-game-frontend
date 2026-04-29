@@ -69,3 +69,11 @@ declare module '*.fs' {
     const src: string
     export default src
 }
+
+declare namespace Phaser {
+    namespace GameObjects {
+        interface Text {
+            fontSize: number;
+        }
+    }
+}

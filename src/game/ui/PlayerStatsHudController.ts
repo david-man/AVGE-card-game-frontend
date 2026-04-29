@@ -7,7 +7,7 @@ import {
     UI_SCALE
 } from '../config';
 
-type ViewMode = PlayerId | 'admin' | 'spectator';
+type ViewMode = PlayerId | 'spectator';
 
 type PlayerTurnAttributes = {
     ENERGY_ADD_REMAINING_IN_TURN: number;
@@ -21,9 +21,9 @@ type PlayerUsernamesByPlayer = Record<PlayerId, string>;
 
 type PlayerStatsHudUi = {
     background: Phaser.GameObjects.Rectangle;
-    title: Phaser.GameObjects.BitmapText;
-    keyTexts: Phaser.GameObjects.BitmapText[];
-    valueTexts: Phaser.GameObjects.BitmapText[];
+    title: Phaser.GameObjects.Text;
+    keyTexts: Phaser.GameObjects.Text[];
+    valueTexts: Phaser.GameObjects.Text[];
 };
 
 export class PlayerStatsHudController
@@ -62,7 +62,6 @@ export class PlayerStatsHudController
         const leftMargin = Math.round((GAME_PLAYER_STATS_HUD_LAYOUT.leftMarginBase / BASE_WIDTH) * this.scene.scale.width);
         const topMargin = Math.round((GAME_PLAYER_STATS_HUD_LAYOUT.topMarginBase / BASE_HEIGHT) * this.scene.scale.height);
         const rowGap = Math.max(10, Math.round((GAME_PLAYER_STATS_HUD_LAYOUT.rowGapBase / BASE_HEIGHT) * this.scene.scale.height));
-        const adminColumnGap = Math.max(220, Math.round((GAME_PLAYER_STATS_HUD_LAYOUT.adminColumnGapBase / BASE_WIDTH) * this.scene.scale.width));
         const panelPaddingX = Math.max(12, Math.round(12 * UI_SCALE));
         const panelPaddingY = Math.max(8, Math.round(8 * UI_SCALE));
 
@@ -140,13 +139,6 @@ export class PlayerStatsHudController
             ui.valueTexts.forEach((text) => text.setVisible(visible));
         };
 
-        if (activeViewMode === 'admin') {
-            layoutHud('p2', leftMargin + adminColumnGap, topMargin);
-            setHudVisible('p1', true);
-            setHudVisible('p2', true);
-            return;
-        }
-
         if (activeViewMode === 'spectator') {
             setHudVisible('p1', false);
             setHudVisible('p2', false);
@@ -173,23 +165,23 @@ export class PlayerStatsHudController
             .setStrokeStyle(2, 0xffffff, 0.45)
             .setDepth(GAME_PLAYER_STATS_HUD_LAYOUT.depth - 1);
 
-        const title = this.scene.add.bitmapText(startX, startY, 'minogram', '', fontSize)
+        const title = this.scene.add.text(startX, startY, '').setFontSize(fontSize)
             .setOrigin(0, 0)
             .setTint(GAME_PLAYER_STATS_HUD_LAYOUT.tint)
             .setDepth(GAME_PLAYER_STATS_HUD_LAYOUT.depth);
 
-        const keyTexts: Phaser.GameObjects.BitmapText[] = [];
-        const valueTexts: Phaser.GameObjects.BitmapText[] = [];
+        const keyTexts: Phaser.GameObjects.Text[] = [];
+        const valueTexts: Phaser.GameObjects.Text[] = [];
 
         for (let i = 0; i < 5; i += 1) {
             keyTexts.push(
-                this.scene.add.bitmapText(startX, startY, 'minogram', '', fontSize)
+                this.scene.add.text(startX, startY, '').setFontSize(fontSize)
                     .setOrigin(0, 0)
                     .setTint(GAME_PLAYER_STATS_HUD_LAYOUT.tint)
                     .setDepth(GAME_PLAYER_STATS_HUD_LAYOUT.depth)
             );
             valueTexts.push(
-                this.scene.add.bitmapText(startX, startY, 'minogram', '', fontSize)
+                this.scene.add.text(startX, startY, '').setFontSize(fontSize)
                     .setOrigin(1, 0)
                     .setTint(GAME_PLAYER_STATS_HUD_LAYOUT.tint)
                     .setDepth(GAME_PLAYER_STATS_HUD_LAYOUT.depth)

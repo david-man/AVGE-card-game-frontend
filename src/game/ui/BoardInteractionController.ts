@@ -91,7 +91,7 @@ export class BoardInteractionController
                 g.dragStartPositionByCardId.delete(card.id);
                 g.dragDistanceByCardId.delete(card.id);
                 g.layoutAllHolders();
-                g.redrawAllCardMarks();
+                g.redrawCardAndAttachments(card);
                 return;
             }
 
@@ -101,7 +101,7 @@ export class BoardInteractionController
                 g.dragStartPositionByCardId.delete(card.id);
                 g.dragDistanceByCardId.delete(card.id);
                 g.layoutAllHolders();
-                g.redrawAllCardMarks();
+                g.redrawCardAndAttachments(card);
                 return;
             }
 
@@ -114,7 +114,7 @@ export class BoardInteractionController
                 const parentCard = g.cardById[attachedToCardId];
                 if (parentCard) {
                     g.updateAttachedCardPosition(card, parentCard);
-                    g.redrawAllCardMarks();
+                    g.redrawCardAndAttachments(card);
                 }
                 return;
             }
@@ -132,7 +132,7 @@ export class BoardInteractionController
             }
 
             g.updateAttachedChildrenPositions(card);
-            g.redrawAllCardMarks();
+            g.redrawCardAndAttachments(card);
         });
 
         this.scene.input.on('drop', (_pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.Rectangle, dropZone: Phaser.GameObjects.Zone) => {

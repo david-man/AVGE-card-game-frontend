@@ -24,8 +24,8 @@ export class CommandTerminalController
 
     private terminalLines: string[];
     private terminalInput: string;
-    private terminalOutputText: Phaser.GameObjects.BitmapText;
-    private terminalInputText: Phaser.GameObjects.BitmapText;
+    private terminalOutputText: Phaser.GameObjects.Text;
+    private terminalInputText: Phaser.GameObjects.Text;
     private maxTerminalLines: number;
     private terminalVisibleLineCount: number;
     private terminalScrollOffset: number;
@@ -50,9 +50,9 @@ export class CommandTerminalController
         this.terminalCursorVisible = true;
 
         this.terminalPanelBounds = new Phaser.Geom.Rectangle(0, 0, 1, 1);
-        this.terminalOutputText = this.scene.add.bitmapText(0, 0, 'minogram', '', GAME_COMMAND_TERMINAL_LAYOUT.outputFontSize)
+        this.terminalOutputText = this.scene.add.text(0, 0, '').setFontSize(GAME_COMMAND_TERMINAL_LAYOUT.outputFontSize)
             .setVisible(false);
-        this.terminalInputText = this.scene.add.bitmapText(0, 0, 'minogram', '', GAME_COMMAND_TERMINAL_LAYOUT.inputFontSize)
+        this.terminalInputText = this.scene.add.text(0, 0, '').setFontSize(GAME_COMMAND_TERMINAL_LAYOUT.inputFontSize)
             .setVisible(false);
 
         this.createTerminalUi();
@@ -117,7 +117,7 @@ export class CommandTerminalController
             panelHeight
         );
 
-        this.scene.add.bitmapText(panelX, topY + Math.round(panelHeight * 0.06), 'minogram', 'COMMAND TERMINAL', titleSize)
+        this.scene.add.text(panelX, topY + Math.round(panelHeight * 0.06), 'COMMAND TERMINAL').setFontSize(titleSize)
             .setOrigin(0.5)
             .setTint(GAME_COMMAND_TERMINAL_LAYOUT.inputTextTint)
             .setDepth(GAME_DEPTHS.terminalText);
@@ -130,10 +130,10 @@ export class CommandTerminalController
         this.terminalInputVisibleCharCount = Math.max(6, Math.floor((contentWidth - (estimatedInputCharWidth * 3)) / estimatedInputCharWidth));
 
         this.terminalOutputText.destroy();
-        this.terminalOutputText = this.scene.add.bitmapText(panelX - Math.round(panelWidth / 2) + leftPadding, outputTopY, 'minogram', '', outputSize)
+        this.terminalOutputText = this.scene.add.text(panelX - Math.round(panelWidth / 2) + leftPadding, outputTopY, '').setFontSize(outputSize)
             .setOrigin(0, 0)
             .setTint(GAME_COMMAND_TERMINAL_LAYOUT.outputTint)
-            .setMaxWidth(contentWidth)
+            .setWordWrapWidth(contentWidth)
             .setDepth(GAME_DEPTHS.terminalText);
 
         const terminalOutputMaskGraphics = this.scene.add.graphics();
@@ -151,7 +151,7 @@ export class CommandTerminalController
             .setDepth(GAME_DEPTHS.terminalInputStrip);
 
         this.terminalInputText.destroy();
-        this.terminalInputText = this.scene.add.bitmapText(panelX - Math.round(panelWidth / 2) + leftPadding, inputY, 'minogram', '', inputSize)
+        this.terminalInputText = this.scene.add.text(panelX - Math.round(panelWidth / 2) + leftPadding, inputY, '').setFontSize(inputSize)
             .setOrigin(0, 0)
             .setTint(GAME_COMMAND_TERMINAL_LAYOUT.inputTextTint)
             .setDepth(GAME_DEPTHS.terminalInputText);
@@ -165,7 +165,7 @@ export class CommandTerminalController
             .setStrokeStyle(1, 0xffffff, 0.7)
             .setDepth(GAME_DEPTHS.terminalInputText)
             .setInteractive({ useHandCursor: true });
-        this.scene.add.bitmapText(navX, navUpY, 'minogram', '^', Math.max(10, Math.round(inputSize * 0.9)))
+        this.scene.add.text(navX, navUpY, '^').setFontSize(Math.max(10, Math.round(inputSize * 0.9)))
             .setOrigin(0.5)
             .setDepth(GAME_DEPTHS.terminalInputText + 1);
         terminalUpButton.on('pointerdown', () => {
@@ -176,7 +176,7 @@ export class CommandTerminalController
             .setStrokeStyle(1, 0xffffff, 0.7)
             .setDepth(GAME_DEPTHS.terminalInputText)
             .setInteractive({ useHandCursor: true });
-        this.scene.add.bitmapText(navX, navDownY, 'minogram', 'v', Math.max(10, Math.round(inputSize * 0.9)))
+        this.scene.add.text(navX, navDownY, 'v').setFontSize(Math.max(10, Math.round(inputSize * 0.9)))
             .setOrigin(0.5)
             .setDepth(GAME_DEPTHS.terminalInputText + 1);
         terminalDownButton.on('pointerdown', () => {
@@ -191,7 +191,7 @@ export class CommandTerminalController
             .setStrokeStyle(1, 0xffffff, 0.7)
             .setDepth(GAME_DEPTHS.terminalInputText)
             .setInteractive({ useHandCursor: true });
-        this.scene.add.bitmapText(inputLeftX, inputButtonY, 'minogram', '<', Math.max(10, Math.round(inputSize * 0.9)))
+        this.scene.add.text(inputLeftX, inputButtonY, '<').setFontSize(Math.max(10, Math.round(inputSize * 0.9)))
             .setOrigin(0.5)
             .setDepth(GAME_DEPTHS.terminalInputText + 1);
         terminalInputLeftButton.on('pointerdown', () => {
@@ -202,7 +202,7 @@ export class CommandTerminalController
             .setStrokeStyle(1, 0xffffff, 0.7)
             .setDepth(GAME_DEPTHS.terminalInputText)
             .setInteractive({ useHandCursor: true });
-        this.scene.add.bitmapText(inputRightX, inputButtonY, 'minogram', '>', Math.max(10, Math.round(inputSize * 0.9)))
+        this.scene.add.text(inputRightX, inputButtonY, '>').setFontSize(Math.max(10, Math.round(inputSize * 0.9)))
             .setOrigin(0.5)
             .setDepth(GAME_DEPTHS.terminalInputText + 1);
         terminalInputRightButton.on('pointerdown', () => {
