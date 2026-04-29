@@ -345,19 +345,21 @@ export class BoardInteractionController
                 }
 
                 const attachedChildren = g.getAttachedChildren(overlappedCard.id);
-                const attachTarget = attachedChildren.length > 0
-                    ? attachedChildren.reduce((topCard: any, nextCard: any) => (nextCard.depth > topCard.depth ? nextCard : topCard))
-                    : overlappedCard;
+                if (attachedChildren.length > 0) {
+                    g.layoutAllHolders();
+                    g.redrawAllCardMarks();
+                    return;
+                }
 
                 g.removeCardFromAllHolders(card);
                 card.setZoneId(targetZoneId);
-                g.attachCardToCard(card, attachTarget);
+                g.attachCardToCard(card, overlappedCard);
                 g.emitBackendEvent('tool_attached', {
                     tool_card_id: card.id,
                     owner_id: card.getOwnerId(),
                     from_zone: originZoneId,
                     to_zone: targetZoneId,
-                    attached_to_card_id: attachTarget.id,
+                    attached_to_card_id: overlappedCard.id,
                     interaction: 'drag_drop'
                 });
                 g.layoutAllHolders();

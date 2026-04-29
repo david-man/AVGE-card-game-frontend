@@ -24,6 +24,8 @@ import { InputOverlayController } from '../ui/InputOverlayController';
 import { PhaseHudController } from '../ui/PhaseHudController';
 import { PlayerStatsHudController } from '../ui/PlayerStatsHudController';
 import { SurrenderController } from '../ui/SurrenderController';
+import { registerUiClickSoundForScene } from '../ui/clickSfx';
+import { createVolumeControlForScene, preloadVolumeControlAssets } from '../ui/volumeControl';
 import { fitTextToTwoLines } from '../ui/overlays/textFit';
 import { fitTextToSingleLine } from '../ui/overlays/textFit';
 import {
@@ -39,6 +41,7 @@ import {
     GAME_EXPLOSION,
     GAME_HP_PULSE_ANIMATION,
     GAME_INIT_COUNTDOWN_OVERLAY,
+    GAME_WINNER_OVERLAY_AUDIO,
     GAME_LAYOUT,
     GAME_OVERLAY_DEPTHS,
     GAME_SCENE_VISUALS,
@@ -67,9 +70,47 @@ type OverlayPreviewContext = 'input' | 'reveal' | null;
 type PlayerTurnAttributeKey = keyof typeof PLAYER_TURN_ATTRIBUTE_DEFAULTS;
 type PlayerTurnAttributes = Record<PlayerTurnAttributeKey, number>;
 type InitStage = 'init' | 'live';
+const SHUFFLE_DECK_SOUND_KEY = 'shuffle-deck';
+const SHUFFLE_DECK_SOUND_PATH = 'sfx/shuffle_deck.wav';
+const SHUFFLE_DECK_FALLBACK_DURATION_MS = 900;
+const REVEAL_SOUND_KEY = 'reveal';
+const REVEAL_SOUND_PATH = 'sfx/reveal.mp3';
+const ENERGY_TOKEN_ATTACH_SOUND_KEY = 'energy-token-attach';
+const ENERGY_TOKEN_ATTACH_SOUND_PATH = 'sfx/play_chip.ogg';
+const SPARKLE_SOUND_KEY = 'sparkle';
+const SPARKLE_SOUND_PATH = 'sfx/sparkle.mp3';
+const PUNCH_SOUND_KEY = 'punch';
+const PUNCH_SOUND_PATH = 'sfx/punch.mp3';
+const HEAVY_PUNCH_SOUND_KEY = 'heavy-punch';
+const HEAVY_PUNCH_SOUND_PATH = 'sfx/heavy_punch.mp3';
+const CARD_SLIDE_SOUND_KEY = 'card-slide';
+const CARD_SLIDE_SOUND_PATH = 'sfx/card_slide.ogg';
+const CARD_SHOVE_SOUND_KEY = 'card-shove';
+const CARD_SHOVE_SOUND_PATH = 'sfx/card_shove.ogg';
+const COUNTDOWN_LOW_BEEP_SOUND_KEY = 'countdown-lowbeep';
+const COUNTDOWN_LOW_BEEP_SOUND_PATH = 'sfx/lowbeep.mp3';
+const COUNTDOWN_HIGH_BEEP_SOUND_KEY = 'countdown-highbeep';
+const COUNTDOWN_HIGH_BEEP_SOUND_PATH = 'sfx/highbeep.mp3';
+const CRIT_PARTICLE_TEXTURE_KEY = 'crit-particle';
+const CRIT_PARTICLE_TEXTURE_PATH = 'icons/crit.png';
+const REGENERATION_PARTICLE_TEXTURE_KEY = 'regeneration-particle';
+const REGENERATION_PARTICLE_TEXTURE_PATH = 'icons/regeneration.png';
 type PlayerSetupProfile = {
     username: string;
     attributes: Partial<PlayerTurnAttributes>;
+};
+type QueuedNotifyReplayCommand = {
+    command: string;
+    payload: Record<string, unknown> | null;
+};
+type BackendAnimationKeyframe = {
+    key: string;
+    kind: 'sound' | 'particles';
+    cardId: string | null;
+};
+type BackendAnimationPayload = {
+    target: string | null;
+    keyframes: BackendAnimationKeyframe[];
 };
 type CardHpPulseAnimationState = {
     baseScaleX: number;
@@ -164,7 +205,7 @@ export class Game extends Scene
     inputAcknowledged: boolean;
     pendingInputCommand: string | null;
     pendingNotifyCommand: string | null;
-    pendingNotifyCommandQueue: string[];
+    pendingNotifyCommandQueue: QueuedNotifyReplayCommand[];
     awaitingRemoteNotifyAck: boolean;
     remoteInputLockActive: boolean;
     opponentDisconnected: boolean;
@@ -182,6 +223,7 @@ export class Game extends Scene
     pageHideHandler: ((event: Event) => void) | null;
     beforeUnloadHandler: ((event: Event) => void) | null;
     clientUnloadSignalSent: boolean;
+    lastRevealSoundPlayedAtMs: number;
 
     cardActionButtons: Array<{
         key: CardActionKey;
@@ -207,12 +249,29 @@ export class Game extends Scene
         this.load.image('logo', 'logo.png');
         this.load.image('minecraftfont', 'minecraftfont.png');
         this.load.image('font2bitmap', 'font2bitmap.png');
+        this.load.image(CRIT_PARTICLE_TEXTURE_KEY, CRIT_PARTICLE_TEXTURE_PATH);
+        this.load.image(REGENERATION_PARTICLE_TEXTURE_KEY, REGENERATION_PARTICLE_TEXTURE_PATH);
         this.load.image(GAME_SURRENDER_BUTTON_LAYOUT.iconKey, GAME_SURRENDER_BUTTON_LAYOUT.iconPath);
+        this.load.audio(SHUFFLE_DECK_SOUND_KEY, SHUFFLE_DECK_SOUND_PATH);
+        this.load.audio(REVEAL_SOUND_KEY, REVEAL_SOUND_PATH);
+        this.load.audio(ENERGY_TOKEN_ATTACH_SOUND_KEY, ENERGY_TOKEN_ATTACH_SOUND_PATH);
+        this.load.audio(SPARKLE_SOUND_KEY, SPARKLE_SOUND_PATH);
+        this.load.audio(PUNCH_SOUND_KEY, PUNCH_SOUND_PATH);
+        this.load.audio(HEAVY_PUNCH_SOUND_KEY, HEAVY_PUNCH_SOUND_PATH);
+        this.load.audio(CARD_SLIDE_SOUND_KEY, CARD_SLIDE_SOUND_PATH);
+        this.load.audio(CARD_SHOVE_SOUND_KEY, CARD_SHOVE_SOUND_PATH);
+        this.load.audio(COUNTDOWN_LOW_BEEP_SOUND_KEY, COUNTDOWN_LOW_BEEP_SOUND_PATH);
+        this.load.audio(COUNTDOWN_HIGH_BEEP_SOUND_KEY, COUNTDOWN_HIGH_BEEP_SOUND_PATH);
+        this.load.audio(GAME_WINNER_OVERLAY_AUDIO.soundKey, GAME_WINNER_OVERLAY_AUDIO.soundPath);
+        preloadVolumeControlAssets(this);
         InputOverlayController.preloadDiceAssets(this);
     }
 
     create ()
     {
+        registerUiClickSoundForScene(this);
+        createVolumeControlForScene(this, { placement: 'bottom-left' });
+
         this.camera = this.cameras.main;
         this.camera.setBackgroundColor(GAME_SCENE_VISUALS.backgroundColor);
         this.camera.roundPixels = false;
@@ -325,6 +384,7 @@ export class Game extends Scene
         this.pageHideHandler = null;
         this.beforeUnloadHandler = null;
         this.clientUnloadSignalSent = false;
+        this.lastRevealSoundPlayedAtMs = Number.NEGATIVE_INFINITY;
 
         if (this.routerSessionId) {
             this.startAuthSessionPush(this.routerSessionId);
@@ -1176,6 +1236,7 @@ export class Game extends Scene
                 if (this.cards.length > 0 || this.energyTokens.length > 0) {
                     this.resetBoardEntitiesForAuthoritativeEnvironment();
                 }
+                this.playRevealSound(320);
                 this.applyBackendEntitySetup(setup);
                 if (this.pendingNotifyCommand || this.pendingInputCommand || this.pendingNotifyCommandQueue.length > 0) {
                     this.setInputAcknowledged(false);
@@ -1226,12 +1287,15 @@ export class Game extends Scene
             && !this.awaitingRemoteNotifyAck
             && !this.inputOverlayController.hasActiveOverlay()
         ) {
-            const nextCommand = this.pendingNotifyCommandQueue.shift();
-            if (!nextCommand) {
+            const nextEntry = this.pendingNotifyCommandQueue.shift();
+            if (!nextEntry) {
                 continue;
             }
 
+            const nextCommand = nextEntry.command;
+
             const replayError = this.executeBackendReplayCommand(nextCommand);
+            this.executeBackendAnimationPayload(nextCommand, nextEntry.payload);
             this.awaitingRemoteNotifyAck = true;
 
             if (this.inputOverlayController.hasActiveOverlay()) {
@@ -1254,13 +1318,14 @@ export class Game extends Scene
     {
         const command = packet.command;
         if (packet.category === 'query_notify') {
-            this.pendingNotifyCommandQueue.push(command);
+            this.pendingNotifyCommandQueue.push({ command, payload: packet.payload });
             this.setInputAcknowledged(false);
             this.drainQueuedNotifyCommands();
             return;
         }
 
         const replayError = this.executeBackendReplayCommand(command);
+        this.executeBackendAnimationPayload(command, packet.payload);
 
         if (packet.category === 'query_input') {
             this.pendingInputCommand = command;
@@ -1294,6 +1359,196 @@ export class Game extends Scene
             command,
             apply_error: replayError,
         });
+    }
+
+    private normalizeBackendAnimationKind (raw: unknown): 'sound' | 'particles' | null
+    {
+        if (typeof raw !== 'string') {
+            return null;
+        }
+
+        const normalized = raw.trim().toLowerCase();
+        if (normalized === 'sound') {
+            return 'sound';
+        }
+        if (normalized === 'particles') {
+            return 'particles';
+        }
+
+        return null;
+    }
+
+    private parseBackendAnimationPayload (payload: Record<string, unknown> | null): BackendAnimationPayload | null
+    {
+        if (!payload) {
+            return null;
+        }
+
+        if (typeof payload.animation !== 'object' || payload.animation === null) {
+            return null;
+        }
+
+        const animationCandidate = payload.animation as Record<string, unknown>;
+        const rawKeyframes = animationCandidate.keyframes;
+        if (!Array.isArray(rawKeyframes) || rawKeyframes.length === 0) {
+            return null;
+        }
+
+        const keyframes: BackendAnimationKeyframe[] = [];
+        for (const rawKeyframe of rawKeyframes) {
+            let key: unknown;
+            let kindRaw: unknown;
+            let cardIdRaw: unknown;
+
+            if (Array.isArray(rawKeyframe)) {
+                key = rawKeyframe[0];
+                kindRaw = rawKeyframe[1];
+                cardIdRaw = rawKeyframe[2];
+            }
+            else if (typeof rawKeyframe === 'object' && rawKeyframe !== null) {
+                const keyframeObject = rawKeyframe as Record<string, unknown>;
+                key = keyframeObject.key;
+                kindRaw = keyframeObject.kind ?? keyframeObject.type;
+                cardIdRaw = keyframeObject.card_id ?? keyframeObject.cardId;
+            }
+            else {
+                continue;
+            }
+
+            if (typeof key !== 'string' || key.trim().length === 0) {
+                continue;
+            }
+
+            const kind = this.normalizeBackendAnimationKind(kindRaw);
+            if (!kind) {
+                continue;
+            }
+
+            const cardId = typeof cardIdRaw === 'string' && cardIdRaw.trim().length > 0
+                ? cardIdRaw.trim()
+                : null;
+
+            keyframes.push({
+                key: key.trim(),
+                kind,
+                cardId,
+            });
+        }
+
+        if (keyframes.length === 0) {
+            return null;
+        }
+
+        const rawTarget = animationCandidate.target;
+        return {
+            target: typeof rawTarget === 'string' && rawTarget.trim().length > 0
+                ? rawTarget.trim().toLowerCase()
+                : null,
+            keyframes,
+        };
+    }
+
+    private isBackendAnimationTargetActiveView (target: string | null): boolean
+    {
+        if (target === null) {
+            return true;
+        }
+
+        const normalizedTarget = target.trim().toLowerCase();
+        if (normalizedTarget === 'both' || normalizedTarget === 'all') {
+            return true;
+        }
+
+        if (normalizedTarget === 'player-1' || normalizedTarget === 'p1' || normalizedTarget === 'player1') {
+            return this.activeViewMode === 'p1';
+        }
+
+        if (normalizedTarget === 'player-2' || normalizedTarget === 'p2' || normalizedTarget === 'player2') {
+            return this.activeViewMode === 'p2';
+        }
+
+        return true;
+    }
+
+    private resolveCardByIdCaseInsensitive (rawCardId: string): Card | null
+    {
+        const direct = this.cardById[rawCardId] ?? this.cardById[rawCardId.toUpperCase()] ?? this.cardById[rawCardId.toLowerCase()];
+        if (direct) {
+            return direct;
+        }
+
+        const target = rawCardId.trim().toLowerCase();
+        if (!target) {
+            return null;
+        }
+
+        const matchedId = Object.keys(this.cardById).find((key) => key.toLowerCase() === target);
+        return matchedId ? this.cardById[matchedId] : null;
+    }
+
+    private findCardReferencedByCommand (command: string): Card | null
+    {
+        const tokens = command
+            .trim()
+            .split(/\s+/)
+            .filter((token) => token.length > 0);
+        if (tokens.length < 2) {
+            return null;
+        }
+
+        const candidateCount = Math.min(tokens.length, 5);
+        for (let i = 1; i < candidateCount; i += 1) {
+            const card = this.resolveCardByIdCaseInsensitive(tokens[i]);
+            if (card) {
+                return card;
+            }
+        }
+
+        return null;
+    }
+
+    private executeBackendAnimationPayload (command: string, payload: Record<string, unknown> | null): void
+    {
+        const animation = this.parseBackendAnimationPayload(payload);
+        if (!animation) {
+            return;
+        }
+
+        if (!this.isBackendAnimationTargetActiveView(animation.target)) {
+            return;
+        }
+
+        const commandCard = this.findCardReferencedByCommand(command);
+        for (const keyframe of animation.keyframes) {
+            if (keyframe.kind === 'sound') {
+                const played = this.playCommandSoundAsSceneAnimation(keyframe.key);
+                if (!played) {
+                    console.warn('[Protocol] animation sound key missing', { key: keyframe.key, command });
+                }
+                continue;
+            }
+
+            if (keyframe.kind === 'particles') {
+                const particleCard = (keyframe.cardId ? this.resolveCardByIdCaseInsensitive(keyframe.cardId) : null)
+                    ?? commandCard;
+                if (!particleCard) {
+                    console.warn('[Protocol] animation particles target card missing', {
+                        key: keyframe.key,
+                        cardId: keyframe.cardId,
+                        command,
+                    });
+                    continue;
+                }
+
+                const textureKey = this.resolveBoomTextureKey(keyframe.key);
+                if (!textureKey) {
+                    console.warn('[Protocol] animation particles key missing', { key: keyframe.key, command });
+                    continue;
+                }
+
+                this.playBoomExplosion(particleCard, textureKey);
+            }
+        }
     }
 
     private handleProtocolMismatch (packet: BackendProtocolPacket): void
@@ -1746,6 +2001,16 @@ export class Game extends Scene
                 .setScale(GAME_INIT_COUNTDOWN_OVERLAY.popStartScale)
                 .setAlpha(0);
 
+            const countdownSoundKey = isFinalStep
+                ? COUNTDOWN_HIGH_BEEP_SOUND_KEY
+                : COUNTDOWN_LOW_BEEP_SOUND_KEY;
+            const countdownSoundVolume = isFinalStep
+                ? GAME_INIT_COUNTDOWN_OVERLAY.highBeepVolume
+                : GAME_INIT_COUNTDOWN_OVERLAY.lowBeepVolume;
+            if (this.cache.audio.exists(countdownSoundKey) && this.isSfxPlaybackAllowed()) {
+                this.sound.play(countdownSoundKey, { volume: countdownSoundVolume });
+            }
+
             const popDuration = GAME_INIT_COUNTDOWN_OVERLAY.popDurationMs;
             const fadeOutDuration = GAME_INIT_COUNTDOWN_OVERLAY.fadeOutDurationMs;
             const holdAfterPopMs = Math.max(0, holdDuration - popDuration - fadeOutDuration);
@@ -2127,6 +2392,10 @@ export class Game extends Scene
 
         // Keep interactive hit area in sync with dynamic button sizing.
         button.body.setInteractive(new Phaser.Geom.Rectangle(0, 0, width, height), Phaser.Geom.Rectangle.Contains);
+        const phaseActionInput = button.body.input as Phaser.Types.Input.InteractiveObject | undefined;
+        if (phaseActionInput) {
+            phaseActionInput.cursor = 'pointer';
+        }
 
         button.label
             .setPosition(x - xPadding, y + yPadding)
@@ -3263,6 +3532,10 @@ export class Game extends Scene
             return { ok: false, error: 'Attached tool owner must match target card owner.' };
         }
 
+        if (parentCard && this.getAttachedChildren(parentCard.id).length > 0) {
+            return { ok: false, error: `Tool attachment target already has a tool attached: ${parentCard.id}` };
+        }
+
         const card = new Card(this, {
             id: options.id,
             cardType: options.cardType,
@@ -4051,7 +4324,13 @@ export class Game extends Scene
             minecraftfont: 'minecraftfont',
             'minecraftfont.png': 'minecraftfont',
             font2bitmap: 'font2bitmap',
-            'font2bitmap.png': 'font2bitmap'
+            'font2bitmap.png': 'font2bitmap',
+            crit: CRIT_PARTICLE_TEXTURE_KEY,
+            'crit.png': CRIT_PARTICLE_TEXTURE_KEY,
+            'icons/crit.png': CRIT_PARTICLE_TEXTURE_KEY,
+            regeneration: REGENERATION_PARTICLE_TEXTURE_KEY,
+            'regeneration.png': REGENERATION_PARTICLE_TEXTURE_KEY,
+            'icons/regeneration.png': REGENERATION_PARTICLE_TEXTURE_KEY,
         };
 
         const resolved = aliases[key];
@@ -4066,7 +4345,17 @@ export class Game extends Scene
     {
         const durationMs = GAME_EXPLOSION.durationMs;
         const count = GAME_EXPLOSION.count;
-        const baseScale = Math.max(GAME_EXPLOSION.minScale, this.objectWidth / GAME_EXPLOSION.scaleDivisor);
+        const fallbackBaseScale = Math.max(GAME_EXPLOSION.minScale, this.objectWidth / GAME_EXPLOSION.scaleDivisor);
+        const texture = this.textures.get(textureKey);
+        const sourceImage = texture.getSourceImage() as { width?: number; height?: number } | undefined;
+        const sourceWidth = Number(sourceImage?.width ?? 0);
+        const sourceHeight = Number(sourceImage?.height ?? 0);
+        const maxSourceDimension = Math.max(sourceWidth, sourceHeight);
+        const targetParticleSizePx = Math.max(18, Math.round(this.objectWidth * 0.58));
+        const normalizedScale = maxSourceDimension > 0
+            ? targetParticleSizePx / maxSourceDimension
+            : fallbackBaseScale;
+        const baseScale = Math.max(GAME_EXPLOSION.minScale, normalizedScale);
 
         for (let i = 0; i < count; i += 1) {
             const image = this.add.image(card.x, card.y, textureKey)
@@ -4109,8 +4398,252 @@ export class Game extends Scene
         child.setDepth(parent.depth + GAME_DEPTHS.attachmentDepthOffset);
     }
 
-    public playShuffleAnimationForPile (holder: CardHolder): boolean
+    public isDeckOrDiscardHolderId (holderId: string): boolean
     {
+        const normalizedHolderId = holderId.trim().toLowerCase();
+        return normalizedHolderId.endsWith('-deck') || normalizedHolderId.endsWith('-discard');
+    }
+
+    public playShuffleDeckSoundAndGetDurationMs (): number
+    {
+        // Backend animations now own shuffle sound playback; frontend keeps
+        // this helper for duration-based shuffle visual timing only.
+        return this.getShuffleDeckSoundDurationMs();
+    }
+
+    private isSfxPlaybackAllowed (): boolean
+    {
+        const soundManager = this.sound as Phaser.Sound.BaseSoundManager & {
+            mute?: boolean;
+            volume?: number;
+        };
+        if (soundManager.mute === true) {
+            return false;
+        }
+
+        const masterVolume = typeof soundManager.volume === 'number' ? soundManager.volume : 1;
+        return Number.isFinite(masterVolume) && masterVolume > 0.001;
+    }
+
+    public playRevealSound (minIntervalMs: number = 0): void
+    {
+        if (!this.cache.audio.exists(REVEAL_SOUND_KEY) || !this.isSfxPlaybackAllowed()) {
+            return;
+        }
+
+        const nowMs = this.time.now;
+        if (Number.isFinite(minIntervalMs) && minIntervalMs > 0) {
+            const elapsedMs = nowMs - this.lastRevealSoundPlayedAtMs;
+            if (Number.isFinite(elapsedMs) && elapsedMs < minIntervalMs) {
+                return;
+            }
+        }
+
+        this.sound.play(REVEAL_SOUND_KEY);
+        this.lastRevealSoundPlayedAtMs = nowMs;
+    }
+
+    public playCommandSound (rawSoundKey: string): boolean
+    {
+        const resolved = this.resolveCommandSoundKey(rawSoundKey);
+        if (!resolved) {
+            return false;
+        }
+
+        if (!this.isSfxPlaybackAllowed()) {
+            return true;
+        }
+
+        this.sound.play(resolved);
+        return true;
+    }
+
+    private resolveCommandSoundKey (rawSoundKey: string): string | null
+    {
+        const requested = rawSoundKey.trim();
+        if (!requested) {
+            return null;
+        }
+
+        const normalizedRequested = requested.toLowerCase();
+        const aliases: Record<string, string> = {
+            'reveal.mp3': REVEAL_SOUND_KEY,
+            'shuffle_deck.wav': SHUFFLE_DECK_SOUND_KEY,
+            'shuffle-deck.wav': SHUFFLE_DECK_SOUND_KEY,
+            'play_chip.ogg': ENERGY_TOKEN_ATTACH_SOUND_KEY,
+            'play-chip.ogg': ENERGY_TOKEN_ATTACH_SOUND_KEY,
+            'sparkle.mp3': SPARKLE_SOUND_KEY,
+            sparkle: SPARKLE_SOUND_KEY,
+            'punch.mp3': PUNCH_SOUND_KEY,
+            'punch': PUNCH_SOUND_KEY,
+            'heavy_punch.mp3': HEAVY_PUNCH_SOUND_KEY,
+            'heavy-punch.mp3': HEAVY_PUNCH_SOUND_KEY,
+            'heavy_punch': HEAVY_PUNCH_SOUND_KEY,
+            'heavy-punch': HEAVY_PUNCH_SOUND_KEY,
+            'card_slide.ogg': CARD_SLIDE_SOUND_KEY,
+            'card-slide.ogg': CARD_SLIDE_SOUND_KEY,
+            'card_slide': CARD_SLIDE_SOUND_KEY,
+            'card-slide': CARD_SLIDE_SOUND_KEY,
+            'card_shove.ogg': CARD_SHOVE_SOUND_KEY,
+            'card-shove.ogg': CARD_SHOVE_SOUND_KEY,
+            'card_shove': CARD_SHOVE_SOUND_KEY,
+            'card-shove': CARD_SHOVE_SOUND_KEY,
+        };
+        const resolved = aliases[normalizedRequested] ?? requested;
+        if (!this.cache.audio.exists(resolved)) {
+            return null;
+        }
+
+        return resolved;
+    }
+
+    public playCommandSoundAsSceneAnimation (rawSoundKey: string): boolean
+    {
+        const resolved = this.resolveCommandSoundKey(rawSoundKey);
+        if (!resolved) {
+            return false;
+        }
+
+        if (!this.isSfxPlaybackAllowed()) {
+            return true;
+        }
+
+        this.beginSceneAnimation();
+        const maybeWebAudioContext = (this.sound as Phaser.Sound.BaseSoundManager & {
+            context?: { state?: string; resume?: () => Promise<unknown> };
+        }).context;
+        if (maybeWebAudioContext?.state === 'suspended' && typeof maybeWebAudioContext.resume === 'function') {
+            void maybeWebAudioContext.resume().catch(() => {
+                // Best effort only; retry loop below still handles delayed readiness.
+            });
+        }
+
+        let settled = false;
+        const settle = () => {
+            if (settled) {
+                return;
+            }
+
+            settled = true;
+            this.endSceneAnimation();
+        };
+
+        const maxAttempts = 8;
+        const retryDelayMs = 120;
+        const tryPlayAttempt = (attempt: number): void => {
+            const sound = this.sound.add(resolved);
+            let completed = false;
+
+            const finish = () => {
+                if (completed) {
+                    return;
+                }
+
+                completed = true;
+                sound.destroy();
+                settle();
+            };
+
+            const durationCandidate = (sound as { duration?: number; totalDuration?: number }).duration
+                ?? (sound as { totalDuration?: number }).totalDuration;
+            const fallbackDelayMs = Number.isFinite(durationCandidate) && (durationCandidate ?? 0) > 0
+                ? Math.max(1, Math.round((durationCandidate as number) * 1000) + 40)
+                : 1200;
+
+            sound.once('complete', finish);
+            const played = sound.play();
+            if (!played) {
+                sound.destroy();
+                if (attempt + 1 < maxAttempts) {
+                    this.time.delayedCall(retryDelayMs, () => {
+                        tryPlayAttempt(attempt + 1);
+                    });
+                    return;
+                }
+
+                settle();
+                return;
+            }
+
+            this.time.delayedCall(fallbackDelayMs, finish);
+        };
+
+        tryPlayAttempt(0);
+        return true;
+    }
+
+    private getShuffleDeckSoundDurationMs (): number
+    {
+        if (!this.cache.audio.exists(SHUFFLE_DECK_SOUND_KEY)) {
+            return SHUFFLE_DECK_FALLBACK_DURATION_MS;
+        }
+
+        const sound = this.sound.add(SHUFFLE_DECK_SOUND_KEY);
+        const durationCandidate = (sound as { duration?: number; totalDuration?: number }).duration
+            ?? (sound as { totalDuration?: number }).totalDuration;
+        sound.destroy();
+
+        if (!Number.isFinite(durationCandidate) || (durationCandidate ?? 0) <= 0) {
+            return SHUFFLE_DECK_FALLBACK_DURATION_MS;
+        }
+
+        return Math.max(1, Math.round((durationCandidate as number) * 1000));
+    }
+
+    private resolveShuffleAnimationTiming (cardCount: number, totalDurationMs?: number): {
+        spreadDuration: number;
+        settleDuration: number;
+        cardDelayStepMs: number;
+    }
+    {
+        const spreadDuration = Math.max(
+            GAME_SHUFFLE_ANIMATION.spreadDurationMinMs,
+            Math.round(GAME_LAYOUT.cardMoveDurationMs * GAME_SHUFFLE_ANIMATION.spreadDurationMoveDurationRatio)
+        );
+        const settleDuration = Math.max(
+            GAME_SHUFFLE_ANIMATION.settleDurationMinMs,
+            Math.round(GAME_LAYOUT.cardMoveDurationMs * GAME_SHUFFLE_ANIMATION.settleDurationMoveDurationRatio)
+        );
+        const baseDelayStep = GAME_SHUFFLE_ANIMATION.cardDelayStepMs;
+
+        if (!Number.isFinite(totalDurationMs) || (totalDurationMs ?? 0) <= 0) {
+            return {
+                spreadDuration,
+                settleDuration,
+                cardDelayStepMs: baseDelayStep,
+            };
+        }
+
+        const cardsAfterFirst = Math.max(0, cardCount - 1);
+        const targetDurationMs = Math.max(2, Math.round(totalDurationMs as number));
+        const maxDelayBudgetMs = Math.round(targetDurationMs * 0.22);
+        const cardDelayStepMs = cardsAfterFirst > 0
+            ? Math.min(baseDelayStep, Math.floor(maxDelayBudgetMs / cardsAfterFirst))
+            : 0;
+        const totalDelayMs = cardDelayStepMs * cardsAfterFirst;
+        const motionBudgetMs = Math.max(2, targetDurationMs - totalDelayMs);
+        const spreadRatioNumerator = GAME_SHUFFLE_ANIMATION.spreadDurationMoveDurationRatio;
+        const spreadRatioDenominator = GAME_SHUFFLE_ANIMATION.spreadDurationMoveDurationRatio
+            + GAME_SHUFFLE_ANIMATION.settleDurationMoveDurationRatio;
+        const spreadRatio = spreadRatioDenominator > 0
+            ? (spreadRatioNumerator / spreadRatioDenominator)
+            : 0.5;
+        const syncedSpreadDuration = Math.max(1, Math.round(motionBudgetMs * spreadRatio));
+        const syncedSettleDuration = Math.max(1, motionBudgetMs - syncedSpreadDuration);
+
+        return {
+            spreadDuration: syncedSpreadDuration,
+            settleDuration: syncedSettleDuration,
+            cardDelayStepMs,
+        };
+    }
+
+    public playShuffleAnimationForPile (holder: CardHolder, totalDurationMs?: number): boolean
+    {
+        if (!this.isDeckOrDiscardHolderId(holder.id)) {
+            return false;
+        }
+
         const pileCards = holder.cards.slice();
         if (pileCards.length < GAME_SHUFFLE_ANIMATION.minCardsRequired) {
             return false;
@@ -4118,8 +4651,7 @@ export class Game extends Scene
 
         const scatterX = Math.max(GAME_SHUFFLE_ANIMATION.scatterXMinPx, Math.round(this.objectWidth * GAME_SHUFFLE_ANIMATION.scatterXWidthRatio));
         const scatterY = Math.max(GAME_SHUFFLE_ANIMATION.scatterYMinPx, Math.round(this.objectHeight * GAME_SHUFFLE_ANIMATION.scatterYHeightRatio));
-        const spreadDuration = Math.max(GAME_SHUFFLE_ANIMATION.spreadDurationMinMs, Math.round(GAME_LAYOUT.cardMoveDurationMs * GAME_SHUFFLE_ANIMATION.spreadDurationMoveDurationRatio));
-        const settleDuration = Math.max(GAME_SHUFFLE_ANIMATION.settleDurationMinMs, Math.round(GAME_LAYOUT.cardMoveDurationMs * GAME_SHUFFLE_ANIMATION.settleDurationMoveDurationRatio));
+    const timing = this.resolveShuffleAnimationTiming(pileCards.length, totalDurationMs);
 
         this.beginSceneAnimation();
         let pendingCards = pileCards.length;
@@ -4136,8 +4668,8 @@ export class Game extends Scene
                 targets: card.body,
                 x: shuffleX,
                 y: shuffleY,
-                duration: spreadDuration,
-                delay: index * GAME_SHUFFLE_ANIMATION.cardDelayStepMs,
+                duration: timing.spreadDuration,
+                delay: index * timing.cardDelayStepMs,
                 ease: 'Sine.easeOut',
                 onUpdate: () => {
                     card.redrawMarks();
@@ -4148,7 +4680,7 @@ export class Game extends Scene
                         targets: card.body,
                         x: startX,
                         y: startY,
-                        duration: settleDuration,
+                        duration: timing.settleDuration,
                         ease: 'Sine.easeInOut',
                         onUpdate: () => {
                             card.redrawMarks();
@@ -4165,6 +4697,61 @@ export class Game extends Scene
                     });
                 }
             });
+        });
+
+        return true;
+    }
+
+    public playSingleCardShuffleAnimationForPile (card: Card, holder: CardHolder): boolean
+    {
+        if (!this.isDeckOrDiscardHolderId(holder.id)) {
+            return false;
+        }
+
+        if (!holder.cards.includes(card)) {
+            return false;
+        }
+
+        const scatterX = Math.max(GAME_SHUFFLE_ANIMATION.scatterXMinPx, Math.round(this.objectWidth * GAME_SHUFFLE_ANIMATION.scatterXWidthRatio));
+        const scatterY = Math.max(GAME_SHUFFLE_ANIMATION.scatterYMinPx, Math.round(this.objectHeight * GAME_SHUFFLE_ANIMATION.scatterYHeightRatio));
+        const spreadDuration = Math.max(GAME_SHUFFLE_ANIMATION.spreadDurationMinMs, Math.round(GAME_LAYOUT.cardMoveDurationMs * GAME_SHUFFLE_ANIMATION.spreadDurationMoveDurationRatio));
+        const settleDuration = Math.max(GAME_SHUFFLE_ANIMATION.settleDurationMinMs, Math.round(GAME_LAYOUT.cardMoveDurationMs * GAME_SHUFFLE_ANIMATION.settleDurationMoveDurationRatio));
+        const startX = card.x;
+        const startY = card.y;
+        const shuffleX = startX + Phaser.Math.Between(-scatterX, scatterX);
+        const shuffleY = startY + Phaser.Math.Between(-scatterY, scatterY);
+
+        this.beginSceneAnimation();
+        card.setDepth(GAME_DEPTHS.cardDragging + 1);
+
+        this.tweens.add({
+            targets: card.body,
+            x: shuffleX,
+            y: shuffleY,
+            duration: spreadDuration,
+            ease: 'Sine.easeOut',
+            onUpdate: () => {
+                card.redrawMarks();
+                this.updateAttachedChildrenPositions(card);
+            },
+            onComplete: () => {
+                this.tweens.add({
+                    targets: card.body,
+                    x: startX,
+                    y: startY,
+                    duration: settleDuration,
+                    ease: 'Sine.easeInOut',
+                    onUpdate: () => {
+                        card.redrawMarks();
+                        this.updateAttachedChildrenPositions(card);
+                    },
+                    onComplete: () => {
+                        this.layoutAllHolders();
+                        this.redrawAllCardMarks();
+                        this.endSceneAnimation();
+                    }
+                });
+            }
         });
 
         return true;

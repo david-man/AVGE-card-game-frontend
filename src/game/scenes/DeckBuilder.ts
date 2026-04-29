@@ -31,6 +31,8 @@ import {
     UserDeck,
 } from '../Network';
 import { CardPreviewController } from '../ui/CardPreviewController';
+import { registerUiClickSoundForScene } from '../ui/clickSfx';
+import { createVolumeControlForScene, preloadVolumeControlAssets } from '../ui/volumeControl';
 import { fitTextToMultiLine } from '../ui/overlays/textFit';
 
 type DeckBuilderState = {
@@ -76,6 +78,9 @@ export class DeckBuilder extends Scene
     saveLabel: GameObjects.Text;
     backButton: GameObjects.Rectangle;
     backLabel: GameObjects.Text;
+    renameButton: GameObjects.Rectangle;
+    renameIcon: GameObjects.Image;
+    renameLabel: GameObjects.Text;
     resetButton: GameObjects.Rectangle;
     resetIcon: GameObjects.Image;
     resetLabel: GameObjects.Text;
@@ -163,7 +168,6 @@ export class DeckBuilder extends Scene
     private keyboardKeydownHandler: ((event: KeyboardEvent) => void) | null;
     private pointerDownHandler: ((pointer: Phaser.Input.Pointer) => void) | null;
     private gameObjectDownHandler: ((pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.GameObject) => void) | null;
-    private lastDeckNameClickAtMs: number;
     private resetDeckConfirmTimer: Phaser.Time.TimerEvent | null;
     private resetDeckConfirmSecondsRemaining: number;
 
@@ -201,7 +205,6 @@ export class DeckBuilder extends Scene
         this.keyboardKeydownHandler = null;
         this.pointerDownHandler = null;
         this.gameObjectDownHandler = null;
-        this.lastDeckNameClickAtMs = 0;
         this.resetDeckConfirmTimer = null;
         this.resetDeckConfirmSecondsRemaining = 0;
     }
@@ -210,13 +213,18 @@ export class DeckBuilder extends Scene
     {
         this.load.setPath('assets');
         this.load.image('background', 'background/background_element.png');
+        this.load.image(DECK_BUILDER_TRANSFER_ICON_ASSETS.renameKey, DECK_BUILDER_TRANSFER_ICON_ASSETS.renamePath);
         this.load.image(DECK_BUILDER_TRANSFER_ICON_ASSETS.exportKey, DECK_BUILDER_TRANSFER_ICON_ASSETS.exportPath);
         this.load.image(DECK_BUILDER_TRANSFER_ICON_ASSETS.importKey, DECK_BUILDER_TRANSFER_ICON_ASSETS.importPath);
         this.load.image(DECK_BUILDER_TRANSFER_ICON_ASSETS.resetKey, DECK_BUILDER_TRANSFER_ICON_ASSETS.resetPath);
+        preloadVolumeControlAssets(this);
     }
 
     create (): void
     {
+        registerUiClickSoundForScene(this);
+        createVolumeControlForScene(this);
+
         // Phaser reuses the same Scene instance on restart; clear row refs from
         // prior runs so we never mutate destroyed text objects.
         this.rows = [];
@@ -239,7 +247,6 @@ export class DeckBuilder extends Scene
         this.searchRows = [];
         this.currentDeckCardObjects = [];
         this.deckPreviewSuppressOutsideClose = false;
-        this.lastDeckNameClickAtMs = 0;
 
         this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
             this.stopAuthSessionPush();
@@ -275,23 +282,7 @@ export class DeckBuilder extends Scene
 
         this.subtitle = this.add.text(GAME_CENTER_X, Math.round(GAME_HEIGHT * 0.15), 'Loading deck...').setFontSize(Math.max(DECK_BUILDER_TEXT_LAYOUT.subtitleFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.subtitleFontSizeBase * UI_SCALE)))
             .setOrigin(0.5)
-            .setTint(0xe2e8f0)
-            .setInteractive({ useHandCursor: true });
-
-        this.subtitle.on('pointerdown', () => {
-            if (!this.state.deckId || this.busy) {
-                return;
-            }
-
-            const now = this.time.now;
-            if ((now - this.lastDeckNameClickAtMs) <= 320) {
-                this.lastDeckNameClickAtMs = 0;
-                this.renameCurrentDeck();
-                return;
-            }
-
-            this.lastDeckNameClickAtMs = now;
-        });
+            .setTint(0xe2e8f0);
 
         this.pageIndicator = this.add.text(GAME_CENTER_X, Math.round(GAME_HEIGHT * 0.84), '').setFontSize(Math.max(DECK_BUILDER_TEXT_LAYOUT.pageIndicatorFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.pageIndicatorFontSizeBase * UI_SCALE)))
             .setOrigin(0.5)
@@ -356,6 +347,27 @@ export class DeckBuilder extends Scene
         this.backLabel = this.add.text(this.backButton.x, this.backButton.y, 'BACK').setFontSize(Math.max(DECK_BUILDER_TEXT_LAYOUT.actionFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.actionFontSizeBase * UI_SCALE)))
             .setOrigin(0.5)
             .setTint(0xffffff);
+
+        this.renameButton = this.add.rectangle(
+            Math.round(GAME_CENTER_X + 58 * UI_SCALE),
+            Math.round(GAME_HEIGHT * 0.93),
+            Math.round(DECK_BUILDER_TRANSFER_ICON_LAYOUT.buttonSizeBase * UI_SCALE),
+            Math.round(DECK_BUILDER_TRANSFER_ICON_LAYOUT.buttonSizeBase * UI_SCALE),
+            0x1f2937,
+            0.95
+        )
+            .setStrokeStyle(2, 0xffffff, 0.75)
+            .setInteractive({ useHandCursor: true });
+
+        this.renameIcon = this.add.image(this.renameButton.x, this.renameButton.y, DECK_BUILDER_TRANSFER_ICON_ASSETS.renameKey)
+            .setDepth(this.renameButton.depth + 1);
+
+        this.renameLabel = this.add.text(this.renameButton.x, this.renameButton.y, 'Rename').setFontSize(Math.max(DECK_BUILDER_TEXT_LAYOUT.actionFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.actionFontSizeBase * UI_SCALE)))
+            .setOrigin(0.5)
+            .setTint(0xfef08a)
+            .setDepth(this.renameButton.depth + 2)
+            .setVisible(false);
+
         this.resetButton = this.add.rectangle(
             Math.round(GAME_CENTER_X - 204 * UI_SCALE),
             Math.round(GAME_HEIGHT * 0.93),
@@ -393,7 +405,7 @@ export class DeckBuilder extends Scene
             Math.round(GAME_HEIGHT * 0.93),
             Math.round(DECK_BUILDER_TRANSFER_ICON_LAYOUT.buttonSizeBase * UI_SCALE),
             Math.round(DECK_BUILDER_TRANSFER_ICON_LAYOUT.buttonSizeBase * UI_SCALE),
-            0x1f2937,
+            0x1d4ed8,
             0.95
         )
             .setStrokeStyle(2, 0xffffff, 0.75)
@@ -429,6 +441,7 @@ export class DeckBuilder extends Scene
             .setVisible(false);
 
         const iconMaxSize = Math.round(DECK_BUILDER_TRANSFER_ICON_LAYOUT.buttonSizeBase * UI_SCALE * DECK_BUILDER_TRANSFER_ICON_LAYOUT.iconMaxSizeRatio);
+        this.renameIcon.setDisplaySize(iconMaxSize, iconMaxSize);
         this.resetIcon.setDisplaySize(iconMaxSize, iconMaxSize);
         this.exportIcon.setDisplaySize(iconMaxSize, iconMaxSize);
         this.importIcon.setDisplaySize(iconMaxSize, iconMaxSize);
@@ -479,6 +492,13 @@ export class DeckBuilder extends Scene
         );
 
         this.bindHoverHighlight(
+            this.renameButton,
+            null,
+            () => ({ fillColor: 0x1f2937, fillAlpha: 0.95 }),
+            () => ({ fillColor: 0x334155, fillAlpha: 0.98 })
+        );
+
+        this.bindHoverHighlight(
             this.resetButton,
             null,
             () => ({ fillColor: 0x991b1b, fillAlpha: 0.95 }),
@@ -488,8 +508,8 @@ export class DeckBuilder extends Scene
         this.bindHoverHighlight(
             this.exportButton,
             null,
-            () => ({ fillColor: 0x1f2937, fillAlpha: 0.95, labelTint: 0xffffff }),
-            () => ({ fillColor: 0x334155, fillAlpha: 0.98, labelTint: 0xfef08a })
+            () => ({ fillColor: 0x1d4ed8, fillAlpha: 0.95, labelTint: 0xffffff }),
+            () => ({ fillColor: 0x2563eb, fillAlpha: 0.98, labelTint: 0xfef08a })
         );
 
         this.bindHoverHighlight(
@@ -498,6 +518,15 @@ export class DeckBuilder extends Scene
             () => ({ fillColor: 0x78350f, fillAlpha: 0.95, labelTint: 0xffffff }),
             () => ({ fillColor: 0x92400e, fillAlpha: 0.98, labelTint: 0xfef08a })
         );
+
+        this.renameButton.on('pointerover', () => {
+            this.renameIcon.setTint(0xfef08a);
+            this.renameLabel.setVisible(true);
+        });
+        this.renameButton.on('pointerout', () => {
+            this.renameIcon.clearTint();
+            this.renameLabel.setVisible(false);
+        });
 
         this.resetButton.on('pointerover', () => {
             if (!this.resetLabel.visible) {
@@ -572,16 +601,26 @@ export class DeckBuilder extends Scene
             void this.saveDeck();
         });
 
+        this.renameButton.on('pointerdown', () => {
+            this.runPromptActionAfterClickSfx(() => {
+                this.renameCurrentDeck();
+            });
+        });
+
         this.resetButton.on('pointerdown', () => {
             this.handleResetDeckButtonClick();
         });
 
         this.exportButton.on('pointerdown', () => {
-            this.exportCurrentDeckShare();
+            this.runPromptActionAfterClickSfx(() => {
+                this.exportCurrentDeckShare();
+            });
         });
 
         this.importButton.on('pointerdown', () => {
-            this.importDeckShare();
+            this.runPromptActionAfterClickSfx(() => {
+                this.importDeckShare();
+            });
         });
 
         this.searchButton.on('pointerdown', () => {
@@ -613,6 +652,12 @@ export class DeckBuilder extends Scene
         if (sessionId) {
             this.startAuthSessionPush(sessionId);
         }
+    }
+
+    private runPromptActionAfterClickSfx (action: () => void): void
+    {
+        // Let the pointerdown click SFX start before browser prompt/confirm blocks.
+        this.time.delayedCall(70, action);
     }
 
     private buildDeckSlotButtons (): void
@@ -1177,7 +1222,10 @@ export class DeckBuilder extends Scene
                     scene: this,
                     text: card.label.toUpperCase(),
                     preferredSize: nameFontSize,
-                    minSize: Math.max(7, Math.round(nameFontSize * 0.7)),
+                    minSize: Math.max(
+                        DECK_BUILDER_CURRENT_DECK_PREVIEW_TEXT_LAYOUT.tileNameFitMinSizeFloor,
+                        Math.round(nameFontSize * DECK_BUILDER_CURRENT_DECK_PREVIEW_TEXT_LAYOUT.tileNameFitMinSizeRatio)
+                    ),
                     maxWidth: Math.max(10, tileNameMaxWidth),
                     maxLines: 3
                 });
@@ -2157,7 +2205,7 @@ export class DeckBuilder extends Scene
 
     private positionDeckTransferButtons (): void
     {
-        if (!this.resetButton || !this.exportButton || !this.importButton || this.deckSlotButtons.length === 0) {
+        if (!this.renameButton || !this.resetButton || !this.exportButton || !this.importButton || this.deckSlotButtons.length === 0) {
             return;
         }
 
@@ -2176,10 +2224,17 @@ export class DeckBuilder extends Scene
         );
 
         const slotLeftX = activeSlot.body.x - Math.round(activeSlot.body.width * 0.5);
-        const importX = slotLeftX - buttonOffsetX - Math.round(buttonSize * 0.5);
+        const renameX = slotLeftX - buttonOffsetX - Math.round(buttonSize * 0.5);
+        const importX = renameX - buttonSize - buttonGapX;
         const exportX = importX - buttonSize - buttonGapX;
         const resetX = exportX - buttonSize - buttonGapX;
         const buttonsY = activeSlot.body.y;
+
+        this.renameButton.setPosition(renameX, buttonsY);
+        this.renameIcon.setPosition(renameX, buttonsY);
+        this.renameLabel
+            .setPosition(renameX, buttonsY - hoverLabelOffsetY)
+            .setFontSize(hoverLabelSize);
 
         this.resetButton.setPosition(resetX, buttonsY);
         this.resetIcon.setPosition(resetX, buttonsY);

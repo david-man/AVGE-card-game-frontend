@@ -10,6 +10,8 @@ import {
     ROUTER_SESSION_ID_STORAGE_KEY,
     ROUTER_USERNAME_STORAGE_KEY,
 } from '../Network';
+import { registerUiClickSoundForScene } from '../ui/clickSfx';
+import { createVolumeControlForScene, preloadVolumeControlAssets } from '../ui/volumeControl';
 
 export class Login extends Scene
 {
@@ -36,10 +38,14 @@ export class Login extends Scene
     {
         this.load.setPath('assets');
         this.load.image('background', 'background/background_element.png');
+        preloadVolumeControlAssets(this);
     }
 
     create (): void
     {
+        registerUiClickSoundForScene(this);
+        createVolumeControlForScene(this);
+
         this.submitting = false;
         this.selectedUsername = this.loadPreferredUsername();
 

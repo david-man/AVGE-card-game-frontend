@@ -32,6 +32,44 @@ const config: Phaser.Types.Core.GameConfig = {
     ],
 };
 
+const installGlobalPhaserTextFontDefaults = (): void => {
+    const factoryProto = Phaser.GameObjects.GameObjectFactory.prototype as Phaser.GameObjects.GameObjectFactory & {
+        __avgeTextFactoryPatched__?: boolean;
+    };
+
+    if (factoryProto.__avgeTextFactoryPatched__) {
+        return;
+    }
+
+    const originalTextFactory = factoryProto.text as (
+        this: Phaser.GameObjects.GameObjectFactory,
+        x: number,
+        y: number,
+        text: string | string[],
+        style?: Phaser.Types.GameObjects.Text.TextStyle
+    ) => Phaser.GameObjects.Text;
+
+    factoryProto.text = function (
+        this: Phaser.GameObjects.GameObjectFactory,
+        x: number,
+        y: number,
+        text: string | string[],
+        style?: Phaser.Types.GameObjects.Text.TextStyle
+    ): Phaser.GameObjects.Text {
+        const nextStyle: Phaser.Types.GameObjects.Text.TextStyle = style
+            ? { ...style }
+            : {};
+
+        if (typeof nextStyle.fontFamily !== 'string' || nextStyle.fontFamily.trim().length === 0) {
+            nextStyle.fontFamily = UI_FONT_FAMILY;
+        }
+
+        return originalTextFactory.call(this, x, y, text, nextStyle);
+    };
+
+    factoryProto.__avgeTextFactoryPatched__ = true;
+};
+
 const installConfiguredFont = (): void => {
     if (typeof document === 'undefined') {
         return;
@@ -121,6 +159,7 @@ const installConfiguredFont = (): void => {
 
 const StartGame = (parent: string) => {
     installConfiguredFont();
+    installGlobalPhaserTextFontDefaults();
 
     return new Game({ ...config, parent });
 

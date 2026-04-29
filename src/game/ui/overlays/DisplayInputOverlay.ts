@@ -1,5 +1,6 @@
 import { Scene } from 'phaser';
-import { GAME_INPUT_REVEAL_OVERLAY, GAME_INPUT_SELECTION_OVERLAY, GAME_OVERLAY_DEPTHS } from '../../config';
+import { GAME_INPUT_REVEAL_OVERLAY, GAME_INPUT_SELECTION_OVERLAY, GAME_OVERLAY_DEPTHS, GAME_WINNER_OVERLAY_AUDIO } from '../../config';
+import { playUiClickSoundForScene } from '../clickSfx';
 import { fitTextToMultiLine } from './textFit';
 
 type OverlayCloseCallback = () => void;
@@ -22,6 +23,7 @@ export class DisplayInputOverlay
     private activeTimer: Phaser.Time.TimerEvent | null;
     private activeCountdownTween: Phaser.Tweens.Tween | null;
     private activeCountdownFrame: Phaser.GameObjects.Graphics | null;
+    private winnerOverlayAudioToken: number;
 
     constructor (scene: Scene, inputLockOverlay: Phaser.GameObjects.Rectangle)
     {
@@ -32,6 +34,7 @@ export class DisplayInputOverlay
         this.activeTimer = null;
         this.activeCountdownTween = null;
         this.activeCountdownFrame = null;
+        this.winnerOverlayAudioToken = 0;
     }
 
     hasActiveOverlay (): boolean
@@ -41,6 +44,7 @@ export class DisplayInputOverlay
 
     stopActiveOverlay (): void
     {
+        this.winnerOverlayAudioToken += 1;
         this.clearActiveTimeout();
         this.activeObjects.forEach((obj) => obj.destroy());
         this.activeObjects = [];
@@ -223,7 +227,10 @@ export class DisplayInputOverlay
             this.cancelTimeoutAndHideFrame();
         };
 
-        closeButton.on('pointerdown', close);
+        closeButton.on('pointerdown', () => {
+            playUiClickSoundForScene(this.scene, 120);
+            close();
+        });
         clickBackdrop.on('pointerdown', cancelTimeoutFromInteraction);
         panel.on('pointerdown', cancelTimeoutFromInteraction);
         title.on('pointerdown', cancelTimeoutFromInteraction);
@@ -343,7 +350,10 @@ export class DisplayInputOverlay
         }
 
         if (cards.length === 0) {
-            const emptyText = this.scene.add.text(panelX, panelY, '(NO CARDS)').setFontSize(Math.max(22, Math.round(panelWidth * 0.04)))
+            const emptyText = this.scene.add.text(panelX, panelY, '(NO CARDS)').setFontSize(Math.max(
+                GAME_INPUT_REVEAL_OVERLAY.emptyStateFontSizeMin,
+                Math.round(panelWidth * GAME_INPUT_REVEAL_OVERLAY.emptyStateFontSizeWidthRatio)
+            ))
                 .setOrigin(0.5)
                 .setDepth(overlayDepth + 1);
             emptyText.setY(Math.round(gridTopY + (availableHeight / 2)));
@@ -410,7 +420,7 @@ export class DisplayInputOverlay
                 const x = startX + (col * (cardWidth + horizontalGap));
                 const y = startY + (row * (cardHeight + verticalGap));
                 const normalizedClassLabel = this.normalizeOverlayLabel(card.cardClassLabel);
-                const normalizedTypeLabel = this.normalizeOverlayLabel(card.cardTypeLabel);
+                const normalizedTypeLabel = this.normalizeOverlayLabel(card.cardTypeLabel.split('|')[0]);
 
                 const body = this.scene.add.rectangle(0, 0, cardWidth, cardHeight, card.cardColor, 1)
                     .setStrokeStyle(3, 0xffffff, 0.95);
@@ -479,7 +489,10 @@ export class DisplayInputOverlay
             onClose();
         };
 
-        closeButton.on('pointerdown', close);
+        closeButton.on('pointerdown', () => {
+            playUiClickSoundForScene(this.scene, 120);
+            close();
+        });
 
         if (timeoutSeconds !== null && Number.isFinite(timeoutSeconds) && timeoutSeconds >= 0) {
             const timeoutMs = Math.max(0, Math.round(timeoutSeconds * 1000));
@@ -572,9 +585,45 @@ export class DisplayInputOverlay
         });
 
         menuButton.on('pointerdown', () => {
+            playUiClickSoundForScene(this.scene, 120);
             this.stopActiveOverlay();
             onBackToMenu();
         });
+
+        const repeatCount = Math.max(0, Math.floor(GAME_WINNER_OVERLAY_AUDIO.fireworkRepeatCount));
+        const separationMs = Math.max(0, Math.round(GAME_WINNER_OVERLAY_AUDIO.fireworkSeparationMs));
+        const playbackToken = this.winnerOverlayAudioToken;
+        if (repeatCount > 0 && this.scene.cache.audio.exists(GAME_WINNER_OVERLAY_AUDIO.soundKey)) {
+            const canPlayWinnerSfx = (): boolean => {
+                const soundManager = this.scene.sound as Phaser.Sound.BaseSoundManager & {
+                    mute?: boolean;
+                    volume?: number;
+                };
+                if (soundManager.mute === true) {
+                    return false;
+                }
+
+                const masterVolume = typeof soundManager.volume === 'number' ? soundManager.volume : 1;
+                return Number.isFinite(masterVolume) && masterVolume > 0.001;
+            };
+
+            for (let i = 0; i < repeatCount; i += 1) {
+                const delayMs = i * separationMs;
+                this.scene.time.delayedCall(delayMs, () => {
+                    if (this.winnerOverlayAudioToken !== playbackToken) {
+                        return;
+                    }
+
+                    if (!canPlayWinnerSfx()) {
+                        return;
+                    }
+
+                    this.scene.sound.play(GAME_WINNER_OVERLAY_AUDIO.soundKey, {
+                        volume: GAME_WINNER_OVERLAY_AUDIO.fireworkVolume
+                    });
+                });
+            }
+        }
 
         this.activeObjects.push(backdrop, panel, title, winnerText, menuButton, menuLabel);
     }

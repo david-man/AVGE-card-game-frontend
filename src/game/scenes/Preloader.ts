@@ -1,5 +1,7 @@
 import { Scene } from 'phaser';
-import { GAME_CENTER_X, GAME_CENTER_Y, GAME_HEIGHT, GAME_WIDTH, UI_FONT_FAMILY } from '../config';
+import { GAME_CENTER_X, GAME_CENTER_Y, GAME_HEIGHT, GAME_WIDTH, PRELOADER_TEXT_LAYOUT, UI_FONT_FAMILY } from '../config';
+import { UI_CLICK_SOUND_KEY } from '../ui/clickSfx';
+import { createVolumeControlForScene, preloadVolumeControlAssets } from '../ui/volumeControl';
 
 export class Preloader extends Scene
 {
@@ -10,6 +12,8 @@ export class Preloader extends Scene
 
     init ()
     {
+        createVolumeControlForScene(this);
+
         this.add.image(GAME_CENTER_X, GAME_CENTER_Y, 'preloader-background')
             .setDisplaySize(GAME_WIDTH, GAME_HEIGHT)
             .setAlpha(0.92);
@@ -18,7 +22,7 @@ export class Preloader extends Scene
 
         const title = this.add.text(GAME_CENTER_X, GAME_CENTER_Y - 90, 'Loading', {
             fontFamily: UI_FONT_FAMILY,
-            fontSize: '40px',
+            fontSize: `${PRELOADER_TEXT_LAYOUT.titleFontSizePx}px`,
             color: '#ffffff',
             stroke: '#000000',
             strokeThickness: 4,
@@ -26,7 +30,7 @@ export class Preloader extends Scene
 
         const progressLabel = this.add.text(GAME_CENTER_X, GAME_CENTER_Y - 45, '0%', {
             fontFamily: UI_FONT_FAMILY,
-            fontSize: '20px',
+            fontSize: `${PRELOADER_TEXT_LAYOUT.progressFontSizePx}px`,
             color: '#e2e8f0',
         }).setOrigin(0.5);
 
@@ -41,7 +45,7 @@ export class Preloader extends Scene
 
         const fileLabel = this.add.text(GAME_CENTER_X, GAME_CENTER_Y + 44, '', {
             fontFamily: UI_FONT_FAMILY,
-            fontSize: '14px',
+            fontSize: `${PRELOADER_TEXT_LAYOUT.fileFontSizePx}px`,
             color: '#cbd5e1',
         }).setOrigin(0.5);
 
@@ -78,6 +82,8 @@ export class Preloader extends Scene
         this.load.image('preloader-logo', 'logo.png');
         this.load.image('preloader-board-preview', 'background/base_board.png');
         this.load.image('logo', 'logo.png');
+        this.load.audio(UI_CLICK_SOUND_KEY, 'sfx/click.mp3');
+        preloadVolumeControlAssets(this);
     }
 
     create ()

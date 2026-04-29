@@ -27,6 +27,8 @@ import {
     ROUTER_USERNAME_STORAGE_KEY,
     RouterAssignedRoom,
 } from '../Network';
+import { registerUiClickSoundForScene } from '../ui/clickSfx';
+import { createVolumeControlForScene, preloadVolumeControlAssets } from '../ui/volumeControl';
 
 export class MainMenu extends Scene
 {
@@ -80,10 +82,14 @@ export class MainMenu extends Scene
         this.load.setPath('assets');
         this.load.image('background', 'background/background_element.png');
         this.load.image(MAIN_MENU_LOGO_ASSET.key, MAIN_MENU_LOGO_ASSET.filePath);
+        preloadVolumeControlAssets(this);
     }
 
     create ()
     {
+        registerUiClickSoundForScene(this);
+        createVolumeControlForScene(this);
+
         this.transitioning = false;
         this.matchmakingInProgress = false;
         this.authReady = false;
@@ -100,6 +106,7 @@ export class MainMenu extends Scene
             .setDepth(8)
             .setAlpha(MAIN_MENU_LOGO_LAYOUT.alpha)
             .setInteractive({ useHandCursor: true });
+        (cornerLogo as Phaser.GameObjects.Image & { __avgeDisableClickSfx?: boolean }).__avgeDisableClickSfx = true;
         const maxLogoWidth = GAME_WIDTH * MAIN_MENU_LOGO_LAYOUT.maxWidthRatio;
         const maxLogoHeight = GAME_HEIGHT * MAIN_MENU_LOGO_LAYOUT.maxHeightRatio;
         const logoScale = Math.min(

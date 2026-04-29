@@ -221,14 +221,20 @@ export class PhaseHudController
             scene: this.scene,
             text: this.ui.roundValue.text,
             preferredSize: this.ui.roundValue.fontSize,
-            minSize: Math.max(9, Math.round(this.ui.roundValue.fontSize * 0.72)),
+            minSize: Math.max(
+                PHASE_HUD_TEXT_LAYOUT.valueFitMinSizeMin,
+                Math.round(this.ui.roundValue.fontSize * PHASE_HUD_TEXT_LAYOUT.valueFitMinSizeRatio)
+            ),
             maxWidth: availableValueWidth
         }));
         this.ui.phaseValue.setFontSize(fitTextToSingleLine({
             scene: this.scene,
             text: this.ui.phaseValue.text,
             preferredSize: this.ui.phaseValue.fontSize,
-            minSize: Math.max(9, Math.round(this.ui.phaseValue.fontSize * 0.72)),
+            minSize: Math.max(
+                PHASE_HUD_TEXT_LAYOUT.valueFitMinSizeMin,
+                Math.round(this.ui.phaseValue.fontSize * PHASE_HUD_TEXT_LAYOUT.valueFitMinSizeRatio)
+            ),
             maxWidth: availableValueWidth
         }));
         if (hasTurnRow) {
@@ -236,7 +242,10 @@ export class PhaseHudController
                 scene: this.scene,
                 text: this.ui.turnValue.text,
                 preferredSize: this.ui.turnValue.fontSize,
-                minSize: Math.max(9, Math.round(this.ui.turnValue.fontSize * 0.72)),
+                minSize: Math.max(
+                    PHASE_HUD_TEXT_LAYOUT.valueFitMinSizeMin,
+                    Math.round(this.ui.turnValue.fontSize * PHASE_HUD_TEXT_LAYOUT.valueFitMinSizeRatio)
+                ),
                 maxWidth: availableValueWidth
             }));
         }

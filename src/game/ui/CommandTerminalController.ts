@@ -165,7 +165,10 @@ export class CommandTerminalController
             .setStrokeStyle(1, 0xffffff, 0.7)
             .setDepth(GAME_DEPTHS.terminalInputText)
             .setInteractive({ useHandCursor: true });
-        this.scene.add.text(navX, navUpY, '^').setFontSize(Math.max(10, Math.round(inputSize * 0.9)))
+        this.scene.add.text(navX, navUpY, '^').setFontSize(Math.max(
+            GAME_COMMAND_TERMINAL_LAYOUT.navGlyphFontSizeMin,
+            Math.round(inputSize * GAME_COMMAND_TERMINAL_LAYOUT.navGlyphFontSizeRatio)
+        ))
             .setOrigin(0.5)
             .setDepth(GAME_DEPTHS.terminalInputText + 1);
         terminalUpButton.on('pointerdown', () => {
@@ -176,7 +179,10 @@ export class CommandTerminalController
             .setStrokeStyle(1, 0xffffff, 0.7)
             .setDepth(GAME_DEPTHS.terminalInputText)
             .setInteractive({ useHandCursor: true });
-        this.scene.add.text(navX, navDownY, 'v').setFontSize(Math.max(10, Math.round(inputSize * 0.9)))
+        this.scene.add.text(navX, navDownY, 'v').setFontSize(Math.max(
+            GAME_COMMAND_TERMINAL_LAYOUT.navGlyphFontSizeMin,
+            Math.round(inputSize * GAME_COMMAND_TERMINAL_LAYOUT.navGlyphFontSizeRatio)
+        ))
             .setOrigin(0.5)
             .setDepth(GAME_DEPTHS.terminalInputText + 1);
         terminalDownButton.on('pointerdown', () => {
@@ -191,7 +197,10 @@ export class CommandTerminalController
             .setStrokeStyle(1, 0xffffff, 0.7)
             .setDepth(GAME_DEPTHS.terminalInputText)
             .setInteractive({ useHandCursor: true });
-        this.scene.add.text(inputLeftX, inputButtonY, '<').setFontSize(Math.max(10, Math.round(inputSize * 0.9)))
+        this.scene.add.text(inputLeftX, inputButtonY, '<').setFontSize(Math.max(
+            GAME_COMMAND_TERMINAL_LAYOUT.navGlyphFontSizeMin,
+            Math.round(inputSize * GAME_COMMAND_TERMINAL_LAYOUT.navGlyphFontSizeRatio)
+        ))
             .setOrigin(0.5)
             .setDepth(GAME_DEPTHS.terminalInputText + 1);
         terminalInputLeftButton.on('pointerdown', () => {
@@ -202,7 +211,10 @@ export class CommandTerminalController
             .setStrokeStyle(1, 0xffffff, 0.7)
             .setDepth(GAME_DEPTHS.terminalInputText)
             .setInteractive({ useHandCursor: true });
-        this.scene.add.text(inputRightX, inputButtonY, '>').setFontSize(Math.max(10, Math.round(inputSize * 0.9)))
+        this.scene.add.text(inputRightX, inputButtonY, '>').setFontSize(Math.max(
+            GAME_COMMAND_TERMINAL_LAYOUT.navGlyphFontSizeMin,
+            Math.round(inputSize * GAME_COMMAND_TERMINAL_LAYOUT.navGlyphFontSizeRatio)
+        ))
             .setOrigin(0.5)
             .setDepth(GAME_DEPTHS.terminalInputText + 1);
         terminalInputRightButton.on('pointerdown', () => {

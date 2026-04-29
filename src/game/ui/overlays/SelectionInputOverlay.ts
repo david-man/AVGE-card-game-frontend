@@ -245,7 +245,8 @@ export class SelectionInputOverlay
                 label.setTint(0xcbd5e1);
             }
 
-            const subLabelText = `${item.cardTypeLabel ?? 'CARD'} | ${item.id}`;
+            const rawTypeLabel = item.cardTypeLabel ?? 'CARD';
+            const subLabelText = rawTypeLabel.split('|')[0].trim() || 'CARD';
             const subLabelLayout = fitTextToMultiLine({
                 scene: this.scene,
                 text: subLabelText,

@@ -16,7 +16,7 @@ export const FONT_TTF = 'MinecraftRegular-Bmg3.otf';
 // When set, this takes precedence over FONT_TTF.
 export const FONT_STYLESHEET = 'https://use.typekit.net/qbi2gcz.css';
 export const UI_FONT_FAMILY_NAME = 'MinecraftRegular';
-export const UI_FONT_FAMILY = `'${UI_FONT_FAMILY_NAME}', serif`;
+export const UI_FONT_FAMILY = `'headline-gothic-atf', '${UI_FONT_FAMILY_NAME}', serif`;
 
 // Reference size used for scene layout constants before scaling.
 export const BASE_WIDTH = 1280;
@@ -95,12 +95,12 @@ export const CARD_TEXT_LAYOUT = {
 	statusGapFromHpRatio: 0.7,
 	statusGapFromHpMin: 1,
 	labelDepthOffset: 0.01,
-	classMinFontSize: 6,
-	classBaseFontSize: 15,
-	minTypeFontSize: 8,
-	minHpFontSize: 10,
-	baseTypeFontSize: 11,
-	baseHpFontSize: 9
+	classMinFontSize: 7.2,
+	classBaseFontSize: 18,
+	minTypeFontSize: 9.6,
+	minHpFontSize: 12,
+	baseTypeFontSize: 13.2,
+	baseHpFontSize: 10.8
 } as const;
 
 export const CARD_ANIMATION = {
@@ -191,9 +191,11 @@ export const GAME_COMMAND_TERMINAL_LAYOUT = {
 	panelHeightBase: 360,
 	marginBase: 24,
 	textScaleMultiplier: 1.35,
-	titleFontSize: 14,
-	outputFontSize: 11,
-	inputFontSize: 12,
+	titleFontSize: 16.8,
+	outputFontSize: 13.2,
+	inputFontSize: 14.4,
+	navGlyphFontSizeMin: 12,
+	navGlyphFontSizeRatio: 1.08,
 	leftPaddingRatio: 0.07,
 	outputTopRatio: 0.2,
 	inputStripHeightRatio: 0.15,
@@ -240,16 +242,16 @@ export const GAME_PREVIEW_LAYOUT = {
 	panelStrokeAlpha: 0.7,
 	cardFillColor: 0x1f2937,
 	cardFillAlpha: 1,
-	classFontSize: 16,
-	classFontSizeMin: 14,
-	typeFontSize: 14,
-	typeFontSizeMin: 14,
-	hpFontSize: 11,
-	hpFontSizeMin: 10,
-	paragraphFontSize: 16,
-	paragraphFontSizeMin: 14,
-	flavorFontSizeDelta: -1,
-	flavorFontSizeMin: 14,
+	classFontSize: 19.2,
+	classFontSizeMin: 16.8,
+	typeFontSize: 16.8,
+	typeFontSizeMin: 16.8,
+	hpFontSize: 13.2,
+	hpFontSizeMin: 12,
+	paragraphFontSize: 19.2,
+	paragraphFontSizeMin: 16.8,
+	flavorFontSizeDelta: -1.2,
+	flavorFontSizeMin: 16.8,
 	fitClassMinSize: 10,
 	fitClassSizeRatio: 0.75,
 	fitClassWidthRatio: 0.8,
@@ -268,34 +270,40 @@ export const GAME_PREVIEW_LAYOUT = {
 	paragraphTint: 0xe2e8f0
 } as const;
 
+export const PRELOADER_TEXT_LAYOUT = {
+	titleFontSizePx: 48,
+	progressFontSizePx: 24,
+	fileFontSizePx: 16.8
+} as const;
+
 export const LOGIN_TEXT_LAYOUT = {
-	titleFontSizeBase: 54,
-	titleFontSizeMin: 28,
-	subtitleFontSizeBase: 20,
-	subtitleFontSizeMin: 12,
-	usernameFontSizeBase: 28,
-	usernameFontSizeMin: 16,
-	continueFontSizeBase: 28,
-	continueFontSizeMin: 16,
-	changeNameFontSizeBase: 24,
-	changeNameFontSizeMin: 14
+	titleFontSizeBase: 64.8,
+	titleFontSizeMin: 33.6,
+	subtitleFontSizeBase: 24,
+	subtitleFontSizeMin: 14.4,
+	usernameFontSizeBase: 33.6,
+	usernameFontSizeMin: 19.2,
+	continueFontSizeBase: 33.6,
+	continueFontSizeMin: 19.2,
+	changeNameFontSizeBase: 28.8,
+	changeNameFontSizeMin: 16.8
 } as const;
 
 export const MAIN_MENU_TEXT_LAYOUT = {
-	titleFontSizeBase: 64,
-	titleFontSizeMin: 32,
-	subtitleFontSizeBase: 24,
-	subtitleFontSizeMin: 14,
-	accountFontSizeBase: 30,
-	accountFontSizeMin: 9,
-	startFontSizeBase: 36,
-	startFontSizeMin: 20,
-	deckBuilderFontSizeBase: 30,
-	deckBuilderFontSizeMin: 18,
-	disconnectTitleFontSizeBase: 34,
-	disconnectTitleFontSizeMin: 18,
-	disconnectContinueFontSizeBase: 26,
-	disconnectContinueFontSizeMin: 16
+	titleFontSizeBase: 76.8,
+	titleFontSizeMin: 38.4,
+	subtitleFontSizeBase: 28.8,
+	subtitleFontSizeMin: 16.8,
+	accountFontSizeBase: 36,
+	accountFontSizeMin: 10.8,
+	startFontSizeBase: 43.2,
+	startFontSizeMin: 24,
+	deckBuilderFontSizeBase: 36,
+	deckBuilderFontSizeMin: 21.6,
+	disconnectTitleFontSizeBase: 40.8,
+	disconnectTitleFontSizeMin: 21.6,
+	disconnectContinueFontSizeBase: 31.2,
+	disconnectContinueFontSizeMin: 19.2
 } as const;
 
 export const MAIN_MENU_LOGO_LAYOUT = {
@@ -334,53 +342,55 @@ export const MAIN_MENU_LAYOUT = {
 } as const;
 
 export const DECK_BUILDER_TEXT_LAYOUT = {
-	titleFontSizeBase: 40,
-	titleFontSizeMin: 20,
-	subtitleFontSizeBase: 20,
-	subtitleFontSizeMin: 12,
-	pageIndicatorFontSizeBase: 16,
-	pageIndicatorFontSizeMin: 10,
-	pageNavFontSizeBase: 16,
-	pageNavFontSizeMin: 10,
-	actionFontSizeBase: 20,
-	actionFontSizeMin: 12,
-	slotTitleFontSizeBase: 16,
-	slotTitleFontSizeMin: 10,
-	slotLabelFontSizeBase: 13,
-	slotLabelFontSizeMin: 9,
-	categoryFontSizeBase: 12,
-	categoryFontSizeMin: 8,
-	characterTypeFontSizeBase: 10,
-	characterTypeFontSizeMin: 7,
-	rowIconFontSizeBase: 12,
-	rowIconFontSizeMin: 8,
-	rowCardNameFontSizeBase: 18,
-	rowCardNameFontSizeMin: 10,
-	rowAdjustFontSizeBase: 24,
-	rowAdjustFontSizeMin: 14,
-	rowCountFontSizeBase: 20,
-	rowCountFontSizeMin: 12,
-	searchTitleFontSizeBase: 24,
-	searchTitleFontSizeMin: 12,
-	searchHintFontSizeBase: 12,
-	searchHintFontSizeMin: 8,
-	searchQueryFontSizeBase: 15,
-	searchQueryFontSizeMin: 9,
-	searchButtonFontSizeBase: 12,
-	searchButtonFontSizeMin: 8,
-	searchRowNameFontSizeBase: 13,
-	searchRowNameFontSizeMin: 8,
-	searchRowMetaFontSizeBase: 10,
-	searchRowMetaFontSizeMin: 7,
-	searchRowAdjustFontSizeBase: 20,
-	searchRowAdjustFontSizeMin: 12,
-	searchRowCountFontSizeBase: 15,
-	searchRowCountFontSizeMin: 9,
-	searchPagerFontSizeBase: 13,
-	searchPagerFontSizeMin: 8
+	titleFontSizeBase: 48,
+	titleFontSizeMin: 24,
+	subtitleFontSizeBase: 24,
+	subtitleFontSizeMin: 14.4,
+	pageIndicatorFontSizeBase: 19.2,
+	pageIndicatorFontSizeMin: 12,
+	pageNavFontSizeBase: 19.2,
+	pageNavFontSizeMin: 12,
+	actionFontSizeBase: 24,
+	actionFontSizeMin: 14.4,
+	slotTitleFontSizeBase: 19.2,
+	slotTitleFontSizeMin: 12,
+	slotLabelFontSizeBase: 15.6,
+	slotLabelFontSizeMin: 10.8,
+	categoryFontSizeBase: 14.4,
+	categoryFontSizeMin: 9.6,
+	characterTypeFontSizeBase: 12,
+	characterTypeFontSizeMin: 8.4,
+	rowIconFontSizeBase: 14.4,
+	rowIconFontSizeMin: 9.6,
+	rowCardNameFontSizeBase: 21.6,
+	rowCardNameFontSizeMin: 12,
+	rowAdjustFontSizeBase: 28.8,
+	rowAdjustFontSizeMin: 16.8,
+	rowCountFontSizeBase: 24,
+	rowCountFontSizeMin: 14.4,
+	searchTitleFontSizeBase: 28.8,
+	searchTitleFontSizeMin: 14.4,
+	searchHintFontSizeBase: 14.4,
+	searchHintFontSizeMin: 9.6,
+	searchQueryFontSizeBase: 18,
+	searchQueryFontSizeMin: 10.8,
+	searchButtonFontSizeBase: 14.4,
+	searchButtonFontSizeMin: 9.6,
+	searchRowNameFontSizeBase: 15.6,
+	searchRowNameFontSizeMin: 9.6,
+	searchRowMetaFontSizeBase: 12,
+	searchRowMetaFontSizeMin: 8.4,
+	searchRowAdjustFontSizeBase: 24,
+	searchRowAdjustFontSizeMin: 14.4,
+	searchRowCountFontSizeBase: 18,
+	searchRowCountFontSizeMin: 10.8,
+	searchPagerFontSizeBase: 15.6,
+	searchPagerFontSizeMin: 9.6
 } as const;
 
 export const DECK_BUILDER_TRANSFER_ICON_ASSETS = {
+	renameKey: 'deck-builder-rename-icon',
+	renamePath: 'icons/edit.png',
 	exportKey: 'deck-builder-export-icon',
 	exportPath: 'icons/export.png',
 	importKey: 'deck-builder-import-icon',
@@ -395,29 +405,29 @@ export const DECK_BUILDER_TRANSFER_ICON_LAYOUT = {
 	buttonGapXBase: 12,
 	iconMaxSizeRatio: 0.58,
 	hoverLabelOffsetYBase: 34,
-	hoverLabelFontSizeBase: 15,
-	hoverLabelFontSizeMin: 10,
+	hoverLabelFontSizeBase: 18,
+	hoverLabelFontSizeMin: 12,
 	resetConfirmWindowSeconds: 5,
-	resetCountdownFontSizeBase: 14,
-	resetCountdownFontSizeMin: 10
+	resetCountdownFontSizeBase: 16.8,
+	resetCountdownFontSizeMin: 12
 } as const;
 
 export const GAME_STATUS_TEXT_LAYOUT = {
-	opponentDisconnectFontSizeBase: 16,
-	opponentDisconnectFontSizeMin: 14,
-	phaseStateActionFontSizeBase: 16,
-	phaseStateActionFontSizeMin: 10,
-	phaseStateActionFitFontSizeBase: 16,
-	phaseStateActionFitFontSizeMin: 9
+	opponentDisconnectFontSizeBase: 19.2,
+	opponentDisconnectFontSizeMin: 16.8,
+	phaseStateActionFontSizeBase: 19.2,
+	phaseStateActionFontSizeMin: 12,
+	phaseStateActionFitFontSizeBase: 19.2,
+	phaseStateActionFitFontSizeMin: 10.8
 } as const;
 
 export const GAME_INIT_COUNTDOWN_OVERLAY = {
 	messages: ['3', '2', '1', 'Fight!'],
 	backdropAlpha: 0.45,
 	depthOffset: 8,
-	numberFontSizeBase: 140,
-	fightFontSizeBase: 170,
-	fontSizeMin: 44,
+	numberFontSizeBase: 168,
+	fightFontSizeBase: 204,
+	fontSizeMin: 52.8,
 	numberTint: 0xf8fafc,
 	fightTint: 0xfacc15,
 	popStartScale: 0.66,
@@ -426,29 +436,35 @@ export const GAME_INIT_COUNTDOWN_OVERLAY = {
 	numberHoldMs: 1000,
 	fightHoldMs: 1500,
 	backdropFadeInMs: 120,
-	backdropFadeOutMs: 180
+	backdropFadeOutMs: 180,
+	lowBeepVolume: 0.7,
+	highBeepVolume: 0.85
 } as const;
 
 export const PHASE_HUD_TEXT_LAYOUT = {
-	fontSizeBase: 18,
-	fontSizeMin: 10
+	fontSizeBase: 21.6,
+	fontSizeMin: 12,
+	valueFitMinSizeRatio: 0.72,
+	valueFitMinSizeMin: 9
 } as const;
 
 export const DECK_BUILDER_CURRENT_DECK_PREVIEW_TEXT_LAYOUT = {
-	titleFontSizeBase: 18,
-	titleFontSizeMin: 12,
-	hintFontSizeBase: 18,
-	hintFontSizeMin: 12,
-	emptyStateFontSizeBase: 12,
-	emptyStateFontSizeMin: 12,
-	sectionHeaderFontSizeBase: 12,
-	sectionHeaderFontSizeMin: 12,
-	tileIconFontSizeBase: 12,
-	tileIconFontSizeMin: 12,
-	tileNameFontSizeBase: 12,
-	tileNameFontSizeMin: 12,
-	tileCountFontSizeBase: 12,
-	tileCountFontSizeMin: 12
+	titleFontSizeBase: 21.6,
+	titleFontSizeMin: 14.4,
+	hintFontSizeBase: 21.6,
+	hintFontSizeMin: 14.4,
+	emptyStateFontSizeBase: 14.4,
+	emptyStateFontSizeMin: 14.4,
+	sectionHeaderFontSizeBase: 14.4,
+	sectionHeaderFontSizeMin: 14.4,
+	tileIconFontSizeBase: 14.4,
+	tileIconFontSizeMin: 14.4,
+	tileNameFontSizeBase: 14.4,
+	tileNameFontSizeMin: 14.4,
+	tileNameFitMinSizeRatio: 0.7,
+	tileNameFitMinSizeFloor: 7,
+	tileCountFontSizeBase: 14.4,
+	tileCountFontSizeMin: 14.4
 } as const;
 
 export const DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT = {
@@ -482,7 +498,7 @@ export const GAME_CARD_ACTION_BUTTON_LAYOUT = {
 	bottomMarginBase: 40,
 	buttonRadiusBase: 28,
 	buttonGapBase: 10,
-	fontSize: 12,
+	fontSize: 14.4,
 	fillColor: 0x172554,
 	fillAlpha: 0.94,
 	strokeWidth: 2,
@@ -501,7 +517,7 @@ export const GAME_SURRENDER_BUTTON_LAYOUT = {
 	iconKey: 'game-surrender-icon',
 	iconPath: 'icons/white-flag.png',
 	iconMaxSizeRatio: 0.7,
-	fontSize: 16,
+	fontSize: 19.2,
 	fillColor: 0x7f1d1d,
 	fillAlpha: 0.92,
 	strokeWidth: 2,
@@ -510,8 +526,8 @@ export const GAME_SURRENDER_BUTTON_LAYOUT = {
 	textTint: 0xffffff,
 	hoverLabel: 'Surrender?',
 	hoverLabelOffsetYBase: 32,
-	hoverLabelFontSizeBase: 14,
-	hoverLabelFontSizeMin: 10,
+	hoverLabelFontSizeBase: 16.8,
+	hoverLabelFontSizeMin: 12,
 	hoverLabelTint: 0xfef08a,
 	depth: 316
 } as const;
@@ -540,34 +556,46 @@ export const GAME_INPUT_SELECTION_OVERLAY = {
 	submitWidthMin: 170,
 	submitHeightRatio: 0.055,
 	submitHeightMin: 42,
-	titleFontSizeRatio: 0.22,
-	titleFontSizeMin: 18,
-	hintFontSizeRatio: 0.15,
-	hintFontSizeMin: 14,
-	itemLabelFontSizeRatio: 0.13,
-	itemLabelFontSizeMin: 11,
-	itemSubLabelFontSizeRatio: 0.11,
-	itemSubLabelFontSizeMin: 10,
-	assignmentFontSizeRatio: 0.11,
-	assignmentFontSizeMin: 10,
-	numberLabelFontSizeRatio: 0.12,
-	numberLabelFontSizeMin: 11,
-	submitLabelFontSizeRatio: 0.14,
-	submitLabelFontSizeMin: 12
+	titleFontSizeRatio: 0.26,
+	titleFontSizeMin: 21.6,
+	hintFontSizeRatio: 0.18,
+	hintFontSizeMin: 16.8,
+	attackLabelFontSizeRatio: 1.08,
+	attackLabelFontSizeMin: 14.4,
+	itemLabelFontSizeRatio: 0.16,
+	itemLabelFontSizeMin: 13.2,
+	itemSubLabelFontSizeRatio: 0.13,
+	itemSubLabelFontSizeMin: 12,
+	assignmentFontSizeRatio: 0.13,
+	assignmentFontSizeMin: 12,
+	numberLabelFontSizeRatio: 0.14,
+	numberLabelFontSizeMin: 13.2,
+	submitLabelFontSizeRatio: 0.17,
+	submitLabelFontSizeMin: 14.4
 } as const;
 
 export const GAME_INPUT_REVEAL_OVERLAY = {
-	maxCardWidthRatio: 0.11
+	maxCardWidthRatio: 0.11,
+	emptyStateFontSizeWidthRatio: 0.05,
+	emptyStateFontSizeMin: 26.4
 } as const;
 
 export const GAME_INPUT_OVERLAY_HEADER_LAYOUT = {
 	messageGapRatio: 0.032,
 	messageGapMin: 22,
-	titleFontSizeRatio: 0.018,
-	titleFontSizeMin: 20,
-	hintFontSizeRatio: 0.014,
-	hintFontSizeMin: 14,
+	titleFontSizeRatio: 0.02,
+	titleFontSizeMin: 24,
+	hintFontSizeRatio: 0.02,
+	hintFontSizeMin: 16.8,
 	hintFitMinSize: 10
+} as const;
+
+export const GAME_WINNER_OVERLAY_AUDIO = {
+	soundKey: 'winner-firework',
+	soundPath: 'sfx/minecraft-firework.mp3',
+	fireworkRepeatCount: 4,
+	fireworkSeparationMs: 220,
+	fireworkVolume: 0.8,
 } as const;
 
 export const PLAYER_TURN_ATTRIBUTE_DEFAULTS = {
@@ -582,7 +610,7 @@ export const GAME_PLAYER_STATS_HUD_LAYOUT = {
 	leftMarginBase: 12,
 	topMarginBase: 36,
 	rowGapBase: 18,
-	fontSize: 18,
+	fontSize: 21.6,
 	tint: 0xffffff,
 	depth: 315
 } as const;
@@ -684,4 +712,20 @@ export const ENTITY_VISUALS = {
 	energyTokenLabelMinSize: 10,
 	energyTokenLabelRadiusSizeMultiplier: 0.95,
 	energyTokenLabelDepthOffset: 0.5
+} as const;
+
+export const VOLUME_CONTROL_LAYOUT = {
+	margin: 24,
+	iconSize: 28,
+	trackGap: 12,
+	trackWidth: 118,
+	trackHeight: 8,
+	knobRadius: 9,
+	depth: 1600,
+	sliderHitAreaPadX: 16,
+	sliderHitAreaHeight: 40,
+	iconHitRadiusMultiplier: 0.82,
+	iconRingRadiusMultiplier: 0.9,
+	iconRingStrokeWidth: 3,
+	iconRingStrokeAlpha: 1,
 } as const;

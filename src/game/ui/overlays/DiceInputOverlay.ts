@@ -11,6 +11,8 @@ const DICE_FACE_TEXTURE_BY_VALUE: Record<number, string> = {
     6: 'dice-six-faces-six'
 };
 
+const DICE_ROLL_SOUND_KEY = 'dice-roll';
+
 type DiceRollCompleteCallback = (value: number) => void;
 
 export class DiceInputOverlay
@@ -23,6 +25,7 @@ export class DiceInputOverlay
         scene.load.image('dice-six-faces-four', 'dice/dice-six-faces-four.png');
         scene.load.image('dice-six-faces-five', 'dice/dice-six-faces-five.png');
         scene.load.image('dice-six-faces-six', 'dice/dice-six-faces-six.png');
+        scene.load.audio(DICE_ROLL_SOUND_KEY, 'sfx/dice.ogg');
     }
 
     private scene: Scene;
@@ -159,6 +162,9 @@ export class DiceInputOverlay
         }
 
         this.isRolling = true;
+        if (this.scene.cache.audio.exists(DICE_ROLL_SOUND_KEY)) {
+            this.scene.sound.play(DICE_ROLL_SOUND_KEY);
+        }
         const finalValue = this.forcedFinalValue ?? this.getRandomDieFaceValue();
         const totalTicks = 14;
         let tickCount = 0;

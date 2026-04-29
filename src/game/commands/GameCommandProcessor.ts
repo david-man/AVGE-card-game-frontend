@@ -95,6 +95,11 @@ export class GameCommandProcessor
             return matchedKey ? g.energyTokenById[matchedKey] : undefined;
         };
 
+        const isDeckOrDiscardPileId = (rawPileId: string): boolean => {
+            const normalizedPileId = rawPileId.trim().toLowerCase();
+            return normalizedPileId.endsWith('-deck') || normalizedPileId.endsWith('-discard');
+        };
+
         const emitCommandEvent = (eventType: string, responseData: Record<string, unknown>): void => {
             // Replay commands coming from backend must not be re-emitted back to
             // backend, otherwise each client echoes the same event and creates
@@ -109,6 +114,12 @@ export class GameCommandProcessor
                 return;
             }
             g.emitBackendEvent(eventType, responseData);
+        };
+
+        const playRevealSound = (): void => {
+            if (typeof g.playRevealSound === 'function') {
+                g.playRevealSound();
+            }
         };
 
         const normalizeInputMode = (rawMode: string): string => {
@@ -998,6 +1009,7 @@ export class GameCommandProcessor
                 g.refreshCardActionButtons();
                 g.appendTerminalLine(`Selection started (${numberOfSelections} slots).`);
                 revealLatest();
+                playRevealSound();
                 g.inputOverlayController.startSelectionOverlay(
                     selectionItems,
                     numberOfSelections,
@@ -1392,8 +1404,7 @@ export class GameCommandProcessor
             }
 
             g.setBoardInputEnabled(false);
-            const notifyTargetLabel = notifyBoth ? 'BOTH PLAYERS' : g.getViewModeLabel(targetView);
-            g.appendTerminalLine(`Notify -> ${notifyTargetLabel}`);
+            const notifyTargetLabel = notifyBoth ? 'SYSTEM' : `SYSTEM -> ${g.getViewModeLabel(targetView)}`;
             g.inputOverlayController.startNotifyOverlay(notifyTargetLabel, message, () => {
                 g.appendTerminalLine('Notify dismissed.');
                 emitCommandEvent('notify', {
@@ -1404,6 +1415,42 @@ export class GameCommandProcessor
                     timeout_seconds: timeoutSeconds,
                 });
             }, timeoutSeconds);
+            return;
+        }
+
+        if (action === 'sound') {
+            if (!rawArgOne || commandParts.length < 3) {
+                g.appendTerminalLine('Usage: sound [player-1|player-2|both] [sound_key]');
+                return;
+            }
+
+            const normalizedSoundTarget = rawArgOne.toLowerCase();
+            const soundForBoth = normalizedSoundTarget === 'both' || normalizedSoundTarget === 'all';
+            const targetView = soundForBoth
+                ? (g.activeViewMode === 'p1' || g.activeViewMode === 'p2' ? g.activeViewMode : null)
+                : g.parseViewModeArg(normalizedSoundTarget);
+            if ((!targetView || targetView === 'spectator') && !soundForBoth) {
+                g.appendTerminalLine('Usage: sound [player-1|player-2|both] [sound_key]');
+                return;
+            }
+
+            if (!soundForBoth && g.activeViewMode !== targetView) {
+                g.appendTerminalLine(`Sound skipped in ${g.getViewModeLabel(g.activeViewMode)} view (target: ${g.getViewModeLabel(targetView)}).`);
+                return;
+            }
+
+            const soundKey = commandParts.slice(2).join(' ').trim();
+            if (!soundKey) {
+                g.appendTerminalLine('Usage: sound [player-1|player-2|both] [sound_key]');
+                return;
+            }
+
+            const played = typeof g.playCommandSound === 'function'
+                ? Boolean(g.playCommandSound(soundKey))
+                : false;
+            if (!played) {
+                g.appendTerminalLine(`Sound skipped (missing asset): ${soundKey}`);
+            }
             return;
         }
 
@@ -1548,6 +1595,7 @@ export class GameCommandProcessor
             g.setBoardInputEnabled(false);
             g.overlayPreviewContext = 'reveal';
             g.refreshCardActionButtons();
+            playRevealSound();
             g.inputOverlayController.startRevealOverlay(
                 revealCards,
                 revealMessage,
@@ -1638,6 +1686,57 @@ export class GameCommandProcessor
             return;
         }
 
+        if (action === 'shuffle-single-card') {
+            if (!rawArgOne || !rawArgTwo) {
+                g.appendTerminalLine('Usage: shuffle-single-card [cardid] [p1-deck|p1-discard|p2-deck|p2-discard]');
+                return;
+            }
+
+            if (g.isInteractionLockedByAnimation()) {
+                g.appendTerminalLine('Cannot shuffle while another animation is running.');
+                return;
+            }
+
+            const card = resolveCardById(rawArgOne);
+            const pileId = rawArgTwo.toLowerCase();
+            const holder = g.cardHolderById[pileId];
+
+            if (!card) {
+                g.appendTerminalLine(`Unknown card: ${rawArgOne}`);
+                return;
+            }
+
+            if (!holder) {
+                g.appendTerminalLine(`Unknown cardholder: ${pileId}`);
+                return;
+            }
+
+            if (!isDeckOrDiscardPileId(pileId)) {
+                g.layoutAllHolders();
+                g.redrawAllCardMarks();
+                g.appendTerminalLine(`Single-card shuffle visual skipped for ${pileId}; applied instantly.`);
+                return;
+            }
+
+            const animated = typeof g.playSingleCardShuffleAnimationForPile === 'function'
+                ? g.playSingleCardShuffleAnimationForPile(card, holder)
+                : false;
+
+            if (!animated) {
+                g.layoutAllHolders();
+                g.redrawAllCardMarks();
+                g.appendTerminalLine(`Single-card shuffle skipped for ${card.id} in ${pileId}.`);
+                return;
+            }
+
+            g.appendTerminalLine(`Single-card shuffle animation started for ${card.id} in ${pileId}.`);
+            emitCommandEvent('shuffle_single_card_animation', {
+                card_id: card.id,
+                pile_id: pileId
+            });
+            return;
+        }
+
         if (action === 'shuffle-animation') {
             if (g.isInteractionLockedByAnimation()) {
                 g.appendTerminalLine('Cannot shuffle while another animation is running.');
@@ -1649,15 +1748,16 @@ export class GameCommandProcessor
             const pileIds = requestedPileId ? [requestedPileId] : defaultPileIds;
 
             if (requestedPileId) {
-                const isSupportedTargetPile = defaultPileIds.includes(requestedPileId);
-                if (!isSupportedTargetPile) {
-                    g.appendTerminalLine(`Unsupported shuffle pile: ${requestedPileId}`);
-                    g.appendTerminalLine('Supported values: p1-deck, p1-discard, p2-deck, p2-discard');
+                const holderExists = Boolean(g.cardHolderById[requestedPileId]);
+                if (!holderExists) {
+                    g.appendTerminalLine(`Unknown cardholder: ${requestedPileId}`);
                     return;
                 }
             }
 
             let animatedPileCount = 0;
+            let instantAppliedPileCount = 0;
+            const holdersToAnimate: any[] = [];
 
             for (const pileId of pileIds) {
                 const holder = g.cardHolderById[pileId];
@@ -1665,19 +1765,44 @@ export class GameCommandProcessor
                     continue;
                 }
 
-                if (g.playShuffleAnimationForPile(holder)) {
-                    animatedPileCount += 1;
+                if (!isDeckOrDiscardPileId(pileId)) {
+                    g.layoutAllHolders();
+                    g.redrawAllCardMarks();
+                    instantAppliedPileCount += 1;
+                    continue;
+                }
+
+                if (Array.isArray(holder.cards) && holder.cards.length > 1) {
+                    holdersToAnimate.push(holder);
                 }
             }
 
-            if (animatedPileCount === 0) {
+            if (holdersToAnimate.length > 0) {
+                const shuffleDurationMs = typeof g.playShuffleDeckSoundAndGetDurationMs === 'function'
+                    ? g.playShuffleDeckSoundAndGetDurationMs()
+                    : undefined;
+
+                for (const holder of holdersToAnimate) {
+                    if (g.playShuffleAnimationForPile(holder, shuffleDurationMs)) {
+                        animatedPileCount += 1;
+                    }
+                }
+            }
+
+            if (animatedPileCount === 0 && instantAppliedPileCount === 0) {
                 g.appendTerminalLine('No discard/deck pile has more than 1 card.');
+                return;
+            }
+
+            if (animatedPileCount === 0) {
+                g.appendTerminalLine(`Shuffle visuals skipped; applied instantly on ${instantAppliedPileCount} pile(s).`);
                 return;
             }
 
             g.appendTerminalLine(`Shuffle animation started on ${animatedPileCount} pile(s).`);
             emitCommandEvent('shuffle_animation', {
                 animated_pile_count: animatedPileCount,
+                instant_applied_pile_count: instantAppliedPileCount,
                 pile_ids: pileIds
             });
             return;
@@ -1804,8 +1929,12 @@ export class GameCommandProcessor
                 return;
             }
 
-            const attachTarget = g.getTopAttachmentTarget(targetCard);
-            g.animateToolAttachToCard(card, attachTarget, () => {
+            if (typeof g.getAttachedChildren === 'function' && g.getAttachedChildren(targetCard.id).length > 0) {
+                g.appendTerminalLine(`mv tool->card blocked: ${targetCardId} already has a tool attached.`);
+                return;
+            }
+
+            g.animateToolAttachToCard(card, targetCard, () => {
                 g.layoutAllHolders();
                 g.redrawAllCardMarks();
                 g.appendTerminalLine(`${cardId} -> ${targetCardId}`);
@@ -1891,9 +2020,11 @@ export class GameCommandProcessor
         g.appendTerminalLine('  help | ?');
         g.appendTerminalLine('  mv [cardid] [cardholderid|target_character_id] [index?]');
         g.appendTerminalLine('  shuffle-animation [p1-deck|p1-discard|p2-deck|p2-discard]?');
+        g.appendTerminalLine('  shuffle-single-card [cardid] [p1-deck|p1-discard|p2-deck|p2-discard]');
         g.appendTerminalLine('  unselect-all');
         g.appendTerminalLine('    alias: unselectall');
         g.appendTerminalLine('  notify [player-1|player-2|both] [msg]');
+        g.appendTerminalLine('  sound [player-1|player-2|both] [sound_key]');
         g.appendTerminalLine('  winner [player-1|player-2]');
         g.appendTerminalLine('  reveal [player-1|player-2|both] [list of cards]');
         g.appendTerminalLine('  game-phase [no-input|phase2|atk]');

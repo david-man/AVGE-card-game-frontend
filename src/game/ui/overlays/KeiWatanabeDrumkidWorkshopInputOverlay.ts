@@ -237,7 +237,10 @@ export class KeiWatanabeDrumkidWorkshopInputOverlay
                 .setDepth(overlayDepth)
                 .setInteractive({ useHandCursor: true })
                 .setVisible(false);
-            const label = this.scene.add.text(x, attackY, attack.toUpperCase()).setFontSize(Math.max(12, Math.round(hintFontSize * 0.9)))
+            const label = this.scene.add.text(x, attackY, attack.toUpperCase()).setFontSize(Math.max(
+                GAME_INPUT_SELECTION_OVERLAY.attackLabelFontSizeMin,
+                Math.round(hintFontSize * GAME_INPUT_SELECTION_OVERLAY.attackLabelFontSizeRatio)
+            ))
                 .setOrigin(0.5)
                 .setDepth(overlayDepth + 1)
                 .setVisible(false);

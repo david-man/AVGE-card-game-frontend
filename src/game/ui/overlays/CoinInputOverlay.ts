@@ -7,6 +7,8 @@ const COIN_FACE_TEXTURE_BY_RESULT: Record<'heads' | 'tails', string> = {
     tails: 'coin-tails'
 };
 
+const COIN_FLIP_SOUND_KEY = 'coin-flip';
+
 type CoinFlipCompleteCallback = (result: 'heads' | 'tails') => void;
 
 export class CoinInputOverlay
@@ -15,6 +17,7 @@ export class CoinInputOverlay
     {
         scene.load.image('coin-heads', 'coin/heads.png');
         scene.load.image('coin-tails', 'coin/tails.png');
+        scene.load.audio(COIN_FLIP_SOUND_KEY, 'sfx/coinflip.mp3');
     }
 
     private scene: Scene;
@@ -151,6 +154,9 @@ export class CoinInputOverlay
         }
 
         this.isFlipping = true;
+        if (this.scene.cache.audio.exists(COIN_FLIP_SOUND_KEY)) {
+            this.scene.sound.play(COIN_FLIP_SOUND_KEY);
+        }
         const finalResult = this.forcedFinalResult ?? this.getRandomCoinResult();
         const totalTicks = 12;
         let tickCount = 0;
