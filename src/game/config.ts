@@ -7,6 +7,8 @@ export const GAME_CENTER_Y = GAME_HEIGHT / 2;
 export const UI_BASE_WIDTH = 1920;
 export const UI_BASE_HEIGHT = 1080;
 export const UI_SCALE = Math.min(GAME_WIDTH / UI_BASE_WIDTH, GAME_HEIGHT / UI_BASE_HEIGHT);
+export const UI_RECTANGLE_CORNER_RADIUS = 6;
+export const UI_RECTANGLE_CORNER_RADIUS_MAX_WIDTH_RATIO = 0.1;
 export const UI_MIN_FONT_SIZE = 6;
 export const UI_TEXT_RESOLUTION_MAX = 2;
 // Name of the TTF/OTF asset in public/assets used as the global UI font.
@@ -322,15 +324,34 @@ export const MAIN_MENU_LOGO_ASSET = {
 	filePath: 'logos/logo_red.svg'
 } as const;
 
+export const MAIN_MENU_TITLE_ASSET = {
+	key: 'main-menu-title',
+	filePath: 'logos/title.svg'
+} as const;
+
+export const MAIN_MENU_TITLE_LAYOUT = {
+	xRatio: 0.5,
+	yRatio: 0.34,
+	targetHeightBase: 360,
+	targetHeightMin: 38.4
+} as const;
+
 export const MAIN_MENU_LOGO_LINK = {
 	url: 'https://www.brownavge.org/'
 } as const;
 
 export const MAIN_MENU_LAYOUT = {
 	titleYRatio: 0.34,
-	subtitleYRatio: 0.47,
-	accountMarginBase: 50,
-	accountTopBase: 60,
+	subtitleYRatio: 0.5,
+	subtitleRightMarginBase: 24,
+	subtitleBottomMarginBase: 24,
+	accountMarginBase: 24,
+	accountTopBase: 32,
+	usernameButtonPaddingXBase: 12,
+	usernameButtonPaddingYBase: 8,
+	usernameButtonMinWidthBase: 190,
+	usernameButtonMinHeightBase: 52,
+	logoutRevealHideDelayMs: 140,
 	logoutWidthBase: 180,
 	logoutHeightBase: 60,
 	accountUiDepth: 620,
@@ -489,6 +510,10 @@ export const DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT = {
 	tileNameMaxWidthRatio: 0.84,
 	countBadgeOffsetXRatio: 0.32,
 	countBadgeOffsetYRatio: 0.36,
+	removeButtonWidthBase: 30,
+	removeButtonGlyph: '-',
+	removeButtonGlyphFontFamily: 'Arial, sans-serif',
+	removeButtonGlyphFontSizeMultiplier: 1.15,
 	countBadgeWidthBase: 22,
 	countBadgeHeightBase: 18
 } as const;
@@ -715,7 +740,7 @@ export const ENTITY_VISUALS = {
 } as const;
 
 export const VOLUME_CONTROL_LAYOUT = {
-	margin: 24,
+	margin: 48,
 	iconSize: 28,
 	trackGap: 12,
 	trackWidth: 118,

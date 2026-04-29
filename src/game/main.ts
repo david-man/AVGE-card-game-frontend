@@ -5,7 +5,16 @@ import { MainMenu } from './scenes/MainMenu';
 import { Boot } from './scenes/Boot';
 import { Preloader } from './scenes/Preloader';
 import { AUTO, Game } from 'phaser';
-import { FONT_STYLESHEET, FONT_TTF, GAME_HEIGHT, GAME_WIDTH, UI_FONT_FAMILY, UI_FONT_FAMILY_NAME } from './config';
+import {
+    FONT_STYLESHEET,
+    FONT_TTF,
+    GAME_HEIGHT,
+    GAME_WIDTH,
+    UI_FONT_FAMILY,
+    UI_FONT_FAMILY_NAME,
+    UI_RECTANGLE_CORNER_RADIUS,
+    UI_RECTANGLE_CORNER_RADIUS_MAX_WIDTH_RATIO
+} from './config';
 
 // Modern Phaser resolution control: zoom scales the internal render resolution.
 
@@ -68,6 +77,51 @@ const installGlobalPhaserTextFontDefaults = (): void => {
     };
 
     factoryProto.__avgeTextFactoryPatched__ = true;
+};
+
+const installGlobalPhaserRectangleRounding = (): void => {
+    const factoryProto = Phaser.GameObjects.GameObjectFactory.prototype as Phaser.GameObjects.GameObjectFactory & {
+        __avgeRectangleFactoryPatched__?: boolean;
+    };
+
+    if (factoryProto.__avgeRectangleFactoryPatched__) {
+        return;
+    }
+
+    const originalRectangleFactory = factoryProto.rectangle as (
+        this: Phaser.GameObjects.GameObjectFactory,
+        x: number,
+        y: number,
+        width: number,
+        height: number,
+        fillColor?: number,
+        fillAlpha?: number
+    ) => Phaser.GameObjects.Rectangle;
+
+    factoryProto.rectangle = function (
+        this: Phaser.GameObjects.GameObjectFactory,
+        x: number,
+        y: number,
+        width: number,
+        height: number,
+        fillColor?: number,
+        fillAlpha?: number
+    ): Phaser.GameObjects.Rectangle {
+        const rectangle = originalRectangleFactory.call(this, x, y, width, height, fillColor, fillAlpha);
+        if (UI_RECTANGLE_CORNER_RADIUS > 0) {
+            const widthCapRatio = Math.max(0, UI_RECTANGLE_CORNER_RADIUS_MAX_WIDTH_RATIO);
+            const widthCap = widthCapRatio > 0
+                ? Math.abs(width) * widthCapRatio
+                : UI_RECTANGLE_CORNER_RADIUS;
+            const roundedRadius = Math.min(UI_RECTANGLE_CORNER_RADIUS, widthCap);
+            if (roundedRadius > 0) {
+                rectangle.setRounded(roundedRadius);
+            }
+        }
+        return rectangle;
+    };
+
+    factoryProto.__avgeRectangleFactoryPatched__ = true;
 };
 
 const installConfiguredFont = (): void => {
@@ -160,6 +214,7 @@ const installConfiguredFont = (): void => {
 const StartGame = (parent: string) => {
     installConfiguredFont();
     installGlobalPhaserTextFontDefaults();
+    installGlobalPhaserRectangleRounding();
 
     return new Game({ ...config, parent });
 

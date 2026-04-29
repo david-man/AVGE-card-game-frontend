@@ -8,7 +8,11 @@ import {
     MAIN_MENU_LOGO_ASSET,
     MAIN_MENU_LOGO_LAYOUT,
     MAIN_MENU_LOGO_LINK,
+    MAIN_MENU_TITLE_ASSET,
+    MAIN_MENU_TITLE_LAYOUT,
     MAIN_MENU_TEXT_LAYOUT,
+    UI_RECTANGLE_CORNER_RADIUS,
+    UI_RECTANGLE_CORNER_RADIUS_MAX_WIDTH_RATIO,
     UI_SCALE
 } from '../config';
 import {
@@ -33,15 +37,17 @@ import { createVolumeControlForScene, preloadVolumeControlAssets } from '../ui/v
 export class MainMenu extends Scene
 {
     background: GameObjects.Image;
-    title: GameObjects.Text;
+    title: GameObjects.Image;
     subtitle: GameObjects.Text;
     startButton: GameObjects.Rectangle;
     startButtonLabel: GameObjects.Text;
     decksButton: GameObjects.Rectangle;
     decksButtonLabel: GameObjects.Text;
+    private usernameButton: GameObjects.Rectangle | null;
     private usernameIndicator: GameObjects.Text | null;
     private logoutButton: GameObjects.Rectangle | null;
     private logoutButtonLabel: GameObjects.Text | null;
+    private logoutHoverHideTimer: Phaser.Time.TimerEvent | null;
     private transitioning: boolean;
     private matchmakingPollTimer: Phaser.Time.TimerEvent | null;
     private authSessionUnsubscribe: (() => void) | null;
@@ -64,9 +70,11 @@ export class MainMenu extends Scene
         this.authSessionUnsubscribe = null;
         this.matchmakingInProgress = false;
         this.authReady = false;
+        this.usernameButton = null;
         this.usernameIndicator = null;
         this.logoutButton = null;
         this.logoutButtonLabel = null;
+        this.logoutHoverHideTimer = null;
         this.disconnectGateActive = false;
         this.disconnectGateBackdrop = null;
         this.disconnectGateTitle = null;
@@ -82,6 +90,7 @@ export class MainMenu extends Scene
         this.load.setPath('assets');
         this.load.image('background', 'background/background_element.png');
         this.load.image(MAIN_MENU_LOGO_ASSET.key, MAIN_MENU_LOGO_ASSET.filePath);
+        this.load.image(MAIN_MENU_TITLE_ASSET.key, MAIN_MENU_TITLE_ASSET.filePath);
         preloadVolumeControlAssets(this);
     }
 
@@ -153,12 +162,29 @@ export class MainMenu extends Scene
             window.open(targetUrl, '_blank', 'noopener,noreferrer');
         });
 
-        this.title = this.add.text(GAME_CENTER_X, Math.round(GAME_HEIGHT * MAIN_MENU_LAYOUT.titleYRatio), 'AVGE CARD GAME').setFontSize(Math.max(MAIN_MENU_TEXT_LAYOUT.titleFontSizeMin, Math.round(MAIN_MENU_TEXT_LAYOUT.titleFontSizeBase * UI_SCALE)))
-            .setOrigin(0.5)
-            .setTint(0xffffff);
+        const titleTargetHeight = Math.max(
+            MAIN_MENU_TITLE_LAYOUT.targetHeightMin,
+            Math.round(MAIN_MENU_TITLE_LAYOUT.targetHeightBase * UI_SCALE)
+        );
+        this.title = this.add.image(
+            Math.round(GAME_WIDTH * MAIN_MENU_TITLE_LAYOUT.xRatio),
+            Math.round(GAME_HEIGHT * MAIN_MENU_TITLE_LAYOUT.yRatio),
+            MAIN_MENU_TITLE_ASSET.key
+        ).setOrigin(0.5);
+        if (this.title.height > 0) {
+            const titleScale = titleTargetHeight / this.title.height;
+            this.title.setScale(titleScale);
+        }
 
-        this.subtitle = this.add.text(GAME_CENTER_X, Math.round(GAME_HEIGHT * MAIN_MENU_LAYOUT.subtitleYRatio), 'From: Brown AVGE').setFontSize(Math.max(MAIN_MENU_TEXT_LAYOUT.subtitleFontSizeMin, Math.round(MAIN_MENU_TEXT_LAYOUT.subtitleFontSizeBase * UI_SCALE)))
-            .setOrigin(0.5)
+        const subtitleRightMargin = Math.round(MAIN_MENU_LAYOUT.subtitleRightMarginBase * UI_SCALE);
+        const subtitleBottomMargin = Math.round(MAIN_MENU_LAYOUT.subtitleBottomMarginBase * UI_SCALE);
+        this.subtitle = this.add.text(
+            GAME_WIDTH - subtitleRightMargin,
+            GAME_HEIGHT - subtitleBottomMargin,
+            'From: Brown AVGE'
+        ).setFontSize(Math.max(MAIN_MENU_TEXT_LAYOUT.subtitleFontSizeMin, Math.round(MAIN_MENU_TEXT_LAYOUT.subtitleFontSizeBase * UI_SCALE)))
+            .setOrigin(1, 1)
+            .setAlign('right')
             .setTint(0xcbd5e1);
 
         const accountMargin = Math.round(MAIN_MENU_LAYOUT.accountMarginBase * UI_SCALE);
@@ -171,11 +197,25 @@ export class MainMenu extends Scene
             ? window.localStorage.getItem(ROUTER_USERNAME_STORAGE_KEY)
             : null;
 
-        this.usernameIndicator = this.add.text(GAME_WIDTH - accountMargin, accountTop, this.formatUsernameIndicator(persistedUsername)).setFontSize(Math.max(MAIN_MENU_TEXT_LAYOUT.accountFontSizeMin, Math.round(MAIN_MENU_TEXT_LAYOUT.accountFontSizeBase * UI_SCALE)))
-            .setOrigin(1, 0)
+        this.usernameIndicator = this.add.text(0, 0, this.formatUsernameIndicator(persistedUsername)).setFontSize(Math.max(MAIN_MENU_TEXT_LAYOUT.accountFontSizeMin, Math.round(MAIN_MENU_TEXT_LAYOUT.accountFontSizeBase * UI_SCALE)))
+            .setOrigin(0.5)
             .setTint(0xe2e8f0)
-            .setAlign('right')
+            .setAlign('center')
             .setDepth(accountUiDepth + 1);
+
+        this.usernameButton = this.add.rectangle(
+            GAME_WIDTH - accountMargin,
+            accountTop,
+            10,
+            10,
+            0x0f172a,
+            0.9
+        )
+            .setStrokeStyle(2, 0xffffff, 0.8)
+            .setDepth(accountUiDepth)
+            .setInteractive({ useHandCursor: true });
+        this.refreshUsernameButtonLayout();
+        this.applyUsernameButtonBaseStyle();
 
         this.logoutButton = this.add.rectangle(
             GAME_WIDTH - accountMargin - Math.round(logoutWidth / 2),
@@ -194,14 +234,28 @@ export class MainMenu extends Scene
             .setTint(0xffffff)
             .setDepth(accountUiDepth + 1);
 
+        this.usernameButton.on('pointerover', () => {
+            if (this.disconnectGateActive || this.transitioning) {
+                return;
+            }
+
+            this.applyUsernameButtonHoverStyle();
+            this.showLogoutButtonForAccountHover();
+        });
+
+        this.usernameButton.on('pointerout', () => {
+            this.applyUsernameButtonBaseStyle();
+            this.scheduleLogoutButtonHideFromHover();
+        });
+
         this.logoutButton.on('pointerover', () => {
-            this.logoutButton?.setFillStyle(0x991b1b, 0.98);
-            this.logoutButtonLabel?.setTint(0xfef08a);
+            this.cancelLogoutButtonHideTimer();
+            this.applyLogoutButtonHoverStyle();
         });
 
         this.logoutButton.on('pointerout', () => {
-            this.logoutButton?.setFillStyle(0x7f1d1d, 0.95);
-            this.logoutButtonLabel?.setTint(0xffffff);
+            this.applyLogoutButtonBaseStyle();
+            this.scheduleLogoutButtonHideFromHover();
         });
 
         this.logoutButton.on('pointerdown', () => {
@@ -210,6 +264,7 @@ export class MainMenu extends Scene
             }
             void this.logoutAndReturnToLogin();
         });
+        this.setLogoutButtonVisible(false);
 
         const buttonWidth = Math.round(MAIN_MENU_LAYOUT.buttonWidthBase * UI_SCALE);
         const buttonHeight = Math.round(MAIN_MENU_LAYOUT.buttonHeightBase * UI_SCALE);
@@ -331,6 +386,7 @@ export class MainMenu extends Scene
             this.stopMatchmakingPolling();
             this.stopAuthSessionPush();
             this.leaveQueueOnDisconnect();
+            this.cancelLogoutButtonHideTimer();
 
             if (typeof window !== 'undefined') {
                 if (this.pageHideHandler) {
@@ -421,6 +477,7 @@ export class MainMenu extends Scene
         this.persistMatchmakingIdentity(auth.sessionId, auth.username);
         this.startAuthSessionPush(auth.sessionId);
         this.usernameIndicator?.setText(this.formatUsernameIndicator(auth.username));
+        this.refreshUsernameButtonLayout();
 
         const resumed = await this.resumeAssignedRoomIfPresent(auth.sessionId, auth.currentRoomId ?? null);
         if (resumed) {
@@ -477,6 +534,8 @@ export class MainMenu extends Scene
         this.startButtonLabel.setVisible(false);
         this.decksButton.setVisible(false).disableInteractive();
         this.decksButtonLabel.setVisible(false);
+        this.cancelLogoutButtonHideTimer();
+        this.usernameButton?.setVisible(false).disableInteractive();
         this.usernameIndicator?.setVisible(false);
         this.logoutButton?.setVisible(false).disableInteractive();
         this.logoutButtonLabel?.setVisible(false);
@@ -553,9 +612,11 @@ export class MainMenu extends Scene
         this.startButton.setFillStyle(0x0f172a, 0.9);
         this.decksButton.setVisible(true).setInteractive({ useHandCursor: true }).setFillStyle(0x0f172a, 0.9);
         this.decksButtonLabel.setVisible(true).setTint(0xffffff);
+        this.usernameButton?.setVisible(true).setInteractive({ useHandCursor: true });
         this.usernameIndicator?.setVisible(true);
-        this.logoutButton?.setVisible(true).setInteractive({ useHandCursor: true });
-        this.logoutButtonLabel?.setVisible(true);
+        this.applyUsernameButtonBaseStyle();
+        this.setLogoutButtonVisible(false);
+        this.applyLogoutButtonBaseStyle();
         this.updateMatchmakingSubtitle('From: Brown AVGE');
     }
 
@@ -879,6 +940,132 @@ export class MainMenu extends Scene
         return `USER: ${clipped}`;
     }
 
+    private refreshUsernameButtonLayout (): void
+    {
+        if (!this.usernameButton || !this.usernameIndicator) {
+            return;
+        }
+
+        const accountMargin = Math.round(MAIN_MENU_LAYOUT.accountMarginBase * UI_SCALE);
+        const accountTop = Math.round(MAIN_MENU_LAYOUT.accountTopBase * UI_SCALE);
+        const paddingX = Math.round(MAIN_MENU_LAYOUT.usernameButtonPaddingXBase * UI_SCALE);
+        const paddingY = Math.round(MAIN_MENU_LAYOUT.usernameButtonPaddingYBase * UI_SCALE);
+        const minWidth = Math.round(MAIN_MENU_LAYOUT.usernameButtonMinWidthBase * UI_SCALE);
+        const minHeight = Math.round(MAIN_MENU_LAYOUT.usernameButtonMinHeightBase * UI_SCALE);
+
+        const buttonWidth = Math.max(minWidth, Math.round(this.usernameIndicator.width + (paddingX * 2)));
+        const buttonHeight = Math.max(minHeight, Math.round(this.usernameIndicator.height + (paddingY * 2)));
+        const rightX = GAME_WIDTH - accountMargin;
+        const topY = accountTop;
+
+        this.usernameButton
+            .setSize(buttonWidth, buttonHeight)
+            .setPosition(
+                rightX - Math.round(buttonWidth / 2),
+                topY + Math.round(buttonHeight / 2)
+            );
+
+        if (UI_RECTANGLE_CORNER_RADIUS > 0) {
+            const widthCapRatio = Math.max(0, UI_RECTANGLE_CORNER_RADIUS_MAX_WIDTH_RATIO);
+            const widthCap = widthCapRatio > 0
+                ? buttonWidth * widthCapRatio
+                : UI_RECTANGLE_CORNER_RADIUS;
+            const roundedRadius = Math.min(UI_RECTANGLE_CORNER_RADIUS, widthCap);
+            if (roundedRadius > 0) {
+                this.usernameButton.setRounded(roundedRadius);
+            }
+        }
+
+        this.usernameIndicator.setPosition(
+            this.usernameButton.x,
+            this.usernameButton.y
+        );
+    }
+
+    private applyUsernameButtonBaseStyle (): void
+    {
+        this.usernameButton?.setFillStyle(0x0f172a, 0.9);
+        this.usernameIndicator?.setTint(0xe2e8f0);
+    }
+
+    private applyUsernameButtonHoverStyle (): void
+    {
+        this.usernameButton?.setFillStyle(0x1e293b, 0.95);
+        this.usernameIndicator?.setTint(0xfef08a);
+    }
+
+    private applyLogoutButtonBaseStyle (): void
+    {
+        if (this.matchmakingInProgress) {
+            this.logoutButton?.setFillStyle(0x334155, 0.5);
+            this.logoutButtonLabel?.setTint(0x94a3b8);
+            return;
+        }
+
+        this.logoutButton?.setFillStyle(0x7f1d1d, 0.95);
+        this.logoutButtonLabel?.setTint(0xffffff);
+    }
+
+    private applyLogoutButtonHoverStyle (): void
+    {
+        if (this.matchmakingInProgress) {
+            return;
+        }
+
+        this.logoutButton?.setFillStyle(0x991b1b, 0.98);
+        this.logoutButtonLabel?.setTint(0xfef08a);
+    }
+
+    private setLogoutButtonVisible (visible: boolean): void
+    {
+        this.logoutButton?.setVisible(visible);
+        this.logoutButtonLabel?.setVisible(visible);
+
+        if (!visible) {
+            this.logoutButton?.disableInteractive();
+            return;
+        }
+
+        if (this.matchmakingInProgress || this.transitioning || this.disconnectGateActive) {
+            this.logoutButton?.disableInteractive();
+            return;
+        }
+
+        this.logoutButton?.setInteractive({ useHandCursor: true });
+    }
+
+    private cancelLogoutButtonHideTimer (): void
+    {
+        if (this.logoutHoverHideTimer) {
+            this.logoutHoverHideTimer.remove(false);
+            this.logoutHoverHideTimer = null;
+        }
+    }
+
+    private scheduleLogoutButtonHideFromHover (): void
+    {
+        if (this.disconnectGateActive || this.transitioning) {
+            this.setLogoutButtonVisible(false);
+            return;
+        }
+
+        this.cancelLogoutButtonHideTimer();
+        const hideDelayMs = Math.max(0, Math.round(MAIN_MENU_LAYOUT.logoutRevealHideDelayMs));
+        this.logoutHoverHideTimer = this.time.delayedCall(hideDelayMs, () => {
+            this.logoutHoverHideTimer = null;
+            this.setLogoutButtonVisible(false);
+            this.applyLogoutButtonBaseStyle();
+            this.applyUsernameButtonBaseStyle();
+        });
+    }
+
+    private showLogoutButtonForAccountHover (): void
+    {
+        this.cancelLogoutButtonHideTimer();
+        this.setLogoutButtonVisible(true);
+        this.applyLogoutButtonBaseStyle();
+    }
+
     private updateQueueStatusLabel (queuePosition: number | null): void
     {
         if (queuePosition === null) {
@@ -949,9 +1136,9 @@ export class MainMenu extends Scene
             .setFillStyle(0x0f172a, 0.9);
         this.decksButtonLabel.setTint(0xffffff);
 
-        this.logoutButton
-            ?.setInteractive({ useHandCursor: true })
-            .setFillStyle(0x7f1d1d, 0.95);
-        this.logoutButtonLabel?.setTint(0xffffff);
+        this.applyLogoutButtonBaseStyle();
+        if (this.logoutButton?.visible) {
+            this.logoutButton.setInteractive({ useHandCursor: true });
+        }
     }
 }

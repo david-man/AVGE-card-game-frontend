@@ -1235,7 +1235,7 @@ export class DeckBuilder extends Scene
                 const removeButton = this.add.rectangle(
                     x + Math.round(tileWidth * DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.countBadgeOffsetXRatio),
                     y + Math.round(tileHeight * DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.countBadgeOffsetYRatio),
-                    Math.round(DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.countBadgeWidthBase * UI_SCALE),
+                    Math.round(DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.removeButtonWidthBase * UI_SCALE),
                     Math.round(DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.countBadgeHeightBase * UI_SCALE),
                     0x020617,
                     0.95
@@ -1244,7 +1244,13 @@ export class DeckBuilder extends Scene
                     .setDepth(12)
                     .setInteractive({ useHandCursor: true });
 
-                const removeText = this.add.text(removeButton.x, removeButton.y, '-').setFontSize(removeFontSize)
+                const removeText = this.add.text(
+                    removeButton.x,
+                    removeButton.y,
+                    DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.removeButtonGlyph
+                ).setFontSize(Math.round(removeFontSize * DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.removeButtonGlyphFontSizeMultiplier))
+                    .setFontFamily(DECK_BUILDER_CURRENT_DECK_PANEL_LAYOUT.removeButtonGlyphFontFamily)
+                    .setFontStyle('bold')
                     .setOrigin(0.5)
                     .setTint(0xffffff)
                     .setDepth(13)
