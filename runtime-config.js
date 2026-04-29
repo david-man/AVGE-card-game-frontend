@@ -1,20 +1,16 @@
 (function configureAvgeRuntime(windowObj) {
-    // Localhost defaults for development.
-    // Override these at deploy time for remote services.
-    // Example override:
-    // windowObj.AVGE_ROUTER_BASE_URL = 'https://router.example.com';
+    const normalizeBaseUrl = (value) => String(value).trim().replace(/\/$/, '');
+    
+    
+    
+    // Change this one constant for deployment.
+    const ROUTER_BASE_URL = 'http://localhost:5600';
 
-    if (typeof windowObj.AVGE_ROUTER_BASE_URL !== 'string') {
-        windowObj.AVGE_ROUTER_BASE_URL = 'http://localhost:5600';
-    }
+    const routerBaseUrl = normalizeBaseUrl(ROUTER_BASE_URL);
 
-    if (typeof windowObj.AVGE_BACKEND_BASE_URL !== 'string') {
-        windowObj.AVGE_BACKEND_BASE_URL = 'http://localhost:5500';
-    }
-
-    if (typeof windowObj.AVGE_BACKEND_PROTOCOL_URL !== 'string') {
-        windowObj.AVGE_BACKEND_PROTOCOL_URL = 'http://localhost:5500/protocol';
-    }
+    windowObj.AVGE_ROUTER_BASE_URL = routerBaseUrl;
+    windowObj.AVGE_BACKEND_BASE_URL = routerBaseUrl;
+    windowObj.AVGE_BACKEND_PROTOCOL_URL = `${routerBaseUrl}/protocol`;
 
     // Optional runtime font overrides.
     // AVGE_FONT_TTF: local assets filename, e.g. "MyFont.ttf"
