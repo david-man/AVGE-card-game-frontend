@@ -35,6 +35,10 @@ export class EnergyToken
         this.body = scene.add.ellipse(options.x, options.y, diameter, diameter, ENTITY_VISUALS.energyTokenFillColor, ENTITY_VISUALS.energyTokenFillAlpha)
             .setStrokeStyle(ENTITY_VISUALS.energyTokenStrokeWidth, ENTITY_VISUALS.energyTokenStrokeColor, ENTITY_VISUALS.energyTokenStrokeAlpha)
             .setInteractive({ draggable: true, useHandCursor: true });
+
+        (this.body as Phaser.GameObjects.Ellipse & {
+            __avgeEnableDraggableClickSfx?: boolean;
+        }).__avgeEnableDraggableClickSfx = true;
     }
 
     getZoneId (): string

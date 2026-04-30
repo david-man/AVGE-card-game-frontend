@@ -1020,16 +1020,11 @@ export class GameCommandProcessor
                         g.appendTerminalLine(`Selection -> ${orderedSelections.join(',')}`);
                         emitCommandEvent('input_result', {
                             input_type: 'selection',
-                            inputType: 'selection',
                             message: topMessage,
                             number_of_selections: numberOfSelections,
-                            numberOfSelections: numberOfSelections,
                             allow_repeat: allowRepeat,
-                            allowRepeat,
                             allow_none: allowNone,
-                            allowNone,
                             ordered_selections: orderedSelections,
-                            orderedSelections
                         });
                         g.clearOverlayPreviewIfActive();
                         g.setBoardInputEnabled(true);
@@ -1129,10 +1124,8 @@ export class GameCommandProcessor
                         g.appendTerminalLine(`KEI-WATANABE-DRUMKIDWORKSHOP -> ${result.cardId} ${result.attack.toUpperCase()}`);
                         emitCommandEvent('input_result', {
                             input_type: 'kei_watanabe_drumkidworkshop',
-                            inputType: 'kei_watanabe_drumkidworkshop',
                             message: topMessage,
                             card_id: result.cardId,
-                            cardId: result.cardId,
                             attack: result.attack,
                             attack_label: result.attack.toUpperCase()
                         });
@@ -1165,7 +1158,6 @@ export class GameCommandProcessor
                     g.appendTerminalLine(`NUMERICAL-ENTRY -> ${value}`);
                     emitCommandEvent('input_result', {
                         input_type: 'numerical-entry',
-                        inputType: 'numerical-entry',
                         message: topMessage,
                         value
                     });
@@ -1211,13 +1203,10 @@ export class GameCommandProcessor
                         const firstResult = rolledValues[0] ?? forcedValues[0];
                         emitCommandEvent('input_result', {
                             input_type: 'd6',
-                            inputType: 'd6',
                             message: topMessage,
                             result: firstResult,
                             result_value: firstResult,
-                            resultValue: firstResult,
                             result_values: rolledValues,
-                            resultValues: rolledValues
                         });
                         g.clearOverlayPreviewIfActive();
                         g.setBoardInputEnabled(true);
@@ -1267,16 +1256,12 @@ export class GameCommandProcessor
                         const firstResultLabel = firstResultValue === 1 ? 'HEADS' : 'TAILS';
                         emitCommandEvent('input_result', {
                             input_type: 'coin',
-                            inputType: 'coin',
                             message: topMessage,
                             result: firstResultLabel.toLowerCase(),
                             result_value: firstResultValue,
-                            resultValue: firstResultValue,
                             result_label: firstResultLabel,
                             result_values: resultValues,
-                            resultValues: resultValues,
                             result_labels: resultLabels,
-                            resultLabels: resultLabels
                         });
                         g.clearOverlayPreviewIfActive();
                         g.setBoardInputEnabled(true);
@@ -1316,11 +1301,9 @@ export class GameCommandProcessor
                         g.appendTerminalLine(`BINARY -> ${picked}`);
                         emitCommandEvent('input_result', {
                             input_type: 'binary',
-                            inputType: 'binary',
                             message: topMessage,
                             result: resultBool,
                             result_value: resultValue,
-                            resultValue,
                             result_label: resultValue === 1 ? 'TRUE' : 'FALSE'
                         });
                         g.clearOverlayPreviewIfActive();
@@ -1347,7 +1330,6 @@ export class GameCommandProcessor
             g.appendTerminalLine(`Input ${mode.toUpperCase()} -> ${topMessage}`);
             emitCommandEvent('input_state_change', {
                 input_type: mode,
-                inputType: mode,
                 message: topMessage,
                 enabled: mode === 'on',
                 target_view: targetView ? g.getViewModeLabel(targetView) : null
@@ -1938,9 +1920,9 @@ export class GameCommandProcessor
                 g.layoutAllHolders();
                 g.redrawAllCardMarks();
                 g.appendTerminalLine(`${cardId} -> ${targetCardId}`);
-                emitCommandEvent('attach_tool', {
+                emitCommandEvent('tool_attached', {
                     tool_card_id: cardId,
-                    target_card_id: targetCardId,
+                    attached_to_card_id: targetCardId,
                     owner_id: card.getOwnerId()
                 });
             });

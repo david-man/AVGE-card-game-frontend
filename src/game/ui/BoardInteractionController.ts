@@ -319,8 +319,8 @@ export class BoardInteractionController
                         card_id: card.id,
                         card_type: card.getCardType(),
                         owner_id: card.getOwnerId(),
-                        from_zone: originZoneId,
-                        to_zone: targetZoneId,
+                        from_zone_id: originZoneId,
+                        to_zone_id: targetZoneId,
                         interaction: 'drag_drop'
                     });
                     g.layoutAllHolders();
@@ -357,8 +357,8 @@ export class BoardInteractionController
                 g.emitBackendEvent('tool_attached', {
                     tool_card_id: card.id,
                     owner_id: card.getOwnerId(),
-                    from_zone: originZoneId,
-                    to_zone: targetZoneId,
+                    from_zone_id: originZoneId,
+                    to_zone_id: targetZoneId,
                     attached_to_card_id: overlappedCard.id,
                     interaction: 'drag_drop'
                 });
@@ -412,8 +412,8 @@ export class BoardInteractionController
                         card_id: card.id,
                         card_type: card.getCardType(),
                         owner_id: card.getOwnerId(),
-                        from_zone: originZoneId,
-                        to_zone: 'stadium',
+                        from_zone_id: originZoneId,
+                        to_zone_id: 'stadium',
                         interaction: 'drag_drop'
                     });
                     g.layoutAllHolders();

@@ -151,6 +151,10 @@ export class Card
             .setStrokeStyle(CARD_BORDER_WIDTH, this.getCurrentBorderColor(), 1)
             .setInteractive({ draggable: true, useHandCursor: true });
 
+        (this.body as Phaser.GameObjects.Rectangle & {
+            __avgeEnableDraggableClickSfx?: boolean;
+        }).__avgeEnableDraggableClickSfx = true;
+
         this.idLabel = scene.add.text(options.x, options.y - CARD_TEXT_LAYOUT.classYOffset, this.displayCardClass).setFontSize(this.baseClassFontSize)
             .setOrigin(0.5)
             .setAlign('center')

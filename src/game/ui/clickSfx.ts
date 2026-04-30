@@ -87,9 +87,14 @@ export const registerUiClickSoundForScene = (scene: Scene): void => {
             return false;
         }
 
-        // Card drags and other drag-start interactions should stay silent.
+        const allowDraggableClickSfx = (gameObject as Phaser.GameObjects.GameObject & {
+            __avgeEnableDraggableClickSfx?: boolean;
+        }).__avgeEnableDraggableClickSfx;
+
+        // Keep generic draggable UI silent (for example sliders), while allowing
+        // card/token interactions to opt in for click and drag-start feedback.
         if (inputState.draggable === true) {
-            return false;
+            return allowDraggableClickSfx === true;
         }
 
         return inputState.cursor === 'pointer';
