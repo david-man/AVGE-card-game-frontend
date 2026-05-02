@@ -331,7 +331,9 @@ export const animateAttachEnergyTokenToCard = (
 
 export const resolveBoomTextureKey = (scene: SceneAnimationScene, rawAssetName?: string): string | null => {
     if (!rawAssetName) {
-        return 'logo';
+        return scene.textures.exists(CRIT_PARTICLE_TEXTURE_KEY)
+            ? CRIT_PARTICLE_TEXTURE_KEY
+            : null;
     }
 
     const key = rawAssetName.toLowerCase();
@@ -339,12 +341,9 @@ export const resolveBoomTextureKey = (scene: SceneAnimationScene, rawAssetName?:
         background: 'background',
         bg: 'background',
         'background/background_element.png': 'background',
-        logo: 'logo',
-        'logo.png': 'logo',
-        minecraftfont: 'minecraftfont',
-        'minecraftfont.png': 'minecraftfont',
-        font2bitmap: 'font2bitmap',
-        'font2bitmap.png': 'font2bitmap',
+        board: 'board-background',
+        'base_board.png': 'board-background',
+        'background/base_board.png': 'board-background',
         crit: CRIT_PARTICLE_TEXTURE_KEY,
         'crit.png': CRIT_PARTICLE_TEXTURE_KEY,
         'icons/crit.png': CRIT_PARTICLE_TEXTURE_KEY,

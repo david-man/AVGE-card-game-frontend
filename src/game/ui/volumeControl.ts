@@ -46,13 +46,17 @@ const persistVolume = (value: number): void => {
     window.localStorage.setItem(VOLUME_STORAGE_KEY, String(clampVolume(value)));
 };
 
-export const preloadVolumeControlAssets = (scene: Scene, iconPath = 'icons/volume.png'): void => {
+export const preloadVolumeControlAssets = (
+    scene: Scene,
+    iconPath = 'icons/volume.png',
+    muteIconPath = 'icons/mute.png'
+): void => {
     if (!scene.textures.exists(VOLUME_CONTROL_ICON_KEY)) {
         scene.load.image(VOLUME_CONTROL_ICON_KEY, iconPath);
     }
 
     if (!scene.textures.exists(VOLUME_CONTROL_MUTE_ICON_KEY)) {
-        scene.load.image(VOLUME_CONTROL_MUTE_ICON_KEY, 'icons/mute.png');
+        scene.load.image(VOLUME_CONTROL_MUTE_ICON_KEY, muteIconPath);
     }
 };
 

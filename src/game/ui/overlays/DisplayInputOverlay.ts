@@ -598,7 +598,12 @@ export class DisplayInputOverlay
                 const soundManager = this.scene.sound as Phaser.Sound.BaseSoundManager & {
                     mute?: boolean;
                     volume?: number;
+                    locked?: boolean;
                 };
+                if (soundManager.locked === true) {
+                    return false;
+                }
+
                 if (soundManager.mute === true) {
                     return false;
                 }

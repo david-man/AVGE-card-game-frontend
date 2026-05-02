@@ -1636,7 +1636,7 @@ export class GameCommandProcessor
             const textureKey = g.resolveBoomTextureKey(rawArgTwo);
             if (!textureKey) {
                 g.appendTerminalLine(`Unknown boom asset: ${rawArgTwo}`);
-                g.appendTerminalLine('Try: background/background_element.png, logo.png, minecraftfont.png, font2bitmap.png');
+                g.appendTerminalLine('Try: background/background_element.png, background/base_board.png, icons/crit.png, icons/regeneration.png');
                 return;
             }
 

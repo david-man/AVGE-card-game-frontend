@@ -173,6 +173,18 @@ export const subscribeToRouterSessionEvents = (
 };
 
 const normalizeBaseUrl = (value: string): string => value.trim().replace(/\/$/, '');
+const ROUTER_SESSION_COOKIE_NAME = 'avge_session';
+
+const hasCookie = (name: string): boolean => {
+    if (typeof document === 'undefined') {
+        return false;
+    }
+
+    const encodedPrefix = `${encodeURIComponent(name)}=`;
+    return document.cookie
+        .split(';')
+        .some((entry) => entry.trim().startsWith(encodedPrefix));
+};
 
 const readRouterSessionIdFromStorage = (): string => {
     if (typeof window === 'undefined') {
@@ -478,6 +490,14 @@ export const fetchRouterSession = async (sessionId?: string): Promise<AuthSessio
 export const fetchRouterSessionFromCookie = async (): Promise<AuthSessionResult> => {
     if (typeof fetch !== 'function') {
         return { ok: false, error: 'Fetch API is unavailable.' };
+    }
+
+    if (!hasCookie(ROUTER_SESSION_COOKIE_NAME)) {
+        return {
+            ok: false,
+            error: 'session_id is required.',
+            errorCode: 'session_id_required',
+        };
     }
 
     try {

@@ -17,7 +17,19 @@ export const isSfxPlaybackAllowed = (scene: SceneAudioAnimationScene): boolean =
     const soundManager = scene.sound as Phaser.Sound.BaseSoundManager & {
         mute?: boolean;
         volume?: number;
+        locked?: boolean;
+        context?: {
+            state?: string;
+        };
     };
+    if (soundManager.locked === true) {
+        return false;
+    }
+
+    if (soundManager.context?.state === 'suspended') {
+        return false;
+    }
+
     if (soundManager.mute === true) {
         return false;
     }

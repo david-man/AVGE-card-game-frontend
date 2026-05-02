@@ -339,9 +339,6 @@ export class Game extends Scene
     {
         this.load.setPath('assets');
         this.load.image('board-background', 'background/base_board.png');
-        this.load.image('logo', 'logo.png');
-        this.load.image('minecraftfont', 'minecraftfont.png');
-        this.load.image('font2bitmap', 'font2bitmap.png');
         this.load.image(CRIT_PARTICLE_TEXTURE_KEY, CRIT_PARTICLE_TEXTURE_PATH);
         this.load.image(REGENERATION_PARTICLE_TEXTURE_KEY, REGENERATION_PARTICLE_TEXTURE_PATH);
         this.load.image(GAME_SURRENDER_BUTTON_LAYOUT.iconKey, GAME_SURRENDER_BUTTON_LAYOUT.iconPath);

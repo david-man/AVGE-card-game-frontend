@@ -79,9 +79,6 @@ export class Preloader extends Scene
     {
         this.load.setPath('assets');
 
-        this.load.image('preloader-logo', 'logo.png');
-        this.load.image('preloader-board-preview', 'background/base_board.png');
-        this.load.image('logo', 'logo.png');
         this.load.audio(UI_CLICK_SOUND_KEY, 'sfx/click.mp3');
         preloadVolumeControlAssets(this);
     }
