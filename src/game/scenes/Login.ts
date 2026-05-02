@@ -1,12 +1,13 @@
 import { Scene, GameObjects } from 'phaser';
 import { GAME_CENTER_X, GAME_HEIGHT, GAME_WIDTH, LOGIN_TEXT_LAYOUT, UI_SCALE } from '../config';
 import {
+    checkServiceHealth,
     fetchMatchmakingStatus,
     fetchRouterSession,
     fetchRouterSessionFromCookie,
+    getRouterBaseUrl,
     loginRouterSession,
     rejoinAssignedRoom,
-    ROOM_BACKEND_BASE_URL_STORAGE_KEY,
     ROUTER_SESSION_ID_STORAGE_KEY,
     ROUTER_USERNAME_STORAGE_KEY,
 } from '../Network';
@@ -177,24 +178,11 @@ export class Login extends Scene
     {
         const status = await fetchMatchmakingStatus(sessionId);
         if (status.ok && status.status === 'assigned' && status.room) {
-            if (typeof window !== 'undefined') {
-                window.sessionStorage.setItem(ROOM_BACKEND_BASE_URL_STORAGE_KEY, status.room.endpointUrl);
+            const roomHealthy = await this.isAssignedRoomReachable();
+            if (!roomHealthy) {
+                this.subtitle.setText('Saved match service unavailable. Opening menu...');
             }
-
-            this.cameras.main.fadeOut(180, 0, 0, 0);
-            this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
-                this.scene.start('Game');
-            });
-            return;
-        }
-
-        if (typeof currentRoomId === 'string' && currentRoomId.trim().length > 0) {
-            const rejoin = await rejoinAssignedRoom(sessionId, currentRoomId);
-            if (rejoin.ok && rejoin.room) {
-                if (typeof window !== 'undefined') {
-                    window.sessionStorage.setItem(ROOM_BACKEND_BASE_URL_STORAGE_KEY, rejoin.room.endpointUrl);
-                }
-
+            else {
                 this.cameras.main.fadeOut(180, 0, 0, 0);
                 this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
                     this.scene.start('Game');
@@ -203,10 +191,53 @@ export class Login extends Scene
             }
         }
 
+        if (typeof currentRoomId === 'string' && currentRoomId.trim().length > 0) {
+            const rejoin = await rejoinAssignedRoom(sessionId, currentRoomId);
+            if (rejoin.ok && rejoin.room) {
+                const roomHealthy = await this.isAssignedRoomReachable();
+                if (!roomHealthy) {
+                    this.subtitle.setText('Saved match service unavailable. Opening menu...');
+                }
+                else {
+                    this.cameras.main.fadeOut(180, 0, 0, 0);
+                    this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
+                        this.scene.start('Game');
+                    });
+                    return;
+                }
+            }
+        }
+
         this.cameras.main.fadeOut(220, 0, 0, 0);
         this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
             this.scene.start('MainMenu');
         });
+    }
+
+    private async isAssignedRoomReachable (): Promise<boolean>
+    {
+        if (typeof window === 'undefined') {
+            return true;
+        }
+
+        const healthBaseUrl = getRouterBaseUrl();
+        const maxAttempts = 8;
+        const delayMs = 250;
+
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            const healthy = await checkServiceHealth(healthBaseUrl);
+            if (healthy) {
+                return true;
+            }
+
+            if (attempt < maxAttempts) {
+                await new Promise<void>((resolve) => {
+                    this.time.delayedCall(delayMs, () => resolve());
+                });
+            }
+        }
+
+        return false;
     }
 
     private promptForUsername (): void

@@ -17,7 +17,9 @@ import {
 } from '../config';
 import {
     clearClientSessionState,
+    checkServiceHealth,
     fetchRouterSession,
+    getRouterBaseUrl,
     logoutRouterSession,
     fetchUserDecks,
     enqueueForMatchmaking,
@@ -26,7 +28,6 @@ import {
     subscribeToRouterSessionEvents,
     rejoinAssignedRoom,
     leaveMatchmakingQueue,
-    ROOM_BACKEND_BASE_URL_STORAGE_KEY,
     ROUTER_SESSION_ID_STORAGE_KEY,
     ROUTER_USERNAME_STORAGE_KEY,
     RouterAssignedRoom,
@@ -495,9 +496,9 @@ export class MainMenu extends Scene
     {
         const status = await fetchMatchmakingStatus(sessionId);
         if (status.ok && status.status === 'assigned' && status.room) {
-            const roomHealthy = await this.isAssignedRoomReachable(status.room.endpointUrl);
+            const roomHealthy = await this.isAssignedRoomReachable();
             if (!roomHealthy) {
-                this.updateMatchmakingSubtitle('Saved room is unavailable. Returning to menu.');
+                this.updateMatchmakingSubtitle('Saved match service is unavailable. Returning to menu.');
                 return false;
             }
 
@@ -511,9 +512,9 @@ export class MainMenu extends Scene
                 return false;
             }
 
-            const roomHealthy = await this.isAssignedRoomReachable(rejoin.room.endpointUrl);
+            const roomHealthy = await this.isAssignedRoomReachable();
             if (!roomHealthy) {
-                this.updateMatchmakingSubtitle('Saved room is unavailable. Returning to menu.');
+                this.updateMatchmakingSubtitle('Saved match service is unavailable. Returning to menu.');
                 return false;
             }
 
@@ -644,7 +645,6 @@ export class MainMenu extends Scene
         if (typeof window !== 'undefined') {
             window.sessionStorage.removeItem(ROUTER_SESSION_ID_STORAGE_KEY);
             window.localStorage.removeItem(ROUTER_SESSION_ID_STORAGE_KEY);
-            window.sessionStorage.removeItem(ROOM_BACKEND_BASE_URL_STORAGE_KEY);
             window.sessionStorage.removeItem('avge_protocol_client_slot');
             window.sessionStorage.removeItem('avge_protocol_reconnect_token');
             window.localStorage.removeItem(ROUTER_USERNAME_STORAGE_KEY);
@@ -811,12 +811,12 @@ export class MainMenu extends Scene
     private async transitionToAssignedRoom (room: RouterAssignedRoom): Promise<void>
     {
         this.updateMatchmakingSubtitle('Match found. Starting room...');
-        const roomHealthy = await this.isAssignedRoomReachable(room.endpointUrl);
+        const roomHealthy = await this.isAssignedRoomReachable();
         if (!roomHealthy) {
             this.matchmakingInProgress = true;
             this.transitioning = false;
             this.applyQueueUiState(true);
-            this.updateMatchmakingSubtitle('Room startup failed. Re-queueing...');
+            this.updateMatchmakingSubtitle('Match service startup failed. Re-queueing...');
             const sessionId = typeof window !== 'undefined'
                 ? window.sessionStorage.getItem(ROUTER_SESSION_ID_STORAGE_KEY)
                 : null;
@@ -828,7 +828,6 @@ export class MainMenu extends Scene
 
         this.transitioning = true;
         if (typeof window !== 'undefined') {
-            window.sessionStorage.setItem(ROOM_BACKEND_BASE_URL_STORAGE_KEY, room.endpointUrl);
             // New room assignment should not reuse slot/reconnect identity from an old room.
             window.sessionStorage.removeItem('avge_protocol_reconnect_token');
 
@@ -864,26 +863,21 @@ export class MainMenu extends Scene
         });
     }
 
-    private async isAssignedRoomReachable (endpointUrl: string): Promise<boolean>
+    private async isAssignedRoomReachable (): Promise<boolean>
     {
-        if (typeof fetch !== 'function') {
+        if (typeof fetch !== 'function' || typeof window === 'undefined') {
             return true;
         }
+
+        const healthBaseUrl = getRouterBaseUrl();
 
         const maxAttempts = 12;
         const delayMs = 250;
 
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-            try {
-                const response = await fetch(`${endpointUrl}/health`, {
-                    method: 'GET',
-                });
-                if (response.ok) {
-                    return true;
-                }
-            }
-            catch {
-                // Room process may still be booting; retry shortly.
+            const healthy = await checkServiceHealth(healthBaseUrl);
+            if (healthy) {
+                return true;
             }
 
             if (attempt < maxAttempts) {

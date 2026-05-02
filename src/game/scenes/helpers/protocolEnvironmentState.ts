@@ -10,6 +10,45 @@ type PlayerTurnAttributeKey = string;
 
 type PlayerTurnAttributes = Record<PlayerTurnAttributeKey, number>;
 
+const INIT_COUNTDOWN_PLAYED_STORAGE_PREFIX = 'avge_init_countdown_played:';
+
+const countdownPlayedStorageKeyForScene = (scene: ProtocolEnvironmentScene): string | null => {
+    const reconnectToken = typeof scene.protocolReconnectToken === 'string'
+        ? scene.protocolReconnectToken.trim()
+        : '';
+    if (!reconnectToken) {
+        return null;
+    }
+
+    return `${INIT_COUNTDOWN_PLAYED_STORAGE_PREFIX}${reconnectToken}`;
+};
+
+const hasInitCountdownPlayedForCurrentRoom = (scene: ProtocolEnvironmentScene): boolean => {
+    if (typeof window === 'undefined') {
+        return false;
+    }
+
+    const key = countdownPlayedStorageKeyForScene(scene);
+    if (!key) {
+        return false;
+    }
+
+    return window.sessionStorage.getItem(key) === '1';
+};
+
+const markInitCountdownPlayedForCurrentRoom = (scene: ProtocolEnvironmentScene): void => {
+    if (typeof window === 'undefined') {
+        return;
+    }
+
+    const key = countdownPlayedStorageKeyForScene(scene);
+    if (!key) {
+        return;
+    }
+
+    window.sessionStorage.setItem(key, '1');
+};
+
 const applyBackendPlayerSetup = (scene: ProtocolEnvironmentScene, setup: BackendEntitiesSetup): void => {
     const players = setup.players;
     if (!players) {
@@ -164,9 +203,12 @@ export const applyInitStatePacket = (scene: ProtocolEnvironmentScene, body: Reco
         }
     }
     else if (previousStage === 'init') {
-        scene.appendTerminalLine('Both players finished setup. Starting game...');
-        scene.initStartCountdownAckGateActive = true;
-        scene.playInitStartCountdownAnimation();
+        if (!hasInitCountdownPlayedForCurrentRoom(scene)) {
+            markInitCountdownPlayedForCurrentRoom(scene);
+            scene.appendTerminalLine('Both players finished setup. Starting game...');
+            scene.initStartCountdownAckGateActive = true;
+            scene.playInitStartCountdownAnimation();
+        }
     }
 
     scene.applyCardVisibilityByView();

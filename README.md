@@ -34,14 +34,11 @@ The frontend defaults to localhost and can be pointed at a remote router without
 
 1. Edit `runtime-config.js` at deploy time.
 2. Set `window.AVGE_ROUTER_BASE_URL` to your router public origin.
-3. Leave `window.AVGE_BACKEND_BASE_URL` and `window.AVGE_BACKEND_PROTOCOL_URL` empty unless you need a fallback.
 
 Default localhost values in `runtime-config.js`:
 
 ```js
 window.AVGE_ROUTER_BASE_URL = 'http://localhost:5600';
-window.AVGE_BACKEND_BASE_URL = 'http://localhost:5500';
-window.AVGE_BACKEND_PROTOCOL_URL = 'http://localhost:5500/protocol';
 ```
 
 Example:
@@ -53,7 +50,7 @@ window.AVGE_ROUTER_BASE_URL = 'https://router.example.com';
 Behavior priority in the client:
 
 - Router API base: `AVGE_ROUTER_BASE_URL` then local default.
-- Room protocol base: assigned room `endpoint_url` from router, then `AVGE_BACKEND_BASE_URL`, then `AVGE_BACKEND_PROTOCOL_URL` origin, then local default.
+- Gameplay socket and HTTP `/protocol` both use the same router base.
 
 ## Writing Code
 

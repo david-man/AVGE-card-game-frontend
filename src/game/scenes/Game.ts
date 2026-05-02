@@ -6,7 +6,7 @@ import { Card, CardHolder, EnergyHolder, EnergyToken, PlayerId } from '../entiti
 import {
     BackendProtocolPacket,
     FrontendProtocolPacket,
-    getBackendBaseUrl,
+    getRouterBaseUrl,
     ROUTER_SESSION_ID_STORAGE_KEY,
 } from '../Network';
 import { ParsedBackendProtocolPacket } from '../protocol/backendResponseAdapter';
@@ -214,7 +214,7 @@ type CardHpPulseAnimationState = {
 };
 
 const getBackendSocketUrl = (): string => {
-    return getBackendBaseUrl();
+    return getRouterBaseUrl();
 };
 
 export class Game extends Scene

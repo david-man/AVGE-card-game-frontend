@@ -1,10 +1,8 @@
 import {
     clearClientSessionState,
     subscribeToRouterSessionEvents,
-    getBackendBaseUrl,
     getRouterBaseUrl,
     checkServiceHealth,
-    ROOM_BACKEND_BASE_URL_STORAGE_KEY,
 } from '../../Network';
 
 type SessionFlowScene = any;
@@ -16,7 +14,6 @@ const clearProtocolSessionStorage = (): void => {
 
     window.sessionStorage.removeItem('avge_protocol_client_slot');
     window.sessionStorage.removeItem('avge_protocol_reconnect_token');
-    window.sessionStorage.removeItem(ROOM_BACKEND_BASE_URL_STORAGE_KEY);
 };
 
 const disconnectProtocolSocket = (scene: SessionFlowScene): void => {
@@ -59,17 +56,11 @@ export const checkCoreServiceHealth = async (scene: SessionFlowScene): Promise<v
 
     scene.serviceHealthCheckInFlight = true;
     try {
-        const routerHealthy = await checkServiceHealth(getRouterBaseUrl());
+        const routerBaseUrl = getRouterBaseUrl();
+        const routerHealthy = await checkServiceHealth(routerBaseUrl);
         if (!routerHealthy) {
             redirectToMainMenuAfterServiceFailure(scene, 'router_unreachable', 'Router unavailable. Returning to main menu.');
             return;
-        }
-
-        if (scene.protocolSocketFallbackToHttp) {
-            const backendHealthy = await checkServiceHealth(getBackendBaseUrl());
-            if (!backendHealthy) {
-                redirectToMainMenuAfterServiceFailure(scene, 'room_unreachable', 'Game server unavailable. Returning to main menu.');
-            }
         }
     }
     finally {

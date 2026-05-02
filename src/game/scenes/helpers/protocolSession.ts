@@ -19,7 +19,7 @@ export const initializeProtocolSocket = (
     }
 
     const socket = io(socketUrl, {
-        // Polling is more stable with the local Flask/Werkzeug room server.
+        // Keep polling-only transport for compatibility across router and room modes.
         transports: ['polling'],
         upgrade: false,
         reconnection: false,

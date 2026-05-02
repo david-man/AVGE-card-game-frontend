@@ -1,10 +1,8 @@
 import { io, Socket } from 'socket.io-client';
 import cardPreviewDescriptionsJson from './data/cardPreviewDescriptions.json';
 
-const DEFAULT_BACKEND_BASE_URL = 'http://127.0.0.1:5500';
 const DEFAULT_ROUTER_BASE_URL = 'http://127.0.0.1:5600';
 
-export const ROOM_BACKEND_BASE_URL_STORAGE_KEY = 'avge_room_backend_base_url';
 export const ROUTER_SESSION_ID_STORAGE_KEY = 'avge_router_session_id';
 export const ROUTER_USERNAME_STORAGE_KEY = 'avge_router_username';
 
@@ -21,7 +19,6 @@ export type AuthSessionResult = {
 
 export type RouterAssignedRoom = {
     roomId: string;
-    endpointUrl: string;
     status: string;
     playerSessionIds?: [string, string];
 };
@@ -65,7 +62,6 @@ export const clearClientSessionState = (): void => {
     window.sessionStorage.removeItem(ROUTER_SESSION_ID_STORAGE_KEY);
     window.localStorage.removeItem(ROUTER_SESSION_ID_STORAGE_KEY);
     window.localStorage.removeItem(ROUTER_USERNAME_STORAGE_KEY);
-    window.sessionStorage.removeItem(ROOM_BACKEND_BASE_URL_STORAGE_KEY);
     window.sessionStorage.removeItem('avge_protocol_client_slot');
     window.sessionStorage.removeItem('avge_protocol_reconnect_token');
 };
@@ -192,19 +188,6 @@ const readRouterSessionIdFromStorage = (): string => {
     return typeof fromLocal === 'string' ? fromLocal.trim() : '';
 };
 
-const readRoomBackendBaseUrlFromStorage = (): string | null => {
-    if (typeof window === 'undefined') {
-        return null;
-    }
-
-    const persisted = window.sessionStorage.getItem(ROOM_BACKEND_BASE_URL_STORAGE_KEY);
-    if (typeof persisted !== 'string' || persisted.trim().length === 0) {
-        return null;
-    }
-
-    return normalizeBaseUrl(persisted);
-};
-
 export const getRouterBaseUrl = (): string => {
     if (typeof window === 'undefined') {
         return DEFAULT_ROUTER_BASE_URL;
@@ -248,32 +231,7 @@ export const checkServiceHealth = async (baseUrl: string): Promise<boolean> => {
 };
 
 export const getBackendBaseUrl = (): string => {
-    const persistedRoomBaseUrl = readRoomBackendBaseUrlFromStorage();
-    if (persistedRoomBaseUrl !== null) {
-        return persistedRoomBaseUrl;
-    }
-
-    if (typeof window === 'undefined') {
-        return DEFAULT_BACKEND_BASE_URL;
-    }
-
-    const configuredBaseUrl = (window as Window & { AVGE_BACKEND_BASE_URL?: string }).AVGE_BACKEND_BASE_URL;
-    if (typeof configuredBaseUrl === 'string' && configuredBaseUrl.trim().length > 0) {
-        return normalizeBaseUrl(configuredBaseUrl);
-    }
-
-    const configuredUrl = (window as Window & { AVGE_BACKEND_PROTOCOL_URL?: string }).AVGE_BACKEND_PROTOCOL_URL;
-    if (typeof configuredUrl === 'string' && configuredUrl.trim().length > 0) {
-        try {
-            const parsed = new URL(configuredUrl.trim());
-            return parsed.origin;
-        }
-        catch {
-            return DEFAULT_BACKEND_BASE_URL;
-        }
-    }
-
-    return DEFAULT_BACKEND_BASE_URL;
+    return getRouterBaseUrl();
 };
 
 const getBackendProtocolUrl = (): string => {
@@ -287,16 +245,11 @@ const parseAssignedRoom = (value: unknown): RouterAssignedRoom | undefined => {
 
     const room = value as {
         room_id?: unknown;
-        endpoint_url?: unknown;
         status?: unknown;
         player_session_ids?: unknown;
     };
 
     if (typeof room.room_id !== 'string' || room.room_id.trim().length === 0) {
-        return undefined;
-    }
-
-    if (typeof room.endpoint_url !== 'string' || room.endpoint_url.trim().length === 0) {
         return undefined;
     }
 
@@ -311,7 +264,6 @@ const parseAssignedRoom = (value: unknown): RouterAssignedRoom | undefined => {
 
     return {
         roomId: room.room_id.trim(),
-        endpointUrl: normalizeBaseUrl(room.endpoint_url),
         status: typeof room.status === 'string' ? room.status : 'running',
         playerSessionIds,
     };
