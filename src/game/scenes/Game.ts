@@ -20,6 +20,7 @@ import { registerUiClickSoundForScene } from '../ui/clickSfx';
 import { createVolumeControlForScene, preloadVolumeControlAssets } from '../ui/volumeControl';
 import {
     BASE_WIDTH,
+    CARD_VISUALS,
     GAME_DEPTHS,
     GAME_WINNER_OVERLAY_AUDIO,
     GAME_LAYOUT,
@@ -339,6 +340,7 @@ export class Game extends Scene
     {
         this.load.setPath('assets');
         this.load.image('board-background', 'background/base_board.png');
+        this.load.image(CARD_VISUALS.faceDownTextureKey, CARD_VISUALS.faceDownTexturePath);
         this.load.image(CRIT_PARTICLE_TEXTURE_KEY, CRIT_PARTICLE_TEXTURE_PATH);
         this.load.image(REGENERATION_PARTICLE_TEXTURE_KEY, REGENERATION_PARTICLE_TEXTURE_PATH);
         this.load.image(GAME_SURRENDER_BUTTON_LAYOUT.iconKey, GAME_SURRENDER_BUTTON_LAYOUT.iconPath);

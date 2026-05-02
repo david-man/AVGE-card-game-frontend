@@ -6,6 +6,7 @@ import {
     CARD_DEFAULTS,
     CARD_SELECTED_BORDER_WIDTH,
     CARD_SELECTION_SCALE_MULTIPLIERS,
+    CARD_TEXT_COLORS,
     CARD_TEXT_LAYOUT,
     CARD_VISUALS,
     UI_SCALE
@@ -80,6 +81,7 @@ export class Card
     readonly retreatCost: number;
     readonly body: Phaser.GameObjects.Rectangle;
     readonly baseColor: number;
+    private readonly faceDownImage: Phaser.GameObjects.Image | null;
 
     private readonly baseClassFontSize: number;
     private readonly baseTypeFontSize: number;
@@ -151,26 +153,42 @@ export class Card
             .setStrokeStyle(CARD_BORDER_WIDTH, this.getCurrentBorderColor(), 1)
             .setInteractive({ draggable: true, useHandCursor: true });
 
+        this.faceDownImage = scene.textures.exists(CARD_VISUALS.faceDownTextureKey)
+            ? scene.add.image(options.x, options.y, CARD_VISUALS.faceDownTextureKey)
+                .setDisplaySize(
+                    options.width + (CARD_VISUALS.faceDownTextureBleedPx * 2),
+                    options.height + (CARD_VISUALS.faceDownTextureBleedPx * 2)
+                )
+                .setDepth(this.body.depth - 0.001)
+                .setVisible(false)
+            : null;
+
+        if (this.faceDownImage) {
+            this.faceDownImage.setMask(this.body.createGeometryMask());
+        }
+
         (this.body as Phaser.GameObjects.Rectangle & {
             __avgeEnableDraggableClickSfx?: boolean;
         }).__avgeEnableDraggableClickSfx = true;
 
+        const typeTagTint = CARD_TEXT_COLORS.typeTagTintByCardType[options.cardType] ?? CARD_TEXT_COLORS.typeTint;
+
         this.idLabel = scene.add.text(options.x, options.y - CARD_TEXT_LAYOUT.classYOffset, this.displayCardClass).setFontSize(this.baseClassFontSize)
             .setOrigin(0.5)
             .setAlign('center')
-            .setTint(0xffffff);
+            .setTint(CARD_TEXT_COLORS.classTint);
 
         this.typeLabel = scene.add.text(options.x, options.y + CARD_TEXT_LAYOUT.typeYOffset, this.resolveDisplayTypeLabel()).setFontSize(this.baseTypeFontSize)
             .setOrigin(0.5, 1)
-            .setTint(0xcde7ff);
+            .setTint(typeTagTint);
 
         this.hpLabel = scene.add.text(options.x, options.y, '').setFontSize(this.baseHpFontSize)
             .setOrigin(0, 0)
-            .setTint(0xffffff);
+            .setTint(CARD_TEXT_COLORS.hpTint);
 
         this.statusLabel = scene.add.text(options.x, options.y, '').setFontSize(this.baseHpFontSize)
             .setOrigin(0, 0)
-            .setTint(0xe2e8f0);
+            .setTint(CARD_TEXT_COLORS.statusTint);
 
         this.turnedOver = false;
         this.externallyVisible = true;
@@ -364,17 +382,20 @@ export class Card
         const effectiveScaleX = this.baseScale * (this.isSelected ? CARD_SELECTION_SCALE_MULTIPLIERS.x : 1);
         const effectiveScaleY = this.baseScale * (this.isSelected ? CARD_SELECTION_SCALE_MULTIPLIERS.y : 1);
         this.body.setScale(effectiveScaleX, effectiveScaleY);
+        this.syncFaceDownImageTransform();
         this.redrawMarks();
     }
 
     setPosition (x: number, y: number): void
     {
         this.body.setPosition(x, y);
+        this.syncFaceDownImageTransform();
     }
 
     setDepth (value: number): void
     {
         this.body.setDepth(value);
+        this.syncFaceDownImageTransform();
     }
 
     get x (): number
@@ -505,6 +526,9 @@ export class Card
             scaleX: 0,
             duration: CARD_ANIMATION.flipDurationMs,
             ease: 'Sine.easeInOut',
+            onUpdate: () => {
+                this.syncFaceDownImageTransform();
+            },
             onComplete: () => {
                 this.turnedOver = !this.turnedOver;
                 this.applyFaceState();
@@ -514,6 +538,9 @@ export class Card
                     scaleX: originalScaleX,
                     duration: CARD_ANIMATION.flipDurationMs,
                     ease: 'Sine.easeInOut',
+                    onUpdate: () => {
+                        this.syncFaceDownImageTransform();
+                    },
                     onComplete: () => {
                         this.isFlipping = false;
                         this.redrawMarks();
@@ -616,6 +643,7 @@ export class Card
         const typeFontSize = Math.max(Math.round(CARD_TEXT_LAYOUT.minTypeFontSize * UI_SCALE), Math.round(this.baseTypeFontSize * this.body.scaleY));
         const hpFontSize = Math.max(Math.round(CARD_TEXT_LAYOUT.minHpFontSize * UI_SCALE), Math.round(this.baseHpFontSize * this.body.scaleY));
         const bounds = this.body.getBounds();
+        this.syncFaceDownImageTransform();
         const boundsWidth = Math.max(1, Math.round(bounds.width));
         const hpPadding = Math.max(CARD_TEXT_LAYOUT.hpPadding, Math.round(CARD_TEXT_LAYOUT.hpPadding * this.body.scaleY));
         const typeText = this.typeLabel.text;
@@ -724,13 +752,36 @@ export class Card
         this.statusLabel.setDepth(this.body.depth + CARD_TEXT_LAYOUT.labelDepthOffset);
     }
 
+    private syncFaceDownImageTransform (): void
+    {
+        if (!this.faceDownImage) {
+            return;
+        }
+
+        const scaleX = Math.abs(this.body.scaleX);
+        const scaleY = Math.abs(this.body.scaleY);
+        const bleedX = CARD_VISUALS.faceDownTextureBleedPx * scaleX;
+        const bleedY = CARD_VISUALS.faceDownTextureBleedPx * scaleY;
+        const displayWidth = Math.max(0, (this.body.width * scaleX) + (bleedX * 2));
+        const displayHeight = Math.max(0, (this.body.height * scaleY) + (bleedY * 2));
+
+        this.faceDownImage
+            .setPosition(this.body.x, this.body.y)
+            .setDisplaySize(displayWidth, displayHeight)
+            .setDepth(this.body.depth - 0.001);
+    }
+
     private applyFaceState (): void
     {
         this.applyBorderStyle();
         this.body.setVisible(this.externallyVisible);
+        this.syncFaceDownImageTransform();
+
+        const renderWithFaceDownImage = this.turnedOver && this.faceDownImage !== null;
+        this.faceDownImage?.setVisible(this.externallyVisible && renderWithFaceDownImage);
 
         if (this.turnedOver) {
-            this.body.setFillStyle(CARD_VISUALS.faceDownFillColor, 1);
+            this.body.setFillStyle(CARD_VISUALS.faceDownFillColor, renderWithFaceDownImage ? 0 : 1);
             this.idLabel.setVisible(false);
             this.typeLabel.setVisible(false);
             this.refreshHpLabel();
@@ -739,9 +790,10 @@ export class Card
             return;
         }
 
+        this.faceDownImage?.setVisible(false);
         this.body.setFillStyle(this.baseColor, 1);
-    this.idLabel.setVisible(this.externallyVisible);
-    this.typeLabel.setVisible(this.externallyVisible);
+        this.idLabel.setVisible(this.externallyVisible);
+        this.typeLabel.setVisible(this.externallyVisible);
         this.refreshHpLabel();
         this.refreshStatusLabel();
         this.redrawMarks();
@@ -816,6 +868,8 @@ export class Card
             this.strokeTween = undefined;
         }
 
+        this.faceDownImage?.clearMask(true);
+        this.faceDownImage?.destroy();
         this.body.destroy();
         this.idLabel.destroy();
         this.typeLabel.destroy();

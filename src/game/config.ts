@@ -26,10 +26,10 @@ export const BASE_HEIGHT = 720;
 
 export const BOARD_SCALE = 0.8;
 
-export const CARD_BASE_WIDTH = 72;
+export const CARD_BASE_WIDTH = 86;
 export const CARD_BASE_HEIGHT = 120;
-export const CARD_BORDER_WIDTH = 2;
-export const CARD_SELECTED_BORDER_WIDTH = 6;
+export const CARD_BORDER_WIDTH = 4;
+export const CARD_SELECTED_BORDER_WIDTH = 8;
 
 export const AVGE_CARD_TYPES = ['NONE', 'WW', 'PERC', 'PIANO', 'STRING', 'GUITAR', 'CHOIR', 'BRASS'] as const;
 export type AVGECardType = typeof AVGE_CARD_TYPES[number];
@@ -46,7 +46,7 @@ export const AVGE_CARD_TYPE_BORDER_COLORS: Record<AVGECardType, number> = {
 } as const;
 
 export const GAME_CARD_TYPE_FILL_COLORS: Record<'character' | 'tool' | 'item' | 'stadium' | 'supporter', number> = {
-	character: 0xe76f51,
+	character: 0xF0A047,
 	tool: 0x457b9d,
 	item: 0x2a9d8f,
 	stadium: 0x6d597a,
@@ -70,7 +70,10 @@ export const CARD_DEFAULTS = {
 } as const;
 
 export const CARD_VISUALS = {
-	faceDownFillColor: 0x1f2937
+	faceDownFillColor: 0x1f2937,
+	faceDownTextureKey: 'card-face-down',
+	faceDownTexturePath: 'card/card_back.svg',
+	faceDownTextureBleedPx: 4
 } as const;
 
 export const CARD_TEXT_LAYOUT = {
@@ -105,6 +108,20 @@ export const CARD_TEXT_LAYOUT = {
 	baseHpFontSize: 10.8
 } as const;
 
+export const CARD_TEXT_COLORS = {
+	classTint: 0xEDEDED,
+	typeTint: 0xD1D1D1,
+	typeTagTintByCardType: {
+		character: 0xD1D1D1,
+		tool: 0xD1D1D1,
+		item: 0xD1D1D1,
+		stadium: 0xD1D1D1,
+		supporter: 0xD1D1D1
+	},
+	hpTint: 0xEDEDED,
+	statusTint: 0xEDEDED
+} as const;
+
 export const CARD_ANIMATION = {
 	flipDurationMs: 110,
 	selectionDurationMs: 140
@@ -130,7 +147,7 @@ export const CARDHOLDER_SPACING_MULTIPLIERS = {
 	activeRowOffset: 0.5,
 	benchFromActive: 1.0,
 	handFromBench: 1.0,
-	sideFromActiveX: 3
+	sideFromActiveX: 2
 } as const;
 
 // Horizontal inner padding used when laying out cards inside holders.
@@ -138,7 +155,7 @@ export const CARDHOLDER_LAYOUT_SIDE_PADDING_MULTIPLIER = 0.35;
 
 export const ENERGYHOLDER_LAYOUT = {
 	widthMultiplier: 2,
-	heightMultiplier: 2.25,
+	heightMultiplier: 2.75,
 	xOffsetMultiplier: 1.875,
 	verticalSpreadMultiplier: 0.95,
 	stadiumClearanceWidthMultiplier: 0.2
@@ -246,7 +263,7 @@ export const GAME_PREVIEW_LAYOUT = {
 	cardFillAlpha: 1,
 	classFontSize: 19.2,
 	classFontSizeMin: 16.8,
-	typeFontSize: 16.8,
+	typeFontSize: 18,
 	typeFontSizeMin: 16.8,
 	hpFontSize: 13.2,
 	hpFontSizeMin: 12,
@@ -669,7 +686,7 @@ export const GAME_LAYOUT = {
 	energyTokenCountPerPlayer: 10,
 	energyTokenP1IdStart: 1,
 	energyTokenP2IdStart: 11,
-	energyStadiumOffsetMultiplier: 1.8
+	energyStadiumOffsetMultiplier: 2.15
 } as const;
 
 export const GAME_HP_PULSE_ANIMATION = {
@@ -714,6 +731,9 @@ export const ENTITY_VISUALS = {
 	cardHolderDepth: 1,
 	cardHolderLabelBaseSize: 18,
 	cardHolderLabelMinSize: 12,
+	cardHolderPileLabelOutsideGapMinPx: 6,
+	cardHolderPileLabelOutsideGapLabelSizeRatio: 0.45,
+	cardHolderPileLabelNudgeWidthRatio: 0.3,
 	cardHolderLabelTint: 0xffffff,
 	cardHolderLabelAlpha: 0.68,
 	cardHolderLabelDepth: 2,
@@ -722,7 +742,7 @@ export const ENTITY_VISUALS = {
 	energyHolderStrokeColor: 0xffffff,
 	energyHolderStrokeAlpha: 0.9,
 	energyHolderDepth: 1,
-	energyHolderLabelBaseSize: 14,
+	energyHolderLabelBaseSize: 18,
 	energyHolderLabelMinSize: 11,
 	energyHolderLabelTint: 0xffffff,
 	energyHolderLabelAlpha: 0.68,

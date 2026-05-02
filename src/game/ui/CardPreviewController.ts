@@ -5,6 +5,7 @@ import {
     BASE_HEIGHT,
     BASE_WIDTH,
     CARD_BORDER_WIDTH,
+    CARD_TEXT_COLORS,
     CARD_VISUALS,
     GAME_DEPTHS,
     GAME_HEIGHT,
@@ -162,6 +163,7 @@ export class CardPreviewController
     private readonly scene: Scene;
     private panel: Phaser.GameObjects.Rectangle | null;
     private body: Phaser.GameObjects.Rectangle | null;
+    private faceDownImage: Phaser.GameObjects.Image | null;
     private idText: Phaser.GameObjects.Text | null;
     private typeText: Phaser.GameObjects.Text | null;
     private hpText: Phaser.GameObjects.Text | null;
@@ -173,6 +175,7 @@ export class CardPreviewController
         this.scene = scene;
         this.panel = null;
         this.body = null;
+        this.faceDownImage = null;
         this.idText = null;
         this.typeText = null;
         this.hpText = null;
@@ -206,6 +209,18 @@ export class CardPreviewController
             .setStrokeStyle(CARD_BORDER_WIDTH, GAME_PREVIEW_LAYOUT.panelStrokeColor, 1)
             .setDepth(GAME_DEPTHS.previewCard)
             .setVisible(false);
+
+        if (this.scene.textures.exists(CARD_VISUALS.faceDownTextureKey)) {
+            this.faceDownImage = this.scene.add.image(panelX, previewCardCenterY, CARD_VISUALS.faceDownTextureKey)
+                .setDisplaySize(
+                    previewCardWidth + (CARD_VISUALS.faceDownTextureBleedPx * 2),
+                    previewCardHeight + (CARD_VISUALS.faceDownTextureBleedPx * 2)
+                )
+                .setDepth(GAME_DEPTHS.previewCard - 0.01)
+                .setVisible(false);
+
+            this.faceDownImage.setMask(this.body.createGeometryMask());
+        }
 
         this.idText = this.scene.add.text(panelX, previewCardCenterY - Math.round(previewCardHeight * GAME_PREVIEW_LAYOUT.classYOffsetRatio), '').setFontSize(Math.max(GAME_PREVIEW_LAYOUT.classFontSizeMin, Math.round(GAME_PREVIEW_LAYOUT.classFontSize * UI_SCALE)))
             .setOrigin(0.5)
@@ -263,12 +278,14 @@ export class CardPreviewController
         }
 
         const renderAsFaceDown = card.isTurnedOver() && options?.forceFaceUp !== true;
+        const renderWithFaceDownImage = renderAsFaceDown && this.faceDownImage !== null;
         const ownerUsername = readSingleLineField(options?.ownerUsername, card.getOwnerId().toUpperCase());
 
         this.panel.setVisible(true);
+        this.faceDownImage?.setVisible(renderWithFaceDownImage);
         this.body
             .setVisible(true)
-            .setFillStyle(renderAsFaceDown ? CARD_VISUALS.faceDownFillColor : card.baseColor, 1)
+            .setFillStyle(renderAsFaceDown ? CARD_VISUALS.faceDownFillColor : card.baseColor, renderWithFaceDownImage ? 0 : 1)
             .setStrokeStyle(CARD_BORDER_WIDTH, card.getBorderColor(), 1);
 
         this.idText.setVisible(true).setText(normalizeCardClassDisplayLabel(card.getCardClass()));
@@ -285,7 +302,8 @@ export class CardPreviewController
         const previewTypeText = card.getCardType() === 'character'
             ? (String(card.getAVGECardType() ?? '').trim().toUpperCase() || 'NONE')
             : card.getCardType().toUpperCase();
-        this.typeText.setVisible(true).setText(previewTypeText);
+        const previewTypeTint = CARD_TEXT_COLORS.typeTagTintByCardType[card.getCardType()] ?? CARD_TEXT_COLORS.typeTint;
+        this.typeText.setVisible(true).setTint(previewTypeTint).setText(previewTypeText);
         this.typeText.setFontSize(fitTextToSingleLine({
             scene: this.scene,
             text: this.typeText.text,
@@ -504,6 +522,7 @@ export class CardPreviewController
     {
         this.panel?.setVisible(false);
         this.body?.setVisible(false);
+        this.faceDownImage?.setVisible(false);
         this.idText?.setVisible(false);
         this.typeText?.setVisible(false);
         this.hpText?.setVisible(false);

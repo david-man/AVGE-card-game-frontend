@@ -1,5 +1,6 @@
 import { Scene, GameObjects } from 'phaser';
 import {
+    CARD_VISUALS,
     DECK_BUILDER_TRANSFER_ICON_ASSETS,
     DECK_BUILDER_TRANSFER_ICON_LAYOUT,
     DECK_BUILDER_TEXT_LAYOUT,
@@ -281,6 +282,7 @@ export class DeckBuilder extends Scene
     {
         this.load.setPath('assets');
         this.load.image('background', 'background/background_element.png');
+        this.load.image(CARD_VISUALS.faceDownTextureKey, CARD_VISUALS.faceDownTexturePath);
         this.load.image(DECK_BUILDER_TRANSFER_ICON_ASSETS.renameKey, DECK_BUILDER_TRANSFER_ICON_ASSETS.renamePath);
         this.load.image(DECK_BUILDER_TRANSFER_ICON_ASSETS.exportKey, DECK_BUILDER_TRANSFER_ICON_ASSETS.exportPath);
         this.load.image(DECK_BUILDER_TRANSFER_ICON_ASSETS.importKey, DECK_BUILDER_TRANSFER_ICON_ASSETS.importPath);

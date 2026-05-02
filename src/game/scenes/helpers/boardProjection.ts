@@ -109,6 +109,9 @@ export const applyCardVisibilityByView = (scene: BoardProjectionScene): void => 
         card.setVisibility(true);
         card.setTurnedOver(!zoneVisible);
     }
+
+    // Keep deck/discard count labels in sync as holder contents change.
+    updateZoneLabelsForView(scene);
 };
 
 export const updateZoneLabelsForView = (scene: BoardProjectionScene): void => {
@@ -132,15 +135,37 @@ export const updateZoneLabelsForView = (scene: BoardProjectionScene): void => {
     };
 
     const setCardHolderLabel = (holder: CardHolder, label: string): void => {
+        const isDiscard = holder.id.endsWith('-discard');
+        const isDeck = holder.id.endsWith('-deck');
+        const placeOutsideHolder = isDiscard || isDeck;
+        const placeAboveHolder = placeOutsideHolder && holder.y <= GAME_CENTER_Y;
+        const labelTopGap = Math.max(
+            ENTITY_VISUALS.cardHolderPileLabelOutsideGapMinPx,
+            Math.round(ENTITY_VISUALS.cardHolderLabelBaseSize * UI_SCALE * ENTITY_VISUALS.cardHolderPileLabelOutsideGapLabelSizeRatio)
+        );
+        const horizontalNudge = Math.round(holder.width * ENTITY_VISUALS.cardHolderPileLabelNudgeWidthRatio);
+        const labelX = holder.x + (isDiscard ? -horizontalNudge : (isDeck ? horizontalNudge : 0));
+        const labelY = placeOutsideHolder
+            ? (placeAboveHolder
+                ? holder.y - Math.round(holder.height / 2) - labelTopGap
+                : holder.y + Math.round(holder.height / 2) + labelTopGap)
+            : holder.y;
+        const displayLabel = placeOutsideHolder
+            ? `${label}(${holder.cards.length})`
+            : label;
+
         const preferredSize = Math.max(ENTITY_VISUALS.cardHolderLabelMinSize, Math.round(ENTITY_VISUALS.cardHolderLabelBaseSize * UI_SCALE));
         const fitted = fitTextToTwoLines({
             scene,
-            text: label,
+            text: displayLabel,
             preferredSize,
             minSize: Math.max(ENTITY_VISUALS.cardHolderLabelMinSize, Math.round(preferredSize * 0.72)),
-            maxWidth: Math.max(10, Math.round(holder.width * 0.9))
+            maxWidth: Math.max(10, Math.round(holder.width * (placeOutsideHolder ? 1.6 : 0.9)))
         });
+
         holder.labelText
+            .setPosition(labelX, labelY)
+            .setOrigin(0.5, placeOutsideHolder ? (placeAboveHolder ? 1 : 0) : 0.5)
             .setAlign('center')
             .setText(fitted.text)
             .setFontSize(fitted.fontSize);
