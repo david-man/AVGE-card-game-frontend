@@ -704,7 +704,7 @@ export class DeckBuilder extends Scene
         void this.loadDeck();
 
         this.keyboardKeydownHandler = (event: KeyboardEvent) => {
-            this.handleSearchKeydown(event);
+            this.handleKeydown(event);
         };
         this.input.keyboard?.on('keydown', this.keyboardKeydownHandler);
 
@@ -917,6 +917,20 @@ export class DeckBuilder extends Scene
     private handleSearchKeydown (event: KeyboardEvent): void
     {
         sceneHandleSearchKeydown(this, event, SEARCH_RESULTS_PER_PAGE, CARD_CATALOG);
+    }
+
+    private handleKeydown (event: KeyboardEvent): void
+    {
+        const isSaveShortcut = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's';
+        if (isSaveShortcut) {
+            event.preventDefault();
+            if (!event.repeat) {
+                void this.saveDeck();
+            }
+            return;
+        }
+
+        this.handleSearchKeydown(event);
     }
 
     public getSearchFilteredCards (): CardCatalogEntry[]

@@ -2,7 +2,23 @@ import { io, Socket } from 'socket.io-client';
 import cardPreviewDescriptionsJson from './data/cardPreviewDescriptions.json';
 import { parseBackendProtocolPackets } from './protocol/backendResponseAdapter';
 
-const DEFAULT_ROUTER_BASE_URL = 'http://127.0.0.1:5600';
+const normalizeBaseUrl = (value: string): string => value.trim().replace(/\/$/, '');
+const FALLBACK_ROUTER_BASE_URL = 'http://127.0.0.1:5600';
+
+const readRuntimeRouterBaseUrl = (): string | null => {
+    if (typeof window === 'undefined') {
+        return null;
+    }
+
+    const configuredBaseUrl = (window as Window & { AVGE_ROUTER_BASE_URL?: string }).AVGE_ROUTER_BASE_URL;
+    if (typeof configuredBaseUrl === 'string' && configuredBaseUrl.trim().length > 0) {
+        return normalizeBaseUrl(configuredBaseUrl);
+    }
+
+    return null;
+};
+
+const DEFAULT_ROUTER_BASE_URL = readRuntimeRouterBaseUrl() ?? FALLBACK_ROUTER_BASE_URL;
 
 export const ROUTER_SESSION_ID_STORAGE_KEY = 'avge_router_session_id';
 export const ROUTER_USERNAME_STORAGE_KEY = 'avge_router_username';
@@ -173,7 +189,6 @@ export const subscribeToRouterSessionEvents = (
     };
 };
 
-const normalizeBaseUrl = (value: string): string => value.trim().replace(/\/$/, '');
 const ROUTER_SESSION_COOKIE_NAME = 'avge_session';
 
 const hasCookie = (name: string): boolean => {
@@ -202,16 +217,7 @@ const readRouterSessionIdFromStorage = (): string => {
 };
 
 export const getRouterBaseUrl = (): string => {
-    if (typeof window === 'undefined') {
-        return DEFAULT_ROUTER_BASE_URL;
-    }
-
-    const configuredBaseUrl = (window as Window & { AVGE_ROUTER_BASE_URL?: string }).AVGE_ROUTER_BASE_URL;
-    if (typeof configuredBaseUrl === 'string' && configuredBaseUrl.trim().length > 0) {
-        return normalizeBaseUrl(configuredBaseUrl);
-    }
-
-    return DEFAULT_ROUTER_BASE_URL;
+    return readRuntimeRouterBaseUrl() ?? DEFAULT_ROUTER_BASE_URL;
 };
 
 export const checkServiceHealth = async (baseUrl: string): Promise<boolean> => {
