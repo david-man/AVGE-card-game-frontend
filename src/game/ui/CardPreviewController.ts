@@ -1,5 +1,6 @@
 import { Scene } from 'phaser';
 import { Card } from '../entities';
+import { resolveCardCatalogLabel } from '../data/cardCatalog';
 import cardPreviewDescriptionsJson from '../data/cardPreviewDescriptions.json';
 import {
     BASE_HEIGHT,
@@ -69,9 +70,9 @@ const readMultiLineField = (value: unknown, fallback: string): string => {
 };
 
 const normalizeCardClassDisplayLabel = (value: string): string => {
-    const compact = value.replace(/[^a-z0-9]+/gi, '').toLowerCase();
-    if (compact === 'andreacr') {
-        return 'Andrea Condormango Rafael';
+    const catalogLabel = resolveCardCatalogLabel(value);
+    if (catalogLabel) {
+        return catalogLabel;
     }
 
     return value

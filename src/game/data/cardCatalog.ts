@@ -143,9 +143,28 @@ export const CARD_CATALOG: CardCatalogEntry[] = [
     { id: 'SteinertBasement', label: 'Steinert Basement', category: 'stadium', iconFallback: 'STE' },
     { id: 'SteinertPracticeRoom', label: 'Steinert Practice Room', category: 'stadium', iconFallback: 'STE' },
     { id: 'AVGEShowcaseSticker', label: 'AVGE Showcase Sticker', category: 'tool', iconFallback: 'AVG' },
-    { id: 'AVGETShirt', label: 'AVGET Shirt', category: 'tool', iconFallback: 'AVG' },
+    { id: 'AVGETShirt', label: 'AVGE T-Shirt', category: 'tool', iconFallback: 'AVG' },
     { id: 'Bucket', label: 'Bucket', category: 'tool', iconFallback: 'BUC' },
     { id: 'KikisHeadband', label: 'Kikis Headband', category: 'tool', iconFallback: 'KIK' },
     { id: 'MaidOutfit', label: 'Maid Outfit', category: 'tool', iconFallback: 'MAI' },
     { id: 'MusescoreSubscription', label: 'Musescore Subscription', category: 'tool', iconFallback: 'MUS' },
 ];
+
+const normalizeCardCatalogLookupKey = (value: string): string => {
+    return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
+};
+
+const CARD_CATALOG_LABEL_BY_LOOKUP_KEY = new Map<string, string>();
+for (const entry of CARD_CATALOG) {
+    CARD_CATALOG_LABEL_BY_LOOKUP_KEY.set(normalizeCardCatalogLookupKey(entry.id), entry.label);
+    CARD_CATALOG_LABEL_BY_LOOKUP_KEY.set(normalizeCardCatalogLookupKey(entry.label), entry.label);
+}
+
+export const resolveCardCatalogLabel = (value: string): string | null => {
+    const lookupKey = normalizeCardCatalogLookupKey(value);
+    if (lookupKey.length === 0) {
+        return null;
+    }
+
+    return CARD_CATALOG_LABEL_BY_LOOKUP_KEY.get(lookupKey) ?? null;
+};

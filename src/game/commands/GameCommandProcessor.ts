@@ -1,4 +1,5 @@
 import { AVGE_CARD_TYPE_BORDER_COLORS, GAME_CARD_TYPE_FILL_COLORS } from '../config';
+import { resolveCardCatalogLabel } from '../data/cardCatalog';
 
 export class GameCommandProcessor
 {
@@ -92,6 +93,15 @@ export class GameCommandProcessor
             const target = rawId.toLowerCase();
             const matchedKey = Object.keys(g.cardById).find((key) => key.toLowerCase() === target);
             return matchedKey ? g.cardById[matchedKey] : undefined;
+        };
+
+        const resolveCardDisplayLabel = (card: any): string => {
+            const rawClass = typeof card?.getCardClass === 'function' ? card.getCardClass() : '';
+            if (typeof rawClass !== 'string') {
+                return 'UNKNOWN';
+            }
+
+            return resolveCardCatalogLabel(rawClass) ?? rawClass;
         };
 
         const resolveEnergyTokenById = (rawId: string): any => {
@@ -1001,7 +1011,7 @@ export class GameCommandProcessor
                         id: canonicalId,
                         isCard: Boolean(card),
                         cardColor: card?.baseColor,
-                        cardClassLabel: card?.getCardClass(),
+                        cardClassLabel: card ? resolveCardDisplayLabel(card) : undefined,
                         cardTypeLabel: card?.getCardType().toUpperCase()
                     });
                 }
@@ -1132,7 +1142,7 @@ export class GameCommandProcessor
 
                     overlayItems.push({
                         id: card.id,
-                        cardClassLabel: card.getCardClass(),
+                        cardClassLabel: resolveCardDisplayLabel(card),
                         cardColor: card.baseColor,
                         cardTypeLabel: card.getCardType().toUpperCase(),
                         hasAtk1: card.hasAttackOne(),
@@ -1407,6 +1417,12 @@ export class GameCommandProcessor
                 return;
             }
 
+            const normalizedNotifyMessage = message
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, ' ')
+                .trim();
+            const shouldReturnToMainMenuOnDismiss = normalizedNotifyMessage === 'game error';
+
             if (g.inputOverlayController.hasActiveOverlay()) {
                 // Notify is high-priority feedback; replace any active overlay
                 // so notify dismissal can always complete and ACK can be sent.
@@ -1419,6 +1435,9 @@ export class GameCommandProcessor
             }
 
             g.setBoardInputEnabled(false);
+            if (shouldReturnToMainMenuOnDismiss && typeof g.markMatchEndedAwaitingExit === 'function') {
+                g.markMatchEndedAwaitingExit();
+            }
             const notifyTargetLabel = notifyBoth ? 'SYSTEM' : `SYSTEM -> ${g.getViewModeLabel(targetView)}`;
             g.inputOverlayController.startNotifyOverlay(notifyTargetLabel, message, () => {
                 g.appendTerminalLine('Notify dismissed.');
@@ -1429,6 +1448,15 @@ export class GameCommandProcessor
                     dismissed: true,
                     timeout_seconds: timeoutSeconds,
                 });
+
+                if (shouldReturnToMainMenuOnDismiss) {
+                    if (typeof g.returnToMainMenuAfterMatchEnd === 'function') {
+                        g.returnToMainMenuAfterMatchEnd();
+                    }
+                    else {
+                        g.scene.start('MainMenu');
+                    }
+                }
             }, timeoutSeconds);
             return;
         }
@@ -1591,7 +1619,7 @@ export class GameCommandProcessor
                     if (card) {
                         return {
                             id: card.id,
-                            cardClassLabel: card.getCardClass(),
+                            cardClassLabel: resolveCardDisplayLabel(card),
                             cardColor: card.baseColor,
                             cardTypeLabel: card.getCardType().toUpperCase(),
                             isKnownCard: true

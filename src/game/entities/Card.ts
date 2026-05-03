@@ -11,6 +11,7 @@ import {
     CARD_VISUALS,
     UI_SCALE
 } from '../config';
+import { resolveCardCatalogLabel } from '../data/cardCatalog';
 import { fitTextToMultiLine, fitTextToSingleLine, type FitTextMultiLineResult } from '../ui/overlays/textFit';
 
 export type CardType = 'character' | 'tool' | 'item' | 'stadium' | 'supporter';
@@ -215,8 +216,9 @@ export class Card
 
     private normalizeCardClassDisplayLabel (rawLabel: string): string
     {
-        if (rawLabel === 'AndreaCR') {
-            return 'Andrea Condormango Rafael';
+        const catalogLabel = resolveCardCatalogLabel(rawLabel);
+        if (catalogLabel) {
+            return catalogLabel;
         }
 
         return rawLabel

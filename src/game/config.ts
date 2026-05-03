@@ -409,6 +409,10 @@ export const MAIN_MENU_LOGO_LINK = {
 	url: 'https://www.brownavge.org/'
 } as const;
 
+export const MAIN_MENU_RULES_LINK = {
+	url: 'https://docs.google.com/document/d/1x6Qk3EtcvDHMEH2NpCon_9Jsen7W8CRuM9hVGSNBsBU/edit?tab=t.0#heading=h.oah1g7t88a7u'
+} as const;
+
 export const MAIN_MENU_LAYOUT = {
 	titleYRatio: 0.34,
 	subtitleYRatio: 0.5,
@@ -428,7 +432,9 @@ export const MAIN_MENU_LAYOUT = {
 	buttonWidthBase: 280,
 	buttonHeightBase: 84,
 	buttonYRatio: 0.68,
-	decksButtonOffsetYBase: 96
+	decksButtonOffsetYBase: 96,
+	tutorialButtonWidthRatio: 0.47,
+	tutorialRulesButtonGapBase: 16
 } as const;
 
 export const DECK_BUILDER_TEXT_LAYOUT = {
