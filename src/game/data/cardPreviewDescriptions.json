@@ -1,13 +1,13 @@
 {
   "characterDefaults": {
-    "atk1Description": "(add atk1 description)",
-    "atk2Description": "(add atk2 description)",
-    "abilityName": "(add ability name)",
-    "abilityDescription": "(add ability description)",
-    "flavorText": "(add flavor text)"
+    "atk1Description": "ATK1 Description Goes Here",
+    "atk2Description": "ATK2 Description Goes Here",
+    "abilityName": "Ability Name",
+    "abilityDescription": "Description Goes Here",
+    "flavorText": "Flavortext Goes Here"
   },
   "otherCardDefaults": {
-    "abilityDescription": "(add ability description)"
+    "abilityDescription": "Description Goes Here"
   },
   "cards": {
     "Alice Wang": {
@@ -878,10 +878,6 @@
       "abilityName": "Ability"
     },
     "Steinert Basement": {
-      "abilityName": "Ability",
-      "abilityDescription": "(add ability description)"
-    },
-    "Steinert Basement Studio": {
       "abilityDescription": "Duo Queue: If you have exactly two character cards in play at the start of your turn, draw two cards instead of one.\n15 Minute Walk: Each attack costs 1 additional energy."
     },
     "Steinert Practice Room": {
@@ -893,11 +889,8 @@
       "abilityName": "Ability"
     },
     "Victoria": {
-      "abilityName": "Ability",
-      "abilityDescription": "(add ability description)"
-    },
-    "Victoria Chen": {
-      "abilityDescription": "Section Leader: Choose a type. Search for and reveal up two characters of that type in your deck. Put one on the top of your deck and the other in your hand."
+      "abilityName": "Section Leader",
+      "abilityDescription": "Choose a type. Search for and reveal up two characters of that type in your deck. Put one on the top of your deck and the other in your hand."
     },
     "Video Camera": {
       "abilityDescription": "Move an Item from your discard pile to the top of your deck.",

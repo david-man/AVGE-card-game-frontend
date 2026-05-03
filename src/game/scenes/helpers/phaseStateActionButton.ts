@@ -91,9 +91,14 @@ export const handlePhaseStateActionButtonClick = (scene: PhaseStateActionScene):
         return;
     }
 
-    scene.appendTerminalLine(`Phase action clicked: ${scene.phaseStateActionButton.action}`);
+    const action = scene.phaseStateActionButton.action;
+    if (typeof scene.canUsePhaseStateAction === 'function' && !scene.canUsePhaseStateAction(action)) {
+        return;
+    }
 
-    if (scene.phaseStateActionButton.action === 'phase2-attack') {
+    scene.appendTerminalLine(`Phase action clicked: ${action}`);
+
+    if (action === 'phase2-attack') {
         scene.emitBackendEvent('phase2_attack_button_clicked', {
             view_mode: scene.getViewModeLabel(scene.activeViewMode),
             player_turn: scene.getPlayerTurnLabel(scene.playerTurn),
@@ -102,7 +107,7 @@ export const handlePhaseStateActionButtonClick = (scene: PhaseStateActionScene):
         return;
     }
 
-    if (scene.phaseStateActionButton.action === 'atk-skip') {
+    if (action === 'atk-skip') {
         scene.emitBackendEvent('atk_skip_button_clicked', {
             view_mode: scene.getViewModeLabel(scene.activeViewMode),
             player_turn: scene.getPlayerTurnLabel(scene.playerTurn),
@@ -111,7 +116,7 @@ export const handlePhaseStateActionButtonClick = (scene: PhaseStateActionScene):
         return;
     }
 
-    if (scene.phaseStateActionButton.action === 'init-done') {
+    if (action === 'init-done') {
         scene.submitInitSetupDone();
     }
 };
@@ -128,6 +133,11 @@ export const refreshPhaseStateActionButton = (scene: PhaseStateActionScene): voi
         return;
     }
 
+    if (typeof scene.shouldHidePhaseStateActionButton === 'function' && scene.shouldHidePhaseStateActionButton()) {
+        hidePhaseStateActionButton(scene);
+        return;
+    }
+
     const isCurrentTurnView = scene.activeViewMode === scene.playerTurn;
     const isPlayerView = scene.activeViewMode === 'p1' || scene.activeViewMode === 'p2';
     if (scene.isPregameInitActive()) {
@@ -137,7 +147,13 @@ export const refreshPhaseStateActionButton = (scene: PhaseStateActionScene): voi
         }
 
         const buttonText = scene.initSetupConfirmed ? 'Waiting...' : 'Done';
-        renderPhaseStateActionButton(scene, buttonText, scene.initSetupConfirmed ? null : 'init-done');
+        const nextAction = scene.initSetupConfirmed ? null : 'init-done';
+        if (nextAction && typeof scene.canUsePhaseStateAction === 'function' && !scene.canUsePhaseStateAction(nextAction)) {
+            hidePhaseStateActionButton(scene);
+            return;
+        }
+
+        renderPhaseStateActionButton(scene, buttonText, nextAction);
         return;
     }
 
@@ -161,6 +177,11 @@ export const refreshPhaseStateActionButton = (scene: PhaseStateActionScene): voi
     else if (scene.gamePhase === 'atk') {
         buttonText = '->skip';
         nextAction = 'atk-skip';
+    }
+
+    if (nextAction && typeof scene.canUsePhaseStateAction === 'function' && !scene.canUsePhaseStateAction(nextAction)) {
+        hidePhaseStateActionButton(scene);
+        return;
     }
 
     renderPhaseStateActionButton(scene, buttonText, nextAction);

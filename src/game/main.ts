@@ -2,19 +2,21 @@ import { Game as MainGame } from './scenes/Game';
 import { DeckBuilder } from './scenes/DeckBuilder';
 import { Login } from './scenes/Login';
 import { MainMenu } from './scenes/MainMenu';
+import { Tutorial } from './scenes/Tutorial';
 import { Boot } from './scenes/Boot';
 import { Preloader } from './scenes/Preloader';
 import { AUTO, Game } from 'phaser';
 import {
     FONT_STYLESHEET,
     FONT_TTF,
-    GAME_HEIGHT,
-    GAME_WIDTH,
+    resolveResponsiveGameSize,
     UI_FONT_FAMILY,
     UI_FONT_FAMILY_NAME,
     UI_RECTANGLE_CORNER_RADIUS,
     UI_RECTANGLE_CORNER_RADIUS_MAX_WIDTH_RATIO
 } from './config';
+
+const initialResponsiveGameSize = resolveResponsiveGameSize();
 
 // Modern Phaser resolution control: zoom scales the internal render resolution.
 
@@ -25,10 +27,10 @@ const config: Phaser.Types.Core.GameConfig = {
     parent: 'game-container',
     backgroundColor: '#000000',
     scale: {
-        mode: Phaser.Scale.ENVELOP,
+        mode: Phaser.Scale.FIT,
         autoCenter: Phaser.Scale.CENTER_BOTH,
-        width: GAME_WIDTH,
-        height: GAME_HEIGHT,
+        width: initialResponsiveGameSize.width,
+        height: initialResponsiveGameSize.height,
         zoom: 1
     },
     scene: [
@@ -37,6 +39,7 @@ const config: Phaser.Types.Core.GameConfig = {
         Login,
         DeckBuilder,
         MainMenu,
+        Tutorial,
         MainGame
     ],
 };
@@ -211,12 +214,67 @@ const installConfiguredFont = (): void => {
     document.body.style.fontFamily = UI_FONT_FAMILY;
 };
 
+const installViewportResizeSync = (game: Game): void => {
+    if (typeof window === 'undefined') {
+        return;
+    }
+
+    let pendingFrame: number | null = null;
+    let previousWidth = game.scale.gameSize.width;
+    let previousHeight = game.scale.gameSize.height;
+
+    const applyResize = (): void => {
+        pendingFrame = null;
+
+        const nextSize = resolveResponsiveGameSize();
+        if (nextSize.width !== previousWidth || nextSize.height !== previousHeight) {
+            previousWidth = nextSize.width;
+            previousHeight = nextSize.height;
+            game.scale.setGameSize(nextSize.width, nextSize.height);
+        }
+
+        game.scale.refresh();
+    };
+
+    const scheduleResize = (): void => {
+        if (pendingFrame !== null) {
+            return;
+        }
+
+        pendingFrame = window.requestAnimationFrame(() => {
+            applyResize();
+        });
+    };
+
+    const visualViewport = window.visualViewport;
+    window.addEventListener('resize', scheduleResize);
+    window.addEventListener('orientationchange', scheduleResize);
+    visualViewport?.addEventListener('resize', scheduleResize);
+    visualViewport?.addEventListener('scroll', scheduleResize);
+
+    game.events.once('destroy', () => {
+        window.removeEventListener('resize', scheduleResize);
+        window.removeEventListener('orientationchange', scheduleResize);
+        visualViewport?.removeEventListener('resize', scheduleResize);
+        visualViewport?.removeEventListener('scroll', scheduleResize);
+
+        if (pendingFrame !== null) {
+            window.cancelAnimationFrame(pendingFrame);
+            pendingFrame = null;
+        }
+    });
+
+    scheduleResize();
+};
+
 const StartGame = (parent: string) => {
     installConfiguredFont();
     installGlobalPhaserTextFontDefaults();
     installGlobalPhaserRectangleRounding();
 
-    return new Game({ ...config, parent });
+    const game = new Game({ ...config, parent });
+    installViewportResizeSync(game);
+    return game;
 
 }
 

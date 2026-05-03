@@ -1,5 +1,13 @@
 import type { BackendProtocolPacket } from '../Network';
 
+type BackendCommandPacketBody = {
+    command: string;
+    command_id: number;
+    target_slots?: string[];
+    response_category: string;
+    response_payload?: Record<string, unknown>;
+};
+
 export type BackendCommandResponseCategory =
     | 'replay_command'
     | 'query_input'
@@ -24,11 +32,69 @@ export type ParsedBackendProtocolPacket =
         kind: 'command';
         packet: BackendProtocolPacket;
         command: string;
-        commandId: number | null;
+        commandId: number;
         targetSlots: string[];
         category: BackendCommandResponseCategory;
         payload: Record<string, unknown> | null;
     };
+
+const isBackendCommandPacketBody = (value: unknown): value is BackendCommandPacketBody => {
+    if (typeof value !== 'object' || value === null) {
+        return false;
+    }
+
+    const body = value as {
+        command?: unknown;
+        command_id?: unknown;
+        target_slots?: unknown;
+        response_category?: unknown;
+        response_payload?: unknown;
+    };
+
+    if (typeof body.command !== 'string' || body.command.trim().length === 0) {
+        return false;
+    }
+
+    const hasValidCommandId = Number.isInteger(body.command_id);
+    const hasValidTargetSlots = body.target_slots === undefined
+        || (Array.isArray(body.target_slots) && body.target_slots.every((slot) => typeof slot === 'string'));
+    const hasValidCategory = typeof body.response_category === 'string' && body.response_category.trim().length > 0;
+    const hasValidPayload = body.response_payload === undefined
+        || (typeof body.response_payload === 'object' && body.response_payload !== null);
+
+    return hasValidCommandId && hasValidTargetSlots && hasValidCategory && hasValidPayload;
+};
+
+export const isBackendProtocolPacket = (value: unknown): value is BackendProtocolPacket => {
+    if (typeof value !== 'object' || value === null) {
+        return false;
+    }
+
+    const packet = value as Partial<BackendProtocolPacket>;
+    const hasPacketEnvelope = Number.isInteger(packet.SEQ)
+        && typeof packet.IsResponse === 'boolean'
+        && (packet.PacketType === 'environment' || packet.PacketType === 'command' || packet.PacketType === 'init_state')
+        && typeof packet.Body === 'object'
+        && packet.Body !== null;
+
+    if (!hasPacketEnvelope) {
+        return false;
+    }
+
+    if (packet.PacketType === 'command') {
+        return isBackendCommandPacketBody(packet.Body);
+    }
+
+    return true;
+};
+
+export const parseBackendProtocolPackets = (value: unknown): BackendProtocolPacket[] => {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+
+    return value.filter((candidate): candidate is BackendProtocolPacket => isBackendProtocolPacket(candidate));
+};
 
 const normalizeCommandCategory = (rawCategory: string): BackendCommandResponseCategory => {
     const normalized = rawCategory.trim().toLowerCase();
@@ -66,10 +132,12 @@ const parseCommandPacket = (packet: BackendProtocolPacket): ParsedBackendProtoco
         return null;
     }
 
+    if (!Number.isInteger(body.command_id)) {
+        return null;
+    }
+
     const command = rawCommand.trim();
-    const commandId = Number.isInteger(body.command_id)
-        ? (body.command_id as number)
-        : null;
+    const commandId = body.command_id as number;
 
     const targetSlots = Array.isArray(body.target_slots)
         ? body.target_slots.filter((value): value is string => typeof value === 'string')

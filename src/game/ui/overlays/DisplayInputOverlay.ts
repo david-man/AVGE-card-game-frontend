@@ -37,6 +37,24 @@ export class DisplayInputOverlay
         this.winnerOverlayAudioToken = 0;
     }
 
+    private pinObjectToViewport (object: Phaser.GameObjects.GameObject): void
+    {
+        const candidate = object as Phaser.GameObjects.GameObject & {
+            setScrollFactor?: (x: number, y?: number) => Phaser.GameObjects.GameObject;
+        };
+
+        if (typeof candidate.setScrollFactor === 'function') {
+            candidate.setScrollFactor(0);
+        }
+    }
+
+    private pinActiveObjectsToViewport (): void
+    {
+        for (const object of this.activeObjects) {
+            this.pinObjectToViewport(object);
+        }
+    }
+
     hasActiveOverlay (): boolean
     {
         return this.activeObjects.length > 0;
@@ -258,6 +276,7 @@ export class DisplayInputOverlay
         }
 
         this.activeObjects.push(clickBackdrop, panel, title, body, closeButton, closeLabel, timeoutFrame);
+        this.pinActiveObjectsToViewport();
     }
 
     startRevealOverlay (
@@ -516,6 +535,7 @@ export class DisplayInputOverlay
         }
 
         this.activeObjects.push(closeButton, closeLabel, timeoutFrame);
+        this.pinActiveObjectsToViewport();
     }
 
     startWinnerOverlay (
@@ -631,5 +651,6 @@ export class DisplayInputOverlay
         }
 
         this.activeObjects.push(backdrop, panel, title, winnerText, menuButton, menuLabel);
+        this.pinActiveObjectsToViewport();
     }
 }

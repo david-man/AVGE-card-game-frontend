@@ -194,6 +194,7 @@ export const drainQueuedNotifyCommands = (scene: ProtocolFlowScene): void => {
         }
 
         const nextCommand = nextEntry.command;
+        const nextCommandId = nextEntry.commandId;
 
         const replayError = executeBackendReplayCommand(scene, nextCommand);
         scene.executeBackendAnimationPayload(nextCommand, nextEntry.payload);
@@ -201,6 +202,7 @@ export const drainQueuedNotifyCommands = (scene: ProtocolFlowScene): void => {
 
         if (scene.inputOverlayController.hasActiveOverlay()) {
             scene.pendingNotifyCommand = nextCommand;
+            scene.pendingNotifyCommandId = nextCommandId;
             setInputAcknowledged(scene, false);
             return;
         }
@@ -210,6 +212,7 @@ export const drainQueuedNotifyCommands = (scene: ProtocolFlowScene): void => {
         scene.emitBackendEvent('terminal_log', {
             line: 'ACK backend_update_processed',
             command: nextCommand,
+            command_id: nextCommandId,
             apply_error: replayError,
         });
     }
@@ -221,7 +224,11 @@ export const applyBackendCommandPacket = (
 ): void => {
     const command = packet.command;
     if (packet.category === 'query_notify') {
-        scene.pendingNotifyCommandQueue.push({ command, payload: packet.payload });
+        scene.pendingNotifyCommandQueue.push({
+            command,
+            commandId: packet.commandId,
+            payload: packet.payload,
+        });
         setInputAcknowledged(scene, false);
         drainQueuedNotifyCommands(scene);
         return;
@@ -232,11 +239,18 @@ export const applyBackendCommandPacket = (
 
     if (packet.category === 'query_input') {
         scene.pendingInputCommand = command;
+        scene.pendingInputCommandId = packet.commandId;
         setInputAcknowledged(scene, true);
         return;
     }
 
-    const action = command.split(/\s+/, 1)[0]?.toLowerCase() ?? '';
+    const commandParts = command.includes(':;:')
+        ? command
+            .split(':;:')
+            .map((part) => part.trim())
+            .filter((part) => part.length > 0)
+        : command.trim().split(/\s+/);
+    const action = commandParts[0]?.toLowerCase() ?? '';
     const isUnlockInput = action === 'unlock-input' || action === 'unlock_input';
     if (packet.category === 'lock_state' && isUnlockInput) {
         scene.awaitingRemoteNotifyAck = false;
@@ -244,6 +258,7 @@ export const applyBackendCommandPacket = (
         scene.emitBackendEvent('terminal_log', {
             line: 'ACK backend_update_processed',
             command,
+            command_id: packet.commandId,
             apply_error: replayError,
         });
         return;
@@ -260,6 +275,7 @@ export const applyBackendCommandPacket = (
     scene.emitBackendEvent('terminal_log', {
         line: 'ACK backend_update_processed',
         command,
+        command_id: packet.commandId,
         apply_error: replayError,
     });
 };
@@ -317,5 +333,6 @@ export const resetBoardEntitiesForAuthoritativeEnvironment = (scene: ProtocolFlo
     scene.energyDragStartPositionById.clear();
     scene.energyDragDistanceById.clear();
     scene.pendingInputCommand = null;
+    scene.pendingInputCommandId = null;
     scene.protocolRecoveryInProgress = false;
 };

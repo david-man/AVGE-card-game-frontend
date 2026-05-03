@@ -1,18 +1,10 @@
 import { Scene } from 'phaser';
-import { Socket } from 'socket.io-client';
 
 import { GameCommandProcessor } from '../commands/GameCommandProcessor';
-import { Card, CardHolder, EnergyHolder, EnergyToken, PlayerId } from '../entities';
-import {
-    BackendProtocolPacket,
-    FrontendProtocolPacket,
-    getRouterBaseUrl,
-    ROUTER_SESSION_ID_STORAGE_KEY,
-} from '../Network';
-import { ParsedBackendProtocolPacket } from '../protocol/backendResponseAdapter';
+import { Card, CardHolder, CardType, EnergyHolder, EnergyToken, PlayerId } from '../entities';
 import { BoardInteractionController } from '../ui/BoardInteractionController';
 import { CardPreviewController } from '../ui/CardPreviewController';
-import { InputOverlayController } from '../ui/InputOverlayController';
+import { InputOverlayController, RevealOverlayCard } from '../ui/InputOverlayController';
 import { PhaseHudController } from '../ui/PhaseHudController';
 import { PlayerStatsHudController } from '../ui/PlayerStatsHudController';
 import { SurrenderController } from '../ui/SurrenderController';
@@ -34,40 +26,13 @@ import {
     UI_SCALE
 } from '../config';
 import {
-    checkCoreServiceHealth as sceneCheckCoreServiceHealth,
-    handleSessionSupersededLogout as sceneHandleSessionSupersededLogout,
-    markMatchEndedAwaitingExit as sceneMarkMatchEndedAwaitingExit,
-    redirectToMainMenuAfterServiceFailure as sceneRedirectToMainMenuAfterServiceFailure,
-    returnToMainMenuAfterMatchEnd as sceneReturnToMainMenuAfterMatchEnd,
-    startAuthSessionPush as sceneStartAuthSessionPush,
-    startServiceHealthMonitor as sceneStartServiceHealthMonitor,
-    stopAuthSessionPush as sceneStopAuthSessionPush,
-    stopServiceHealthMonitor as sceneStopServiceHealthMonitor,
-} from './helpers/sessionFlow';
-import {
-    activateHttpProtocolFallback as sceneActivateHttpProtocolFallback,
-    initializeProtocolSocket as sceneInitializeProtocolSocket,
-    loadOrCreateProtocolClientId as sceneLoadOrCreateProtocolClientId,
-    loadProtocolClientSlot as sceneLoadProtocolClientSlot,
-    loadProtocolReconnectToken as sceneLoadProtocolReconnectToken,
-    loadRouterSessionId as sceneLoadRouterSessionId,
-    persistProtocolClientSession as scenePersistProtocolClientSession,
-} from './helpers/protocolSession';
-import {
     executeBackendAnimationPayload as sceneExecuteBackendAnimationPayload,
 } from './helpers/backendAnimation';
 import {
     initializeBoardStateForScene,
 } from './helpers/boardSetup';
 import {
-    applyBackendCommandPacket as sceneApplyBackendCommandPacket,
-    drainQueuedNotifyCommands as sceneDrainQueuedNotifyCommands,
-    enqueueProtocolPacket as sceneEnqueueProtocolPacket,
-    executeBackendReplayCommand as sceneExecuteBackendReplayCommand,
-    handleProtocolMismatch as sceneHandleProtocolMismatch,
-    processBackendProtocolPackets as sceneProcessBackendProtocolPackets,
     resetBoardEntitiesForAuthoritativeEnvironment as sceneResetBoardEntitiesForAuthoritativeEnvironment,
-    setInputAcknowledged as sceneSetInputAcknowledged,
 } from './helpers/protocolCommandFlow';
 import {
     canInteractDuringInitOpponentDisconnect as sceneCanInteractDuringInitOpponentDisconnect,
@@ -104,8 +69,6 @@ import {
 import {
     appendTerminalLine as sceneAppendTerminalLine,
     beginSceneAnimation as sceneBeginSceneAnimation,
-    dispatchFrontendEvent as sceneDispatchFrontendEvent,
-    emitBackendEvent as sceneEmitBackendEvent,
     endSceneAnimation as sceneEndSceneAnimation,
     flushPendingBackendEvents as sceneFlushPendingBackendEvents,
     setBoardInputEnabled as sceneSetBoardInputEnabled,
@@ -164,6 +127,7 @@ import {
     refreshPhaseHud as sceneRefreshPhaseHud,
     refreshPlayerStatsHud as sceneRefreshPlayerStatsHud,
 } from './helpers/phaseHudState';
+import { TutorialFlowController } from '../tutorial/TutorialFlowController';
 
 type ViewMode = PlayerId | 'spectator';
 type GamePhase = 'no-input' | 'phase2' | 'atk';
@@ -196,6 +160,10 @@ const CRIT_PARTICLE_TEXTURE_KEY = 'crit-particle';
 const CRIT_PARTICLE_TEXTURE_PATH = 'icons/crit.png';
 const REGENERATION_PARTICLE_TEXTURE_KEY = 'regeneration-particle';
 const REGENERATION_PARTICLE_TEXTURE_PATH = 'icons/regeneration.png';
+const TUTORIAL_OPPONENT_DISCONNECT_FONT_SIZE_MIN = GAME_STATUS_TEXT_LAYOUT.opponentDisconnectFontSizeMin;
+const TUTORIAL_OPPONENT_DISCONNECT_FONT_SIZE_BASE = GAME_STATUS_TEXT_LAYOUT.opponentDisconnectFontSizeBase;
+const TUTORIAL_PHASE_STATE_ACTION_FONT_SIZE_MIN = GAME_STATUS_TEXT_LAYOUT.phaseStateActionFontSizeMin;
+const TUTORIAL_PHASE_STATE_ACTION_FONT_SIZE_BASE = GAME_STATUS_TEXT_LAYOUT.phaseStateActionFontSizeBase;
 type PlayerSetupProfile = {
     username: string;
     attributes: Partial<PlayerTurnAttributes>;
@@ -213,11 +181,7 @@ type CardHpPulseAnimationState = {
     overlayTween: Phaser.Tweens.Tween;
 };
 
-const getBackendSocketUrl = (): string => {
-    return getRouterBaseUrl();
-};
-
-export class Game extends Scene
+export class Tutorial extends Scene
 {
     camera: Phaser.Cameras.Scene2D.Camera;
     background: Phaser.GameObjects.Image;
@@ -286,11 +250,6 @@ export class Game extends Scene
         context: Record<string, unknown>;
     }>;
     backendEventSequence: number;
-    protocolAck: number;
-    protocolClientId: string;
-    protocolClientSlot: PlayerId | null;
-    protocolReconnectToken: string | null;
-    routerSessionId: string | null;
     waitingForOpponent: boolean;
     pregameInitStage: InitStage;
     initSetupConfirmed: boolean;
@@ -306,19 +265,9 @@ export class Game extends Scene
     opponentDisconnected: boolean;
     opponentDisconnectCountdownSeconds: number;
     opponentDisconnectCountdownTimer: Phaser.Time.TimerEvent | null;
-    protocolSocket: Socket | null;
-    protocolSocketFallbackToHttp: boolean;
-    protocolRecoveryInProgress: boolean;
-    protocolSendChain: Promise<void>;
-    serviceHealthTimer: Phaser.Time.TimerEvent | null;
-    serviceHealthCheckInFlight: boolean;
-    hasRedirectedToMainMenu: boolean;
-    authSessionUnsubscribe: (() => void) | null;
     matchEndedAwaitingExit: boolean;
-    pageHideHandler: ((event: Event) => void) | null;
-    beforeUnloadHandler: ((event: Event) => void) | null;
-    clientUnloadSignalSent: boolean;
     lastRevealSoundPlayedAtMs: number;
+    tutorialFlowController: TutorialFlowController | null;
 
     cardActionButtons: Array<{
         key: CardActionKey;
@@ -334,7 +283,8 @@ export class Game extends Scene
 
     constructor ()
     {
-        super('Game');
+        super('Tutorial');
+        this.tutorialFlowController = null;
     }
 
     preload ()
@@ -364,6 +314,7 @@ export class Game extends Scene
     {
         registerUiClickSoundForScene(this);
         createVolumeControlForScene(this, { placement: 'bottom-left' });
+        this.tutorialFlowController = null;
 
         this.camera = this.cameras.main;
         this.camera.setBackgroundColor(GAME_SCENE_VISUALS.backgroundColor);
@@ -417,8 +368,8 @@ export class Game extends Scene
         this.opponentDisconnectText = this.add.text(viewportCenterX, viewportCenterY, 'Other player disconnected. Waiting for reconnection...')
             .setScrollFactor(0)
             .setFontSize(Math.max(
-                GAME_STATUS_TEXT_LAYOUT.opponentDisconnectFontSizeMin,
-                Math.round(GAME_STATUS_TEXT_LAYOUT.opponentDisconnectFontSizeBase * UI_SCALE)
+            TUTORIAL_OPPONENT_DISCONNECT_FONT_SIZE_MIN,
+            Math.round(TUTORIAL_OPPONENT_DISCONNECT_FONT_SIZE_BASE * UI_SCALE)
             ))
             .setOrigin(0.5)
             .setAlign('center')
@@ -453,7 +404,7 @@ export class Game extends Scene
                     view_mode: this.getViewModeLabel(this.activeViewMode)
                 });
             },
-            canInteract: () => this.boardInputEnabled,
+            canInteract: () => this.boardInputEnabled && this.canUseSurrender(),
         });
         this.playerStatsHudController = new PlayerStatsHudController(this);
         this.phaseHudController = new PhaseHudController(this);
@@ -462,11 +413,6 @@ export class Game extends Scene
         this.commandExecutionInProgress = false;
         this.pendingBackendEvents = [];
         this.backendEventSequence = 0;
-        this.protocolAck = 0;
-        this.protocolClientId = this.loadOrCreateProtocolClientId();
-        this.protocolClientSlot = this.loadProtocolClientSlot();
-        this.protocolReconnectToken = this.loadProtocolReconnectToken();
-        this.routerSessionId = this.loadRouterSessionId();
         this.waitingForOpponent = false;
         this.pregameInitStage = 'init';
         this.initSetupConfirmed = false;
@@ -482,23 +428,8 @@ export class Game extends Scene
         this.opponentDisconnected = false;
         this.opponentDisconnectCountdownSeconds = 0;
         this.opponentDisconnectCountdownTimer = null;
-        this.protocolSocket = null;
-        this.protocolSocketFallbackToHttp = false;
-        this.protocolRecoveryInProgress = false;
-        this.protocolSendChain = Promise.resolve();
-        this.serviceHealthTimer = null;
-        this.serviceHealthCheckInFlight = false;
-        this.hasRedirectedToMainMenu = false;
-        this.authSessionUnsubscribe = null;
         this.matchEndedAwaitingExit = false;
-        this.pageHideHandler = null;
-        this.beforeUnloadHandler = null;
-        this.clientUnloadSignalSent = false;
         this.lastRevealSoundPlayedAtMs = Number.NEGATIVE_INFINITY;
-
-        if (this.routerSessionId) {
-            this.startAuthSessionPush(this.routerSessionId);
-        }
 
         initializeBoardStateForScene(this, () => this.createDefaultPlayerTurnAttributes());
 
@@ -510,22 +441,12 @@ export class Game extends Scene
         this.createPlayerStatsHud();
         this.createPhaseHud();
 
-        void this.initializeProtocolSession();
-        this.registerWindowUnloadSignals();
-        this.startServiceHealthMonitor();
-
         this.events.once('shutdown', () => {
             this.scale.off('resize', onScaleResize);
             this.stopInitStartCountdownAnimation();
             this.clearAllCardHpPulseAnimations();
-            this.stopServiceHealthMonitor();
-            this.stopAuthSessionPush();
-            this.unregisterWindowUnloadSignals();
-            if (this.protocolSocket) {
-                this.protocolSocket.removeAllListeners();
-                this.protocolSocket.disconnect();
-                this.protocolSocket = null;
-            }
+            this.tutorialFlowController?.destroy();
+            this.tutorialFlowController = null;
         });
 
         const onScaleResize = (): void => {
@@ -536,6 +457,20 @@ export class Game extends Scene
 
         this.applyBoardView(this.activeViewMode);
         this.boardInteractionController.register();
+
+        this.tutorialFlowController = new TutorialFlowController(this);
+        this.tutorialFlowController.start();
+    }
+
+    public isInteractionLockedByAnimation (): boolean
+    {
+        // This lock is only for in-flight animation/replay visuals.
+        // Input gating is controlled separately via boardInputEnabled.
+        if (this.activeSceneAnimationCount > 0) {
+            return true;
+        }
+
+        return this.cards.some((card) => card.isCurrentlyFlipping());
     }
 
     private syncViewportOverlayLayout (): void
@@ -563,64 +498,14 @@ export class Game extends Scene
         this.opponentDisconnectText.setPosition(viewportCenterX, viewportCenterY);
     }
 
-    public isInteractionLockedByAnimation (): boolean
-    {
-        // This lock is only for in-flight animation/replay visuals.
-        // Input gating is controlled separately via boardInputEnabled.
-        if (this.activeSceneAnimationCount > 0) {
-            return true;
-        }
-
-        return this.cards.some((card) => card.isCurrentlyFlipping());
-    }
-
-    private startServiceHealthMonitor (): void
-    {
-        sceneStartServiceHealthMonitor(this, () => {
-            void this.checkCoreServiceHealth();
-        });
-    }
-
-    private stopServiceHealthMonitor (): void
-    {
-        sceneStopServiceHealthMonitor(this);
-    }
-
-    private async checkCoreServiceHealth (): Promise<void>
-    {
-        await sceneCheckCoreServiceHealth(this);
-    }
-
-    public redirectToMainMenuAfterServiceFailure (reason: string, message: string): void
-    {
-        sceneRedirectToMainMenuAfterServiceFailure(this, reason, message);
-    }
-
-    private startAuthSessionPush (sessionId: string): void
-    {
-        sceneStartAuthSessionPush(this, sessionId, (message?: string) => {
-            this.handleSessionSupersededLogout(message);
-        });
-    }
-
-    private stopAuthSessionPush (): void
-    {
-        sceneStopAuthSessionPush(this);
-    }
-
-    private handleSessionSupersededLogout (message?: string): void
-    {
-        sceneHandleSessionSupersededLogout(this, message);
-    }
-
     public markMatchEndedAwaitingExit (): void
     {
-        sceneMarkMatchEndedAwaitingExit(this);
+        this.matchEndedAwaitingExit = true;
     }
 
     public returnToMainMenuAfterMatchEnd (): void
     {
-        sceneReturnToMainMenuAfterMatchEnd(this);
+        this.scene.start('MainMenu');
     }
 
     public setBoardInputEnabled (enabled: boolean, showLockOverlayWhenDisabled = true): void
@@ -648,154 +533,34 @@ export class Game extends Scene
         sceneSetCommandExecutionInProgress(this, inProgress);
     }
 
-    private async initializeProtocolSession (): Promise<void>
+    public setInputAcknowledged (acknowledged: boolean): void
     {
-        this.setInputAcknowledged(false);
-        if (!this.initializeProtocolSocket()) {
-            this.enqueueProtocolPacket('register_client', {
-                requested_slot: this.protocolClientSlot,
-                reconnect_token: this.protocolReconnectToken,
-                session_id: this.routerSessionId,
-            });
-        }
+        this.inputAcknowledged = acknowledged;
     }
 
-    private emitClientUnloadingSignal (): void
-    {
-        if (this.clientUnloadSignalSent) {
-            return;
-        }
-
-        const socket = this.protocolSocket;
-        if (socket === null || socket.connected !== true) {
-            return;
-        }
-
-        this.clientUnloadSignalSent = true;
-        socket.emit('client_unloading', {
-            requested_slot: this.protocolClientSlot,
-            reconnect_token: this.protocolReconnectToken,
-            session_id: this.routerSessionId,
-        });
-    }
-
-    private registerWindowUnloadSignals (): void
-    {
-        if (typeof window === 'undefined') {
-            return;
-        }
-
-        if (this.pageHideHandler !== null || this.beforeUnloadHandler !== null) {
-            return;
-        }
-
-        this.pageHideHandler = (_event: Event) => {
-            this.emitClientUnloadingSignal();
-        };
-
-        this.beforeUnloadHandler = (_event: Event) => {
-            this.emitClientUnloadingSignal();
-        };
-
-        window.addEventListener('pagehide', this.pageHideHandler);
-        window.addEventListener('beforeunload', this.beforeUnloadHandler);
-    }
-
-    private unregisterWindowUnloadSignals (): void
-    {
-        if (typeof window === 'undefined') {
-            return;
-        }
-
-        if (this.pageHideHandler !== null) {
-            window.removeEventListener('pagehide', this.pageHideHandler);
-            this.pageHideHandler = null;
-        }
-
-        if (this.beforeUnloadHandler !== null) {
-            window.removeEventListener('beforeunload', this.beforeUnloadHandler);
-            this.beforeUnloadHandler = null;
-        }
-    }
-
-    private initializeProtocolSocket (): boolean
-    {
-        return sceneInitializeProtocolSocket(this, getBackendSocketUrl(), () => {
-            this.activateHttpProtocolFallback();
-        });
-    }
-
-    private activateHttpProtocolFallback (): void
-    {
-        sceneActivateHttpProtocolFallback(this);
-    }
-
-    private loadOrCreateProtocolClientId (): string
-    {
-        return sceneLoadOrCreateProtocolClientId();
-    }
-
-    private loadProtocolClientSlot (): PlayerId | null
-    {
-        return sceneLoadProtocolClientSlot();
-    }
-
-    private loadProtocolReconnectToken (): string | null
-    {
-        return sceneLoadProtocolReconnectToken();
-    }
-
-    private loadRouterSessionId (): string | null
-    {
-        return sceneLoadRouterSessionId(ROUTER_SESSION_ID_STORAGE_KEY);
-    }
-
-    public persistProtocolClientSession (): void
-    {
-        scenePersistProtocolClientSession(this);
-    }
-
-    private setInputAcknowledged (acknowledged: boolean): void
-    {
-        sceneSetInputAcknowledged(this, acknowledged);
-    }
-
-    private enqueueProtocolPacket (
-        packetType: FrontendProtocolPacket['PacketType'],
+    public enqueueProtocolPacket (
+        packetType: string,
         body: Record<string, unknown>
     ): void
     {
-        sceneEnqueueProtocolPacket(this, packetType, body);
-    }
-
-    public processBackendProtocolPackets (packets: BackendProtocolPacket[]): void
-    {
-        sceneProcessBackendProtocolPackets(this, packets);
+        void packetType;
+        void body;
     }
 
     public executeBackendReplayCommand (command: string): string | null
     {
-        return sceneExecuteBackendReplayCommand(this, command);
+        void command;
+        return null;
     }
 
     public drainQueuedNotifyCommands (): void
     {
-        sceneDrainQueuedNotifyCommands(this);
-    }
-
-    public applyBackendCommandPacket (packet: Extract<ParsedBackendProtocolPacket, { kind: 'command' }>): void
-    {
-        sceneApplyBackendCommandPacket(this, packet);
+        // Tutorial is frontend-only; no backend notify queue draining is needed.
     }
 
     public executeBackendAnimationPayload (command: string, payload: Record<string, unknown> | null): void
     {
         sceneExecuteBackendAnimationPayload(this, command, payload);
-    }
-
-    public handleProtocolMismatch (packet: BackendProtocolPacket): void
-    {
-        sceneHandleProtocolMismatch(this, packet);
     }
 
     public resetBoardEntitiesForAuthoritativeEnvironment (): void
@@ -896,8 +661,8 @@ export class Game extends Scene
     private createPhaseStateActionButton (): void
     {
         const fontSize = Math.max(
-            GAME_STATUS_TEXT_LAYOUT.phaseStateActionFontSizeMin,
-            Math.round(GAME_STATUS_TEXT_LAYOUT.phaseStateActionFontSizeBase * UI_SCALE)
+            TUTORIAL_PHASE_STATE_ACTION_FONT_SIZE_MIN,
+            Math.round(TUTORIAL_PHASE_STATE_ACTION_FONT_SIZE_BASE * UI_SCALE)
         );
         const body = this.add.rectangle(0, 0, 10, 10, 0x0b132b, 0.9)
             .setOrigin(1, 0)
@@ -981,6 +746,10 @@ export class Game extends Scene
 
     public submitInitSetupDone (): void
     {
+        if (this.tutorialFlowController?.handleInitSetupDone() === true) {
+            return;
+        }
+
         sceneSubmitInitSetupDone(this);
     }
 
@@ -997,6 +766,7 @@ export class Game extends Scene
     public onPregameInitLocalMove (): void
     {
         sceneOnPregameInitLocalMove(this);
+        this.tutorialFlowController?.onPregameInitLocalMove();
     }
 
     private getPlayerUsername (playerId: PlayerId): string
@@ -1041,16 +811,113 @@ export class Game extends Scene
 
     private emitBackendEvent (eventType: string, responseData: Record<string, unknown>): void
     {
-        sceneEmitBackendEvent(this, eventType, responseData);
+        this.tutorialFlowController?.onFrontendEvent(eventType, responseData);
     }
 
     public dispatchFrontendEvent (
         eventType: string,
         responseData: Record<string, unknown>,
-        context: Record<string, unknown>
+        _context: Record<string, unknown>
     ): void
     {
-        sceneDispatchFrontendEvent(this, eventType, responseData, context);
+        this.tutorialFlowController?.onFrontendEvent(eventType, responseData);
+    }
+
+    public canUsePhaseStateAction (action: 'phase2-attack' | 'atk-skip' | 'init-done'): boolean
+    {
+        if (!this.tutorialFlowController) {
+            return true;
+        }
+
+        return this.tutorialFlowController.canUsePhaseStateAction(action);
+    }
+
+    public canUseCardAction (actionKey: CardActionKey, card: Card | null): boolean
+    {
+        if (!this.tutorialFlowController) {
+            return true;
+        }
+
+        return this.tutorialFlowController.canUseCardAction(actionKey, card);
+    }
+
+    public shouldHidePhaseStateActionButton (): boolean
+    {
+        return this.tutorialFlowController?.shouldHidePhaseStateActionButton() === true;
+    }
+
+    public canUseSurrender (): boolean
+    {
+        if (!this.tutorialFlowController) {
+            return true;
+        }
+
+        return this.tutorialFlowController.canUseSurrender();
+    }
+
+    public showTutorialRevealCardPreview (card: RevealOverlayCard): void
+    {
+        const toCardType = (rawTypeLabel: string): CardType => {
+            const normalized = rawTypeLabel.trim().toLowerCase();
+            if (normalized === 'character') {
+                return 'character';
+            }
+
+            if (normalized === 'tool') {
+                return 'tool';
+            }
+
+            if (normalized === 'stadium') {
+                return 'stadium';
+            }
+
+            if (normalized === 'supporter') {
+                return 'supporter';
+            }
+
+            return 'item';
+        };
+
+        const cardType = toCardType(card.cardTypeLabel);
+        const isCharacter = cardType === 'character';
+
+        const previewModel = {
+            baseColor: card.cardColor,
+            isTurnedOver: () => false,
+            getBorderColor: () => 0xffffff,
+            getCardClass: () => card.cardClassLabel,
+            getCardType: () => cardType,
+            getAVGECardType: () => 'NONE',
+            getHp: () => 120,
+            getMaxHp: () => 120,
+            hasAttackOne: () => isCharacter,
+            getAttackOneName: () => (isCharacter ? 'Demo Attack' : null),
+            getAttackOneCost: () => (isCharacter ? 1 : null),
+            hasAttackTwo: () => false,
+            getAttackTwoName: () => null,
+            getAttackTwoCost: () => null,
+            hasActiveAbility: () => isCharacter,
+            hasPassiveAbility: () => false,
+            getActiveAbilityName: () => (isCharacter ? 'Demo Ability' : null),
+            getStatusEffects: () => ({ Arranger: 0, Goon: 0, Maid: 0 }),
+            getRetreatCost: () => 1,
+            getOwnerId: () => 'p1' as PlayerId,
+        } as unknown as Card;
+
+        this.overlayPreviewContext = 'reveal';
+        this.cardPreviewController.show(previewModel, {
+            ownerUsername: 'TUTORIAL',
+            forceFaceUp: true,
+            hideOwnerLine: true,
+        });
+        this.refreshCardActionButtons();
+    }
+
+    public hideTutorialRevealCardPreview (): void
+    {
+        this.hideCardPreview();
+        this.overlayPreviewContext = null;
+        this.refreshCardActionButtons();
     }
 
     public clearOverlayPreviewIfActive (): void
@@ -1215,7 +1082,15 @@ export class Game extends Scene
 
     public canActOnCard (card: Card): boolean
     {
-        return sceneCanActOnCard(this, card);
+        if (!sceneCanActOnCard(this, card)) {
+            return false;
+        }
+
+        if (!this.tutorialFlowController) {
+            return true;
+        }
+
+        return this.tutorialFlowController.canActOnCard(card);
     }
 
     private canPreviewCard (card: Card): boolean
@@ -1225,17 +1100,41 @@ export class Game extends Scene
 
     public canDragCardByPhase (card: Card): boolean
     {
-        return sceneCanDragCardByPhase(this, card);
+        if (!sceneCanDragCardByPhase(this, card)) {
+            return false;
+        }
+
+        if (!this.tutorialFlowController) {
+            return true;
+        }
+
+        return this.tutorialFlowController.canDragCardByPhase(card);
     }
 
     public canActOnToken (token: EnergyToken): boolean
     {
-        return sceneCanActOnToken(this, token);
+        if (!sceneCanActOnToken(this, token)) {
+            return false;
+        }
+
+        if (!this.tutorialFlowController) {
+            return true;
+        }
+
+        return this.tutorialFlowController.canActOnToken(token);
     }
 
     public canDragTokenByPhase (token: EnergyToken): boolean
     {
-        return sceneCanDragTokenByPhase(this, token);
+        if (!sceneCanDragTokenByPhase(this, token)) {
+            return false;
+        }
+
+        if (!this.tutorialFlowController) {
+            return true;
+        }
+
+        return this.tutorialFlowController.canDragTokenByPhase(token);
     }
 
     public parseGamePhaseArg (rawPhase: string): GamePhase | null

@@ -1,5 +1,5 @@
 import { Scene, GameObjects } from 'phaser';
-import { GAME_CENTER_X, GAME_HEIGHT, GAME_WIDTH, LOGIN_TEXT_LAYOUT, UI_SCALE } from '../config';
+import { GAME_CENTER_X, GAME_HEIGHT, LOGIN_TEXT_LAYOUT, UI_SCALE } from '../config';
 import {
     checkServiceHealth,
     fetchMatchmakingStatus,
@@ -11,6 +11,7 @@ import {
     ROUTER_SESSION_ID_STORAGE_KEY,
     ROUTER_USERNAME_STORAGE_KEY,
 } from '../Network';
+import { setImageToSceneCover } from '../ui/backgroundCover';
 import { registerUiClickSoundForScene } from '../ui/clickSfx';
 import { createVolumeControlForScene, preloadVolumeControlAssets } from '../ui/volumeControl';
 
@@ -52,9 +53,9 @@ export class Login extends Scene
 
         this.cameras.main.fadeIn(180, 0, 0, 0);
 
-        this.background = this.add.image(GAME_CENTER_X, Math.round(GAME_HEIGHT * 0.5), 'background');
-        this.background.setDisplaySize(GAME_WIDTH, GAME_HEIGHT);
-        this.background.setAlpha(0.9);
+        this.background = this.add.image(0, 0, 'background');
+        setImageToSceneCover(this, this.background);
+        this.background.setAlpha(1);
 
         this.title = this.add.text(GAME_CENTER_X, Math.round(GAME_HEIGHT * 0.24), 'LOGIN').setFontSize(Math.max(LOGIN_TEXT_LAYOUT.titleFontSizeMin, Math.round(LOGIN_TEXT_LAYOUT.titleFontSizeBase * UI_SCALE)))
             .setOrigin(0.5)

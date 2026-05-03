@@ -133,10 +133,15 @@ const resolveCardByIdCaseInsensitive = (cardById: Record<string, unknown>, rawCa
 };
 
 const findCardReferencedByCommand = (cardById: Record<string, unknown>, command: string): unknown | null => {
-    const tokens = command
-        .trim()
-        .split(/\s+/)
-        .filter((token) => token.length > 0);
+    const tokens = command.includes(':;:')
+        ? command
+            .split(':;:')
+            .map((part) => part.trim())
+            .filter((part) => part.length > 0)
+        : command
+            .trim()
+            .split(/\s+/)
+            .filter((token) => token.length > 0);
     if (tokens.length < 2) {
         return null;
     }

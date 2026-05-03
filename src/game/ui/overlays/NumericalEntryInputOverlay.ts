@@ -36,6 +36,35 @@ export class NumericalEntryInputOverlay
         this.keyboardHandler = null;
     }
 
+    private pinObjectToViewport (object: Phaser.GameObjects.GameObject | null): void
+    {
+        if (!object) {
+            return;
+        }
+
+        const candidate = object as Phaser.GameObjects.GameObject & {
+            setScrollFactor?: (x: number, y?: number) => Phaser.GameObjects.GameObject;
+        };
+
+        if (typeof candidate.setScrollFactor === 'function') {
+            candidate.setScrollFactor(0);
+        }
+    }
+
+    private pinOverlayToViewport (): void
+    {
+        this.pinObjectToViewport(this.backdrop);
+        this.pinObjectToViewport(this.panel);
+        this.pinObjectToViewport(this.titleText);
+        this.pinObjectToViewport(this.hintText);
+        this.pinObjectToViewport(this.valueText);
+
+        if (this.submitButton) {
+            this.pinObjectToViewport(this.submitButton.body);
+            this.pinObjectToViewport(this.submitButton.label);
+        }
+    }
+
     hasActiveOverlay (): boolean
     {
         return Boolean(this.backdrop || this.titleText || this.hintText || this.valueText || this.submitButton);
@@ -196,6 +225,7 @@ export class NumericalEntryInputOverlay
 
         this.scene.input.keyboard?.on('keydown', this.keyboardHandler);
         this.refreshValueUi();
+        this.pinOverlayToViewport();
 
         // Panel is tracked as a field and cleaned up in stopActiveOverlay.
     }

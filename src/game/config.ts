@@ -1,5 +1,57 @@
-export const GAME_WIDTH = 1920;
-export const GAME_HEIGHT = GAME_WIDTH/1920 * 1080;
+const DEFAULT_LOGICAL_WIDTH = 1920;
+const DEFAULT_LOGICAL_HEIGHT = 1080;
+const DEFAULT_VIEWPORT_ASPECT = DEFAULT_LOGICAL_WIDTH / DEFAULT_LOGICAL_HEIGHT;
+
+const resolveViewportSize = (): { width: number; height: number } => {
+	if (typeof window === 'undefined') {
+		return {
+			width: DEFAULT_LOGICAL_WIDTH,
+			height: DEFAULT_LOGICAL_HEIGHT,
+		};
+	}
+
+	const viewportWidth = window.visualViewport?.width;
+	const viewportHeight = window.visualViewport?.height;
+	const rawWidth = (typeof viewportWidth === 'number' && Number.isFinite(viewportWidth))
+		? viewportWidth
+		: (Number.isFinite(window.innerWidth) ? window.innerWidth : DEFAULT_LOGICAL_WIDTH);
+	const rawHeight = (typeof viewportHeight === 'number' && Number.isFinite(viewportHeight))
+		? viewportHeight
+		: (Number.isFinite(window.innerHeight) ? window.innerHeight : DEFAULT_LOGICAL_HEIGHT);
+
+	return {
+		width: Math.max(1, Math.round(rawWidth)),
+		height: Math.max(1, Math.round(rawHeight)),
+	};
+};
+
+export const resolveResponsiveGameSize = (): { width: number; height: number } => {
+	const viewportSize = resolveViewportSize();
+	const viewportAspect = viewportSize.width / viewportSize.height;
+
+	if (!Number.isFinite(viewportAspect) || viewportAspect <= 0) {
+		return {
+			width: DEFAULT_LOGICAL_WIDTH,
+			height: DEFAULT_LOGICAL_HEIGHT,
+		};
+	}
+
+	if (viewportAspect >= DEFAULT_VIEWPORT_ASPECT) {
+		return {
+			width: Math.max(DEFAULT_LOGICAL_WIDTH, Math.round(DEFAULT_LOGICAL_HEIGHT * viewportAspect)),
+			height: DEFAULT_LOGICAL_HEIGHT,
+		};
+	}
+
+	return {
+		width: DEFAULT_LOGICAL_WIDTH,
+		height: Math.max(DEFAULT_LOGICAL_HEIGHT, Math.round(DEFAULT_LOGICAL_WIDTH / viewportAspect)),
+	};
+};
+
+// Baseline layout metrics for scene/UI positioning.
+export const GAME_WIDTH = DEFAULT_LOGICAL_WIDTH;
+export const GAME_HEIGHT = DEFAULT_LOGICAL_HEIGHT;
 
 export const GAME_CENTER_X = GAME_WIDTH / 2;
 export const GAME_CENTER_Y = GAME_HEIGHT / 2;
@@ -135,13 +187,13 @@ export const CARD_SELECTION_SCALE_MULTIPLIERS = {
 export const CARDHOLDER_BASE_WIDTH = {
 	hand: 640,
 	bench: 420,
-	active: 96,
+	active: 108,
 	discard: 108,
 	deck: 108,
 	stadium: 108
 } as const;
 export const MAX_BENCH_CARDS = 3;
-export const CARDHOLDER_HEIGHT_MULTIPLIER = 1.2;
+export const CARDHOLDER_HEIGHT_MULTIPLIER = 1.15;
 
 export const CARDHOLDER_SPACING_MULTIPLIERS = {
 	activeRowOffset: 0.5,

@@ -57,6 +57,21 @@ export class DiceInputOverlay
         this.hintPreferredFontSize = GAME_INPUT_OVERLAY_HEADER_LAYOUT.hintFontSizeMin;
     }
 
+    private pinObjectToViewport (object: Phaser.GameObjects.GameObject | null): void
+    {
+        if (!object) {
+            return;
+        }
+
+        const candidate = object as Phaser.GameObjects.GameObject & {
+            setScrollFactor?: (x: number, y?: number) => Phaser.GameObjects.GameObject;
+        };
+
+        if (typeof candidate.setScrollFactor === 'function') {
+            candidate.setScrollFactor(0);
+        }
+    }
+
     hasActiveOverlay (): boolean
     {
         return Boolean(this.image || this.titleText || this.hintText);
@@ -139,6 +154,10 @@ export class DiceInputOverlay
         this.hintText = this.scene.add.text(this.scene.scale.width / 2, this.scene.scale.height / 2 + Math.round(diceSize * 0.8), hintMessage).setFontSize(fittedHintFontSize)
             .setOrigin(0.5)
             .setDepth(overlayDepth);
+
+        this.pinObjectToViewport(this.image);
+        this.pinObjectToViewport(this.titleText);
+        this.pinObjectToViewport(this.hintText);
 
         this.image.on('pointerdown', () => {
             if (this.awaitingConfirm) {

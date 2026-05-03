@@ -59,6 +59,42 @@ export class KeiWatanabeDrumkidWorkshopInputOverlay
         );
     }
 
+    private pinObjectToViewport (object: Phaser.GameObjects.GameObject | null): void
+    {
+        if (!object) {
+            return;
+        }
+
+        const candidate = object as Phaser.GameObjects.GameObject & {
+            setScrollFactor?: (x: number, y?: number) => Phaser.GameObjects.GameObject;
+        };
+
+        if (typeof candidate.setScrollFactor === 'function') {
+            candidate.setScrollFactor(0);
+        }
+    }
+
+    private pinOverlayToViewport (): void
+    {
+        this.pinObjectToViewport(this.backdrop);
+        this.pinObjectToViewport(this.titleText);
+        this.pinObjectToViewport(this.hintText);
+
+        for (const ui of this.cardUis) {
+            this.pinObjectToViewport(ui.container);
+        }
+
+        for (const button of this.atkButtons) {
+            this.pinObjectToViewport(button.body);
+            this.pinObjectToViewport(button.label);
+        }
+
+        if (this.submitButton) {
+            this.pinObjectToViewport(this.submitButton.body);
+            this.pinObjectToViewport(this.submitButton.label);
+        }
+    }
+
     hasActiveOverlay (): boolean
     {
         return Boolean(this.backdrop || this.titleText || this.hintText || this.cardUis.length > 0 || this.atkButtons.length > 0 || this.submitButton);
@@ -282,6 +318,7 @@ export class KeiWatanabeDrumkidWorkshopInputOverlay
 
         this.submitButton = { body: submitBody, label: submitLabel };
         this.refreshUi();
+        this.pinOverlayToViewport();
     }
 
     private clearSelection (): void

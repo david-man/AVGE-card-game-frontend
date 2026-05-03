@@ -1,7 +1,6 @@
 import { Scene, GameObjects } from 'phaser';
 import {
     GAME_CENTER_X,
-    GAME_CENTER_Y,
     GAME_HEIGHT,
     GAME_WIDTH,
     MAIN_MENU_LAYOUT,
@@ -32,6 +31,7 @@ import {
     ROUTER_USERNAME_STORAGE_KEY,
     RouterAssignedRoom,
 } from '../Network';
+import { setImageToSceneCover } from '../ui/backgroundCover';
 import { registerUiClickSoundForScene } from '../ui/clickSfx';
 import { createVolumeControlForScene, preloadVolumeControlAssets } from '../ui/volumeControl';
 
@@ -44,6 +44,8 @@ export class MainMenu extends Scene
     startButtonLabel: GameObjects.Text;
     decksButton: GameObjects.Rectangle;
     decksButtonLabel: GameObjects.Text;
+    tutorialButton: GameObjects.Rectangle;
+    tutorialButtonLabel: GameObjects.Text;
     private usernameButton: GameObjects.Rectangle | null;
     private usernameIndicator: GameObjects.Text | null;
     private logoutButton: GameObjects.Rectangle | null;
@@ -106,9 +108,9 @@ export class MainMenu extends Scene
         this.stopMatchmakingPolling();
         this.cameras.main.fadeIn(180, 0, 0, 0);
 
-        this.background = this.add.image(GAME_CENTER_X, GAME_CENTER_Y, 'background');
-        this.background.setDisplaySize(GAME_WIDTH, GAME_HEIGHT);
-        this.background.setAlpha(0.9);
+        this.background = this.add.image(0, 0, 'background');
+        setImageToSceneCover(this, this.background);
+        this.background.setAlpha(1);
 
         const logoMargin = Math.max(MAIN_MENU_LOGO_LAYOUT.marginMin, Math.round(MAIN_MENU_LOGO_LAYOUT.marginBase * UI_SCALE));
         const cornerLogo = this.add.image(logoMargin, GAME_HEIGHT - logoMargin, MAIN_MENU_LOGO_ASSET.key)
@@ -301,6 +303,25 @@ export class MainMenu extends Scene
             .setOrigin(0.5)
             .setTint(0xffffff);
 
+        this.tutorialButton = this.add.rectangle(
+            GAME_CENTER_X,
+            Math.round(buttonY + (MAIN_MENU_LAYOUT.decksButtonOffsetYBase * UI_SCALE)),
+            buttonWidth,
+            buttonHeight,
+            0x0f172a,
+            0.9
+        )
+            .setStrokeStyle(3, 0xffffff, 0.85)
+            .setInteractive({ useHandCursor: true });
+
+        this.tutorialButtonLabel = this.add.text(
+            GAME_CENTER_X,
+            Math.round(buttonY + (MAIN_MENU_LAYOUT.decksButtonOffsetYBase * UI_SCALE)),
+            'TUTORIAL'
+        ).setFontSize(Math.max(MAIN_MENU_TEXT_LAYOUT.deckBuilderFontSizeMin, Math.round(MAIN_MENU_TEXT_LAYOUT.deckBuilderFontSizeBase * UI_SCALE)))
+            .setOrigin(0.5)
+            .setTint(0xffffff);
+
         this.startButton.on('pointerover', () => {
             if (this.matchmakingInProgress) {
                 this.startButton.setFillStyle(0x991b1b, 0.98);
@@ -341,6 +362,24 @@ export class MainMenu extends Scene
             this.decksButtonLabel.setTint(0xffffff);
         });
 
+        this.tutorialButton.on('pointerover', () => {
+            if (this.matchmakingInProgress) {
+                return;
+            }
+
+            this.tutorialButton.setFillStyle(0x1e293b, 0.95);
+            this.tutorialButtonLabel.setTint(0xfef08a);
+        });
+
+        this.tutorialButton.on('pointerout', () => {
+            if (this.matchmakingInProgress) {
+                return;
+            }
+
+            this.tutorialButton.setFillStyle(0x0f172a, 0.9);
+            this.tutorialButtonLabel.setTint(0xffffff);
+        });
+
         const startGame = () => {
             if (this.disconnectGateActive || !this.authReady || this.transitioning) {
                 return;
@@ -369,6 +408,14 @@ export class MainMenu extends Scene
                 return;
             }
             this.scene.start('DeckBuilder');
+        });
+
+        this.tutorialButton.on('pointerdown', () => {
+            if (this.disconnectGateActive || this.transitioning || this.matchmakingInProgress) {
+                return;
+            }
+
+            this.scene.start('Tutorial');
         });
         this.input.keyboard?.once('keydown-ENTER', startGame);
 
@@ -529,12 +576,19 @@ export class MainMenu extends Scene
     {
         this.disconnectGateActive = true;
 
+        const viewportWidth = Math.max(1, this.scale.gameSize.width);
+        const viewportHeight = Math.max(1, this.scale.gameSize.height);
+        const viewportCenterX = viewportWidth * 0.5;
+        const viewportCenterY = viewportHeight * 0.5;
+
         this.title.setVisible(false);
         this.subtitle.setVisible(false);
         this.startButton.setVisible(false).disableInteractive();
         this.startButtonLabel.setVisible(false);
         this.decksButton.setVisible(false).disableInteractive();
         this.decksButtonLabel.setVisible(false);
+        this.tutorialButton.setVisible(false).disableInteractive();
+        this.tutorialButtonLabel.setVisible(false);
         this.cancelLogoutButtonHideTimer();
         this.usernameButton?.setVisible(false).disableInteractive();
         this.usernameIndicator?.setVisible(false);
@@ -544,35 +598,42 @@ export class MainMenu extends Scene
         const depthBase = 900;
         const buttonWidth = Math.round(220 * UI_SCALE);
         const buttonHeight = Math.round(70 * UI_SCALE);
-        const buttonY = Math.round(GAME_HEIGHT * 0.62);
+        const buttonY = Math.round(viewportHeight * 0.62);
 
         this.disconnectGateBackdrop = this.add.rectangle(
-            GAME_CENTER_X,
-            GAME_CENTER_Y,
-            GAME_WIDTH,
-            GAME_HEIGHT,
+            viewportCenterX,
+            viewportCenterY,
+            viewportWidth,
+            viewportHeight,
             0x020617,
             0.92
-        ).setDepth(depthBase);
+        )
+            .setScrollFactor(0)
+            .setDepth(depthBase);
 
-        this.disconnectGateTitle = this.add.text(GAME_CENTER_X, Math.round(GAME_HEIGHT * 0.45), titleText).setFontSize(Math.max(MAIN_MENU_TEXT_LAYOUT.disconnectTitleFontSizeMin, Math.round(MAIN_MENU_TEXT_LAYOUT.disconnectTitleFontSizeBase * UI_SCALE)))
+        this.disconnectGateTitle = this.add.text(viewportCenterX, Math.round(viewportHeight * 0.45), titleText)
+            .setScrollFactor(0)
+            .setFontSize(Math.max(MAIN_MENU_TEXT_LAYOUT.disconnectTitleFontSizeMin, Math.round(MAIN_MENU_TEXT_LAYOUT.disconnectTitleFontSizeBase * UI_SCALE)))
             .setOrigin(0.5)
             .setTint(0xffffff)
             .setDepth(depthBase + 1);
 
         this.disconnectGateContinueButton = this.add.rectangle(
-            GAME_CENTER_X,
+            viewportCenterX,
             buttonY,
             buttonWidth,
             buttonHeight,
             0x0f172a,
             0.95
         )
+            .setScrollFactor(0)
             .setStrokeStyle(3, 0xffffff, 0.9)
             .setDepth(depthBase + 1)
             .setInteractive({ useHandCursor: true });
 
-        this.disconnectGateContinueLabel = this.add.text(GAME_CENTER_X, buttonY, 'CONTINUE').setFontSize(Math.max(MAIN_MENU_TEXT_LAYOUT.disconnectContinueFontSizeMin, Math.round(MAIN_MENU_TEXT_LAYOUT.disconnectContinueFontSizeBase * UI_SCALE)))
+        this.disconnectGateContinueLabel = this.add.text(viewportCenterX, buttonY, 'CONTINUE')
+            .setScrollFactor(0)
+            .setFontSize(Math.max(MAIN_MENU_TEXT_LAYOUT.disconnectContinueFontSizeMin, Math.round(MAIN_MENU_TEXT_LAYOUT.disconnectContinueFontSizeBase * UI_SCALE)))
             .setOrigin(0.5)
             .setTint(0xffffff)
             .setDepth(depthBase + 2);
@@ -613,6 +674,8 @@ export class MainMenu extends Scene
         this.startButton.setFillStyle(0x0f172a, 0.9);
         this.decksButton.setVisible(true).setInteractive({ useHandCursor: true }).setFillStyle(0x0f172a, 0.9);
         this.decksButtonLabel.setVisible(true).setTint(0xffffff);
+        this.tutorialButton.setVisible(true).setInteractive({ useHandCursor: true }).setFillStyle(0x0f172a, 0.9);
+        this.tutorialButtonLabel.setVisible(true).setTint(0xffffff);
         this.usernameButton?.setVisible(true).setInteractive({ useHandCursor: true });
         this.usernameIndicator?.setVisible(true);
         this.applyUsernameButtonBaseStyle();
@@ -634,6 +697,7 @@ export class MainMenu extends Scene
 
         this.startButton.disableInteractive();
         this.decksButton.disableInteractive();
+        this.tutorialButton.disableInteractive();
         this.logoutButton?.disableInteractive();
         this.updateMatchmakingSubtitle('Logging out...');
 
@@ -1111,6 +1175,11 @@ export class MainMenu extends Scene
                 .setFillStyle(0x334155, 0.5);
             this.decksButtonLabel.setTint(0x94a3b8);
 
+            this.tutorialButton
+                .disableInteractive()
+                .setFillStyle(0x334155, 0.5);
+            this.tutorialButtonLabel.setTint(0x94a3b8);
+
             this.logoutButton
                 ?.disableInteractive()
                 .setFillStyle(0x334155, 0.5);
@@ -1129,6 +1198,11 @@ export class MainMenu extends Scene
             .setInteractive({ useHandCursor: true })
             .setFillStyle(0x0f172a, 0.9);
         this.decksButtonLabel.setTint(0xffffff);
+
+        this.tutorialButton
+            .setInteractive({ useHandCursor: true })
+            .setFillStyle(0x0f172a, 0.9);
+        this.tutorialButtonLabel.setTint(0xffffff);
 
         this.applyLogoutButtonBaseStyle();
         if (this.logoutButton?.visible) {

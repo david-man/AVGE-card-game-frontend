@@ -3,6 +3,8 @@ import { PlayerId } from '../entities';
 import {
     BASE_HEIGHT,
     BASE_WIDTH,
+    GAME_HEIGHT,
+    GAME_WIDTH,
     PHASE_HUD_TEXT_LAYOUT,
     UI_SCALE
 } from '../config';
@@ -55,8 +57,8 @@ export class PhaseHudController
 
     create (): void
     {
-        this.rightMargin = Math.round((16 / BASE_WIDTH) * this.scene.scale.width);
-        this.topMargin = Math.round((36 / BASE_HEIGHT) * this.scene.scale.height);
+        this.rightMargin = Math.round((16 / BASE_WIDTH) * GAME_WIDTH);
+        this.topMargin = Math.round((36 / BASE_HEIGHT) * GAME_HEIGHT);
         const fontSize = Math.max(PHASE_HUD_TEXT_LAYOUT.fontSizeMin, Math.round(PHASE_HUD_TEXT_LAYOUT.fontSizeBase * UI_SCALE));
 
         const background = this.scene.add.rectangle(0, 0, 10, 10, 0x0b132b, 0.88)
@@ -107,7 +109,7 @@ export class PhaseHudController
         this.titleGap = Math.max(8, Math.round(8 * UI_SCALE));
         this.colGap = Math.max(20, Math.round(20 * UI_SCALE));
         this.minPanelWidth = Math.max(180, Math.round(180 * UI_SCALE));
-        this.maxPanelWidth = Math.round(this.scene.scale.width * 0.32);
+        this.maxPanelWidth = Math.round(GAME_WIDTH * 0.32);
 
         this.layoutUi();
     }
@@ -168,7 +170,7 @@ export class PhaseHudController
             return;
         }
 
-        const panelRight = this.scene.scale.width - this.rightMargin;
+        const panelRight = GAME_WIDTH - this.rightMargin;
         const panelTop = this.topMargin;
 
         const hasTurnRow = this.ui.turnLabel.visible && this.ui.turnValue.visible;

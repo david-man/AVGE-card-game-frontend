@@ -1,5 +1,6 @@
 import { io, Socket } from 'socket.io-client';
 import cardPreviewDescriptionsJson from './data/cardPreviewDescriptions.json';
+import { parseBackendProtocolPackets } from './protocol/backendResponseAdapter';
 
 const DEFAULT_ROUTER_BASE_URL = 'http://127.0.0.1:5600';
 
@@ -1403,60 +1404,6 @@ export type BackendProtocolResponse = {
     requestFailed?: boolean;
 };
 
-const isBackendCommandPacketBody = (value: unknown): value is {
-    command: string;
-    command_id?: number;
-    target_slots?: string[];
-    response_category: string;
-    response_payload?: Record<string, unknown>;
-} => {
-    if (typeof value !== 'object' || value === null) {
-        return false;
-    }
-
-    const body = value as {
-        command?: unknown;
-        command_id?: unknown;
-        target_slots?: unknown;
-        response_category?: unknown;
-        response_payload?: unknown;
-    };
-
-    if (typeof body.command !== 'string' || body.command.trim().length === 0) {
-        return false;
-    }
-
-    const hasValidCommandId = body.command_id === undefined || Number.isInteger(body.command_id);
-    const hasValidTargetSlots = body.target_slots === undefined || (Array.isArray(body.target_slots) && body.target_slots.every((slot) => typeof slot === 'string'));
-    const hasValidCategory = typeof body.response_category === 'string' && body.response_category.trim().length > 0;
-    const hasValidPayload = body.response_payload === undefined || (typeof body.response_payload === 'object' && body.response_payload !== null);
-
-    return hasValidCommandId && hasValidTargetSlots && hasValidCategory && hasValidPayload;
-};
-
-const isBackendProtocolPacket = (value: unknown): value is BackendProtocolPacket => {
-    if (typeof value !== 'object' || value === null) {
-        return false;
-    }
-
-    const packet = value as Partial<BackendProtocolPacket>;
-    const hasPacketEnvelope = Number.isInteger(packet.SEQ) &&
-        typeof packet.IsResponse === 'boolean' &&
-        (packet.PacketType === 'environment' || packet.PacketType === 'command' || packet.PacketType === 'init_state') &&
-        typeof packet.Body === 'object' &&
-        packet.Body !== null;
-
-    if (!hasPacketEnvelope) {
-        return false;
-    }
-
-    if (packet.PacketType === 'command') {
-        return isBackendCommandPacketBody(packet.Body);
-    }
-
-    return true;
-};
-
 export const sendFrontendProtocolPacket = async (
     packet: FrontendProtocolPacket
 ): Promise<BackendProtocolResponse> => {
@@ -1489,9 +1436,7 @@ export const sendFrontendProtocolPacket = async (
             blocked_command?: unknown;
         };
 
-        const packets = Array.isArray(payload.packets)
-            ? payload.packets.filter((candidate) => isBackendProtocolPacket(candidate))
-            : [];
+        const packets = parseBackendProtocolPackets(payload.packets);
 
         const clientSlot = payload.client_slot === 'p1' || payload.client_slot === 'p2'
             ? payload.client_slot
@@ -1562,16 +1507,24 @@ export const parseBackendEntitiesSetup = (value: unknown): BackendEntitiesSetup 
         return null;
     }
 
-    const normalizedCards = payload.cards.map((card) => normalizeBackendCardSetup(card));
-    if (normalizedCards.some((card) => card === null)) {
-        console.warn('[Network] environment payload has invalid card entries.');
-        return null;
+    const normalizedCards = payload.cards
+        .map((card) => normalizeBackendCardSetup(card))
+        .filter((card): card is BackendCardSetup => card !== null);
+    const invalidCardCount = payload.cards.length - normalizedCards.length;
+    if (invalidCardCount > 0) {
+        console.warn(
+            `[Network] environment payload dropped ${invalidCardCount} invalid card ${invalidCardCount === 1 ? 'entry' : 'entries'}.`
+        );
     }
 
-    const normalizedEnergyTokens = payload.energyTokens.map((token) => normalizeBackendEnergySetup(token));
-    if (normalizedEnergyTokens.some((token) => token === null)) {
-        console.warn('[Network] environment payload has invalid energy token entries.');
-        return null;
+    const normalizedEnergyTokens = payload.energyTokens
+        .map((token) => normalizeBackendEnergySetup(token))
+        .filter((token): token is BackendEnergySetup => token !== null);
+    const invalidEnergyCount = payload.energyTokens.length - normalizedEnergyTokens.length;
+    if (invalidEnergyCount > 0) {
+        console.warn(
+            `[Network] environment payload dropped ${invalidEnergyCount} invalid energy token ${invalidEnergyCount === 1 ? 'entry' : 'entries'}.`
+        );
     }
 
     const roundNumberRaw = payload.roundNumber ?? payload.round_number;
@@ -1604,8 +1557,8 @@ export const parseBackendEntitiesSetup = (value: unknown): BackendEntitiesSetup 
             : undefined;
 
     return {
-        cards: normalizedCards as BackendCardSetup[],
-        energyTokens: normalizedEnergyTokens as BackendEnergySetup[],
+        cards: normalizedCards,
+        energyTokens: normalizedEnergyTokens,
         roundNumber: roundNumberRaw as number,
         gamePhase,
         playerTurn,

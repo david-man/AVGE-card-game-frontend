@@ -1,11 +1,7 @@
 import {
-    GAME_CENTER_X,
-    GAME_CENTER_Y,
-    GAME_HEIGHT,
     GAME_INIT_COUNTDOWN_OVERLAY,
     GAME_OVERLAY_DEPTHS,
     GAME_SCENE_VISUALS,
-    GAME_WIDTH,
     MAX_BENCH_CARDS,
     UI_SCALE,
 } from '../../config';
@@ -17,19 +13,25 @@ const COUNTDOWN_LOW_BEEP_SOUND_KEY = 'countdown-lowbeep';
 const COUNTDOWN_HIGH_BEEP_SOUND_KEY = 'countdown-highbeep';
 
 export const createInitStartCountdownOverlay = (scene: PregameInitScene): void => {
+    const viewportWidth = Math.max(1, scene.scale.gameSize.width);
+    const viewportHeight = Math.max(1, scene.scale.gameSize.height);
+    const viewportCenterX = viewportWidth * 0.5;
+    const viewportCenterY = viewportHeight * 0.5;
+
     const overlayDepth = Math.max(
         GAME_OVERLAY_DEPTHS.overlayBase + GAME_INIT_COUNTDOWN_OVERLAY.depthOffset,
         scene.inputLockOverlay.depth + 1
     );
 
     scene.initStartCountdownOverlay = scene.add.rectangle(
-        GAME_CENTER_X,
-        GAME_CENTER_Y,
-        GAME_WIDTH,
-        GAME_HEIGHT,
+        viewportCenterX,
+        viewportCenterY,
+        viewportWidth,
+        viewportHeight,
         GAME_SCENE_VISUALS.inputLockColor,
         GAME_INIT_COUNTDOWN_OVERLAY.backdropAlpha
     )
+        .setScrollFactor(0)
         .setDepth(overlayDepth)
         .setInteractive({ useHandCursor: false })
         .setVisible(false)
@@ -49,7 +51,8 @@ export const createInitStartCountdownOverlay = (scene: PregameInitScene): void =
         Math.round(GAME_INIT_COUNTDOWN_OVERLAY.numberFontSizeBase * UI_SCALE)
     );
 
-    scene.initStartCountdownText = scene.add.text(GAME_CENTER_X, GAME_CENTER_Y, '')
+    scene.initStartCountdownText = scene.add.text(viewportCenterX, viewportCenterY, '')
+        .setScrollFactor(0)
         .setFontSize(numberFontSize)
         .setOrigin(0.5)
         .setAlign('center')

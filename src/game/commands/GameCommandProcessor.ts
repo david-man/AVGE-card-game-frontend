@@ -25,7 +25,17 @@ export class GameCommandProcessor
         g.appendTerminalLine(`> ${command}`);
         const isBackendReplayCommand = Boolean(g.scannerCommandInProgress);
 
-        const commandParts = command.split(/\s+/);
+        const COMMAND_DELIMITER = ':;:';
+        const hasProtocolDelimiter = command.includes(COMMAND_DELIMITER);
+        const commandParts = hasProtocolDelimiter
+            ? command
+                .split(COMMAND_DELIMITER)
+                .map((part) => part.trim())
+                .filter((part) => part.length > 0)
+            : command.split(/\s+/);
+        if (commandParts.length === 0) {
+            return;
+        }
         const [rawAction, rawArgOne, rawArgTwo, rawArgThree] = commandParts;
         const action = rawAction.toLowerCase();
 
@@ -809,41 +819,63 @@ export class GameCommandProcessor
             }
 
             const mode = normalizeInputMode(rawArgOne);
-            const actionPrefixLength = rawAction.length;
-            const rawAfterAction = command.slice(actionPrefixLength).trim();
-            const modeTokenMatch = /^([^\s]+)\s*(.*)$/.exec(rawAfterAction);
-            if (!modeTokenMatch) {
-                g.appendTerminalLine('Usage: input [type] [msg] [..args]');
-                g.appendTerminalLine('   or: input [type] [player-1|player-2] [msg] [..args]');
-                g.appendTerminalLine('Types: on, off, d6, coin, selection, kei_watanabe_drumkidworkshop, numerical-entry');
-                return;
+            let targetView: 'p1' | 'p2' | null = null;
+            let rawTopMessage = '';
+            let rawInputArgs = '';
+
+            if (hasProtocolDelimiter) {
+                let cursor = 2;
+                const possibleTargetToken = (commandParts[cursor] ?? '').trim();
+                const parsedTargetView = possibleTargetToken
+                    ? g.parseViewModeArg(possibleTargetToken.toLowerCase())
+                    : null;
+                if (parsedTargetView === 'p1' || parsedTargetView === 'p2') {
+                    targetView = parsedTargetView;
+                    cursor += 1;
+                }
+
+                rawTopMessage = (commandParts[cursor] ?? '').trim();
+                cursor += 1;
+                rawInputArgs = commandParts.slice(cursor).join(' ').trim();
+            }
+            else {
+                const actionPrefixLength = rawAction.length;
+                const rawAfterAction = command.slice(actionPrefixLength).trim();
+                const modeTokenMatch = /^([^\s]+)\s*(.*)$/.exec(rawAfterAction);
+                if (!modeTokenMatch) {
+                    g.appendTerminalLine('Usage: input [type] [msg] [..args]');
+                    g.appendTerminalLine('   or: input [type] [player-1|player-2] [msg] [..args]');
+                    g.appendTerminalLine('Types: on, off, d6, coin, selection, kei_watanabe_drumkidworkshop, numerical-entry');
+                    return;
+                }
+
+                let rawInputBody = modeTokenMatch[2].trim();
+                if (!rawInputBody) {
+                    g.appendTerminalLine('Usage: input [type] [msg] [..args]');
+                    g.appendTerminalLine('   or: input [type] [player-1|player-2] [msg] [..args]');
+                    g.appendTerminalLine('Types: on, off, d6, coin, selection, kei_watanabe_drumkidworkshop, numerical-entry');
+                    return;
+                }
+
+                const targetTokenMatch = /^([^\s]+)\s*(.*)$/.exec(rawInputBody);
+                const possibleTargetToken = targetTokenMatch ? targetTokenMatch[1] : '';
+                const parsedTargetView = possibleTargetToken
+                    ? g.parseViewModeArg(possibleTargetToken.toLowerCase())
+                    : null;
+                targetView = parsedTargetView === 'p1' || parsedTargetView === 'p2' ? parsedTargetView : null;
+                if (targetView && targetTokenMatch) {
+                    rawInputBody = targetTokenMatch[2].trim();
+                }
+
+                const parsedMessage = parseLeadingMessageAndRest(rawInputBody);
+                rawTopMessage = parsedMessage?.message ?? '';
+                rawInputArgs = parsedMessage?.rest ?? '';
             }
 
-            let rawInputBody = modeTokenMatch[2].trim();
-            if (!rawInputBody) {
-                g.appendTerminalLine('Usage: input [type] [msg] [..args]');
-                g.appendTerminalLine('   or: input [type] [player-1|player-2] [msg] [..args]');
-                g.appendTerminalLine('Types: on, off, d6, coin, selection, kei_watanabe_drumkidworkshop, numerical-entry');
-                return;
-            }
-
-            const targetTokenMatch = /^([^\s]+)\s*(.*)$/.exec(rawInputBody);
-            const possibleTargetToken = targetTokenMatch ? targetTokenMatch[1] : '';
-            const parsedTargetView = possibleTargetToken
-                ? g.parseViewModeArg(possibleTargetToken.toLowerCase())
-                : null;
-            const targetView = parsedTargetView === 'p1' || parsedTargetView === 'p2' ? parsedTargetView : null;
-            if (targetView && targetTokenMatch) {
-                rawInputBody = targetTokenMatch[2].trim();
-            }
-
-            const parsedMessage = parseLeadingMessageAndRest(rawInputBody);
-            const rawTopMessage = parsedMessage?.message ?? '';
             const topMessage = rawTopMessage
                 .replace(/_+/g, ' ')
                 .replace(/\s+/g, ' ')
                 .trim();
-            const rawInputArgs = parsedMessage?.rest ?? '';
             const canShowTargetedInputInCurrentView = !targetView || g.activeViewMode === targetView;
 
             if (!topMessage) {
@@ -1017,7 +1049,8 @@ export class GameCommandProcessor
                     allowNone,
                     topMessage,
                     (orderedSelections: string[]) => {
-                        g.appendTerminalLine(`Selection -> ${orderedSelections.join(',')}`);
+                        const previewSelections = orderedSelections.map((entry) => entry.replace(/^l\d+_/, ''));
+                        g.appendTerminalLine(`Selection -> ${previewSelections.join(',')}`);
                         emitCommandEvent('input_result', {
                             input_type: 'selection',
                             message: topMessage,

@@ -6,7 +6,6 @@ import {
     DECK_BUILDER_TEXT_LAYOUT,
     GAME_CENTER_X,
     GAME_HEIGHT,
-    GAME_WIDTH,
     UI_SCALE
 } from '../config';
 import { CARD_CATALOG, CardCatalogEntry, CardCatalogCategory, CharacterCardType } from '../data/cardCatalog';
@@ -18,6 +17,7 @@ import {
     selectUserDeck,
     UserDeck,
 } from '../Network';
+import { setImageToSceneCover } from '../ui/backgroundCover';
 import { CardPreviewController } from '../ui/CardPreviewController';
 import { registerUiClickSoundForScene } from '../ui/clickSfx';
 import { createVolumeControlForScene, preloadVolumeControlAssets } from '../ui/volumeControl';
@@ -342,9 +342,9 @@ export class DeckBuilder extends Scene
 
         this.cameras.main.fadeIn(180, 0, 0, 0);
 
-        this.background = this.add.image(GAME_CENTER_X, Math.round(GAME_HEIGHT * 0.5), 'background');
-        this.background.setDisplaySize(GAME_WIDTH, GAME_HEIGHT);
-        this.background.setAlpha(0.9);
+        this.background = this.add.image(0, 0, 'background');
+        setImageToSceneCover(this, this.background);
+        this.background.setAlpha(1);
 
         this.title = this.add.text(GAME_CENTER_X, Math.round(GAME_HEIGHT * 0.09), 'DECK BUILDER').setFontSize(Math.max(DECK_BUILDER_TEXT_LAYOUT.titleFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.titleFontSizeBase * UI_SCALE)))
             .setOrigin(0.5)

@@ -113,37 +113,47 @@ export const applyBackendEntitySetup = (scene: ProtocolEnvironmentScene, setup: 
         return aAttached - bAttached;
     });
 
+    let createdCardCount = 0;
     for (const cardDef of sortedCards) {
-        const result = scene.createCardFromCommand({
-            id: cardDef.id,
-            ownerId: cardDef.ownerId,
-            cardType: cardDef.cardType,
-            holderId: cardDef.holderId,
-            color: GAME_CARD_TYPE_FILL_COLORS[cardDef.cardType],
-            AVGECardType: cardDef.AVGECardType,
-            AVGECardClass: cardDef.AVGECardClass,
-            hasAtk1: cardDef.hasAtk1 ?? false,
-            hasActive: cardDef.hasActive ?? false,
-            hasPassive: cardDef.hasPassive,
-            hasAtk2: cardDef.hasAtk2 ?? false,
-            atk1Name: cardDef.atk1Name,
-            activeName: cardDef.activeName,
-            atk2Name: cardDef.atk2Name,
-            atk1Cost: cardDef.atk1Cost,
-            atk2Cost: cardDef.atk2Cost,
-            retreatCost: cardDef.retreatCost,
-            hp: cardDef.hp,
-            maxHp: cardDef.maxHp,
-            statusEffect: cardDef.statusEffect,
-            width: scene.objectWidth,
-            height: scene.objectHeight,
-            flipped: false,
-            attachedToCardId: cardDef.attachedToCardId,
-            deferLayoutAndRedraw: true
-        });
+        try {
+            const result = scene.createCardFromCommand({
+                id: cardDef.id,
+                ownerId: cardDef.ownerId,
+                cardType: cardDef.cardType,
+                holderId: cardDef.holderId,
+                color: GAME_CARD_TYPE_FILL_COLORS[cardDef.cardType],
+                AVGECardType: cardDef.AVGECardType,
+                AVGECardClass: cardDef.AVGECardClass,
+                hasAtk1: cardDef.hasAtk1 ?? false,
+                hasActive: cardDef.hasActive ?? false,
+                hasPassive: cardDef.hasPassive,
+                hasAtk2: cardDef.hasAtk2 ?? false,
+                atk1Name: cardDef.atk1Name,
+                activeName: cardDef.activeName,
+                atk2Name: cardDef.atk2Name,
+                atk1Cost: cardDef.atk1Cost,
+                atk2Cost: cardDef.atk2Cost,
+                retreatCost: cardDef.retreatCost,
+                hp: cardDef.hp,
+                maxHp: cardDef.maxHp,
+                statusEffect: cardDef.statusEffect,
+                width: scene.objectWidth,
+                height: scene.objectHeight,
+                flipped: false,
+                attachedToCardId: cardDef.attachedToCardId,
+                deferLayoutAndRedraw: true
+            });
 
-        if (!result.ok) {
-            scene.appendTerminalLine(`setup card skipped (${cardDef.id}): ${result.error}`);
+            if (!result.ok) {
+                scene.appendTerminalLine(`setup card skipped (${cardDef.id}): ${result.error}`);
+                continue;
+            }
+
+            createdCardCount += 1;
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            scene.appendTerminalLine(`setup card failed (${cardDef.id}): ${message}`);
         }
     }
 
@@ -153,18 +163,28 @@ export const applyBackendEntitySetup = (scene: ProtocolEnvironmentScene, setup: 
         return aAttached - bAttached;
     });
 
+    let createdEnergyCount = 0;
     for (const tokenDef of sortedEnergy) {
-        const result = scene.createEnergyTokenFromCommand({
-            id: tokenDef.id,
-            ownerId: tokenDef.ownerId,
-            holderId: tokenDef.holderId,
-            radius: scene.getDefaultEnergyTokenRadius(),
-            attachedToCardId: tokenDef.attachedToCardId,
-            deferLayout: true
-        });
+        try {
+            const result = scene.createEnergyTokenFromCommand({
+                id: tokenDef.id,
+                ownerId: tokenDef.ownerId,
+                holderId: tokenDef.holderId,
+                radius: scene.getDefaultEnergyTokenRadius(),
+                attachedToCardId: tokenDef.attachedToCardId,
+                deferLayout: true
+            });
 
-        if (!result.ok) {
-            scene.appendTerminalLine(`setup energy skipped (${tokenDef.id}): ${result.error}`);
+            if (!result.ok) {
+                scene.appendTerminalLine(`setup energy skipped (${tokenDef.id}): ${result.error}`);
+                continue;
+            }
+
+            createdEnergyCount += 1;
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            scene.appendTerminalLine(`setup energy failed (${tokenDef.id}): ${message}`);
         }
     }
 
@@ -175,7 +195,40 @@ export const applyBackendEntitySetup = (scene: ProtocolEnvironmentScene, setup: 
     const slotView = scene.protocolClientSlot === 'p1' || scene.protocolClientSlot === 'p2'
         ? scene.protocolClientSlot
         : null;
-    const assignedView = payloadView ?? slotView ?? scene.activeViewMode;
+
+    // Defensive fallback: if this is an authenticated room player and we
+    // somehow still have spectator view during setup application, force a
+    // player view so cards are not hidden during init.
+    const inferFallbackView = (): PlayerId | null => {
+        if (!scene.routerSessionId || createdCardCount <= 0) {
+            return null;
+        }
+
+        const p1Visible = sortedCards.some((card) => card.ownerId === 'p1' && (
+            card.holderId === 'p1-hand' || card.holderId === 'p1-bench' || card.holderId === 'p1-active'
+        ));
+        const p2Visible = sortedCards.some((card) => card.ownerId === 'p2' && (
+            card.holderId === 'p2-hand' || card.holderId === 'p2-bench' || card.holderId === 'p2-active'
+        ));
+
+        if (p1Visible && !p2Visible) {
+            return 'p1';
+        }
+        if (p2Visible && !p1Visible) {
+            return 'p2';
+        }
+
+        return 'p1';
+    };
+
+    const fallbackView = inferFallbackView();
+    const assignedView = slotView
+        ?? (payloadView === 'spectator' ? (fallbackView ?? payloadView) : payloadView)
+        ?? scene.activeViewMode;
+
+    scene.appendTerminalLine(
+        `[ENV] cards=${createdCardCount}/${sortedCards.length} energy=${createdEnergyCount}/${sortedEnergy.length} view=${assignedView}`
+    );
     scene.applyBoardView(assignedView);
 };
 

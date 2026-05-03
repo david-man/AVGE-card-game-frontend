@@ -33,6 +33,7 @@ export class SelectionInputOverlay
     private inputLockOverlay: Phaser.GameObjects.Rectangle;
     private selectionItemsUi: SelectionItemUi[];
     private selectionBackdrop: Phaser.GameObjects.Rectangle | null;
+    private selectionPanel: Phaser.GameObjects.Rectangle | null;
     private selectionSubmitButton: { body: Phaser.GameObjects.Rectangle; label: Phaser.GameObjects.Text } | null;
     private selectionHintText: Phaser.GameObjects.Text | null;
     private selectionTitleText: Phaser.GameObjects.Text | null;
@@ -45,6 +46,7 @@ export class SelectionInputOverlay
     private onSelectionBackgroundClick: SelectionBackgroundClickCallback | null;
     private hintPreferredFontSize: number;
     private assignmentChipFontSize: number;
+    private previousInputTopOnly: boolean | null;
 
     constructor (scene: Scene, inputLockOverlay: Phaser.GameObjects.Rectangle)
     {
@@ -52,6 +54,7 @@ export class SelectionInputOverlay
         this.inputLockOverlay = inputLockOverlay;
         this.selectionItemsUi = [];
         this.selectionBackdrop = null;
+        this.selectionPanel = null;
         this.selectionSubmitButton = null;
         this.selectionHintText = null;
         this.selectionTitleText = null;
@@ -67,6 +70,46 @@ export class SelectionInputOverlay
             GAME_INPUT_SELECTION_OVERLAY.hintFontSizeMin
         );
         this.assignmentChipFontSize = GAME_INPUT_SELECTION_OVERLAY.assignmentFontSizeMin;
+        this.previousInputTopOnly = null;
+    }
+
+    private pinObjectToViewport (object: Phaser.GameObjects.GameObject | null): void
+    {
+        if (!object) {
+            return;
+        }
+
+        const candidate = object as Phaser.GameObjects.GameObject & {
+            setScrollFactor?: (x: number, y?: number) => Phaser.GameObjects.GameObject;
+        };
+
+        if (typeof candidate.setScrollFactor === 'function') {
+            candidate.setScrollFactor(0);
+        }
+    }
+
+    private pinOverlayToViewport (): void
+    {
+        this.pinObjectToViewport(this.selectionBackdrop);
+        this.pinObjectToViewport(this.selectionPanel);
+        this.pinObjectToViewport(this.selectionTitleText);
+        this.pinObjectToViewport(this.selectionHintText);
+
+        if (this.selectionSubmitButton) {
+            this.pinObjectToViewport(this.selectionSubmitButton.body);
+            this.pinObjectToViewport(this.selectionSubmitButton.label);
+        }
+
+        for (const ui of this.selectionItemsUi) {
+            this.pinObjectToViewport(ui.container);
+            this.pinObjectToViewport(ui.body);
+            this.pinObjectToViewport(ui.label);
+            this.pinObjectToViewport(ui.subLabel ?? null);
+            this.pinObjectToViewport(ui.assignmentContainer);
+            for (const assignmentObject of ui.assignmentObjects) {
+                this.pinObjectToViewport(assignmentObject);
+            }
+        }
     }
 
     hasActiveOverlay (): boolean
@@ -75,6 +118,7 @@ export class SelectionInputOverlay
             this.selectionItemsUi.length > 0 ||
             this.selectionSubmitButton ||
             this.selectionHintText ||
+            this.selectionPanel ||
             this.selectionTitleText
         );
     }
@@ -86,6 +130,9 @@ export class SelectionInputOverlay
 
         this.selectionBackdrop?.destroy();
         this.selectionBackdrop = null;
+
+        this.selectionPanel?.destroy();
+        this.selectionPanel = null;
 
         if (this.selectionSubmitButton) {
             this.selectionSubmitButton.body.destroy();
@@ -107,6 +154,11 @@ export class SelectionInputOverlay
         this.onSelectionCardClick = null;
         this.onSelectionBackgroundClick = null;
         this.assignmentChipFontSize = GAME_INPUT_SELECTION_OVERLAY.assignmentFontSizeMin;
+
+        if (this.previousInputTopOnly !== null) {
+            this.scene.input.setTopOnly(this.previousInputTopOnly);
+            this.previousInputTopOnly = null;
+        }
     }
 
     start (
@@ -121,6 +173,9 @@ export class SelectionInputOverlay
     ): void
     {
         this.stopActiveOverlay();
+
+        this.previousInputTopOnly = this.scene.input.topOnly;
+        this.scene.input.setTopOnly(true);
 
         this.allowRepeat = allowRepeat;
         this.allowNone = allowNone;
@@ -151,13 +206,16 @@ export class SelectionInputOverlay
         this.selectionBackdrop = clickBackdrop;
         const cardWidth = Math.max(GAME_INPUT_SELECTION_OVERLAY.cardWidthMin, Math.round(this.scene.scale.width * GAME_INPUT_SELECTION_OVERLAY.cardWidthRatio));
         const cardHeight = Math.round(cardWidth * GAME_INPUT_SELECTION_OVERLAY.cardHeightRatio);
-        const titleFontSize = Math.max(GAME_INPUT_SELECTION_OVERLAY.titleFontSizeMin, Math.round(cardWidth * GAME_INPUT_SELECTION_OVERLAY.titleFontSizeRatio));
-        const fittedTitleFontSize = fitTextToSingleLine({
+        const notifyLikePanelWidth = Math.max(300, Math.round(this.scene.scale.width * 0.56));
+        const titleTextMaxWidth = Math.round(notifyLikePanelWidth * 0.84);
+        const titleFontSize = Math.max(22, Math.round(notifyLikePanelWidth * 0.045));
+        const fittedTitleLayout = fitTextToMultiLine({
             scene: this.scene,
             text: topMessage,
             preferredSize: titleFontSize,
-            minSize: 10,
-            maxWidth: Math.round(this.scene.scale.width * 0.92)
+            minSize: Math.max(14, Math.round(titleFontSize * 0.58)),
+            maxWidth: titleTextMaxWidth,
+            maxLines: 5,
         });
         const hintFontSize = Math.max(
             GAME_INPUT_OVERLAY_HEADER_LAYOUT.hintFontSizeMin,
@@ -183,7 +241,7 @@ export class SelectionInputOverlay
             minSize: GAME_INPUT_OVERLAY_HEADER_LAYOUT.hintFitMinSize,
             maxWidth: Math.round(this.scene.scale.width * 0.92)
         });
-        const startY = Math.round(this.scene.scale.height * GAME_INPUT_SELECTION_OVERLAY.startYRatio);
+        const nominalRowY = Math.round(this.scene.scale.height * GAME_INPUT_SELECTION_OVERLAY.startYRatio);
         const titleGap = Math.max(
             GAME_INPUT_OVERLAY_HEADER_LAYOUT.messageGapMin,
             Math.round(this.scene.scale.height * GAME_INPUT_OVERLAY_HEADER_LAYOUT.messageGapRatio)
@@ -206,18 +264,32 @@ export class SelectionInputOverlay
         const maxColumnsByWidth = Math.max(1, Math.floor((this.scene.scale.width + rowSpacing) / (cardWidth + rowSpacing)));
         const columnCount = Math.max(1, Math.min(displayItems.length, maxColumnsByWidth));
         const rowCount = Math.max(1, Math.ceil(displayItems.length / columnCount));
-        const displayRowY = startY;
+        let displayRowY = nominalRowY;
 
-        this.selectionTitleText = this.scene.add.text(this.scene.scale.width / 2, displayRowY, topMessage).setFontSize(fittedTitleFontSize)
+        this.selectionTitleText = this.scene.add.text(this.scene.scale.width / 2, nominalRowY, fittedTitleLayout.text).setFontSize(fittedTitleLayout.fontSize)
             .setOrigin(0.5)
-            .setDepth(overlayDepth);
+            .setAlign('center')
+            .setDepth(overlayDepth + 1);
 
-        const displayRowTopY = displayRowY - Math.round(cardHeight / 2);
+        const nominalRowTopY = nominalRowY - Math.round(cardHeight / 2);
         const titleOffset = Math.round(this.selectionTitleText.height / 2) + titleGap;
-        this.selectionTitleText.setY(displayRowTopY - titleOffset);
+        const idealTitleY = nominalRowTopY - titleOffset;
+        const titleTopSafePadding = Math.max(10, Math.round(this.scene.scale.height * 0.02));
+        const titleHalfHeight = Math.round(this.selectionTitleText.height / 2);
+        const minTitleY = titleTopSafePadding + titleHalfHeight;
+        const maxTitleY = nominalRowTopY - Math.max(8, Math.round(cardHeight * 0.08)) - titleHalfHeight;
+        const clampedTitleY = minTitleY <= maxTitleY
+            ? Phaser.Math.Clamp(idealTitleY, minTitleY, maxTitleY)
+            : minTitleY;
+        this.selectionTitleText.setY(clampedTitleY);
+        const titleBottomY = this.selectionTitleText.y + Math.round(this.selectionTitleText.height / 2);
+        const minimumCardsTopY = titleBottomY + titleGap;
+        const minimumDisplayRowY = minimumCardsTopY + Math.round(cardHeight / 2);
+        displayRowY = Math.max(nominalRowY, minimumDisplayRowY);
 
         const makeItemUi = (item: SelectionOverlayItem, centerX: number, centerY: number): SelectionItemUi => {
             const container = this.scene.add.container(centerX, centerY).setDepth(overlayDepth);
+            container.setSize(cardWidth, cardHeight);
 
             const fillColor = item.selectable
                 ? (item.isCard ? (item.cardColor ?? 0x3a3a3a) : 0x1f2937)
@@ -227,10 +299,19 @@ export class SelectionInputOverlay
                 .setStrokeStyle(3, 0xffffff, 1)
                 .setInteractive({ useHandCursor: item.selectable });
 
+            const nonCardDisplayLabel = (rawId: string): string => {
+                const trimmed = rawId.trim();
+                if (!trimmed) {
+                    return rawId;
+                }
+                const withoutPrefix = trimmed.replace(/^l\d+_/, '');
+                return withoutPrefix || trimmed;
+            };
+
             const isNoneOption = !item.isCard && item.id.trim().toLowerCase() === 'none';
             const primaryLabel = isNoneOption
                 ? 'None'
-                : (item.isCard ? (item.cardClassLabel ?? item.id) : item.id);
+                : (item.isCard ? (item.cardClassLabel ?? item.id) : nonCardDisplayLabel(item.id));
             const primaryLabelLayout = fitTextToMultiLine({
                 scene: this.scene,
                 text: primaryLabel,
@@ -335,22 +416,65 @@ export class SelectionInputOverlay
             .setDepth(overlayDepth + 1);
 
         submitBody.on('pointerdown', () => {
-            if (!this.isSelectionComplete()) {
-                return;
-            }
-
-            const orderedSelections = this.selectionByIndex.map((entry) => entry ?? 'none');
-            const callback = this.onSelectionSubmit;
-            this.stopActiveOverlay();
-            if (callback) {
-                callback(orderedSelections);
-            }
+            this.submitCurrentSelection();
         });
 
         this.selectionSubmitButton = { body: submitBody, label: submitLabel };
 
+        const contentSafetyPaddingY = Math.max(14, Math.round(cardHeight * 0.14));
+        const currentContentTop = this.selectionTitleText.y - Math.round(this.selectionTitleText.height / 2);
+        const currentContentBottom = submitBody.y + Math.round(submitHeight / 2);
+        const currentContentCenterY = Math.round((currentContentTop + currentContentBottom) / 2);
+        const desiredContentCenterY = Math.round(this.scene.scale.height / 2);
+        const minAllowedContentTop = contentSafetyPaddingY;
+        const maxAllowedContentBottom = this.scene.scale.height - contentSafetyPaddingY;
+        const minShiftY = minAllowedContentTop - currentContentTop;
+        const maxShiftY = maxAllowedContentBottom - currentContentBottom;
+        const contentShiftY = Phaser.Math.Clamp(desiredContentCenterY - currentContentCenterY, minShiftY, maxShiftY);
+
+        if (contentShiftY !== 0) {
+            this.selectionTitleText.setY(this.selectionTitleText.y + contentShiftY);
+            this.selectionItemsUi.forEach((ui) => {
+                ui.container.setY(ui.container.y + contentShiftY);
+            });
+            if (this.selectionHintText) {
+                this.selectionHintText.setY(this.selectionHintText.y + contentShiftY);
+            }
+            submitBody.setY(submitBody.y + contentShiftY);
+            submitLabel.setY(submitLabel.y + contentShiftY);
+        }
+
+        const panelPaddingX = Math.max(18, Math.round(cardWidth * 0.28));
+        const panelPaddingY = Math.max(18, Math.round(cardHeight * 0.18));
+        const maxItemsPerRow = Math.max(1, Math.min(columnCount, displayItems.length));
+        const gridWidth = (maxItemsPerRow * cardWidth) + (Math.max(0, maxItemsPerRow - 1) * rowSpacing);
+        const panelContentTop = this.selectionTitleText.y - Math.round(this.selectionTitleText.height / 2);
+        const panelContentBottom = submitBody.y + Math.round(submitHeight / 2);
+        const panelContentHeight = Math.max(1, panelContentBottom - panelContentTop);
+        const panelContentWidth = Math.max(gridWidth, submitWidth, this.selectionTitleText.width);
+        const panelWidth = Math.min(
+            Math.round(this.scene.scale.width * 0.94),
+            Math.round(panelContentWidth + (panelPaddingX * 2))
+        );
+        const panelHeight = Math.min(
+            Math.round(this.scene.scale.height * 0.92),
+            Math.round(panelContentHeight + (panelPaddingY * 2))
+        );
+        const panelCenterY = Math.round((panelContentTop + panelContentBottom) / 2);
+        this.selectionPanel = this.scene.add.rectangle(
+            this.scene.scale.width / 2,
+            panelCenterY,
+            panelWidth,
+            panelHeight,
+            0x0f172a,
+            0.97
+        )
+            .setStrokeStyle(3, 0xffffff, 0.8)
+            .setDepth(overlayDepth - 0.5);
+
         this.assignmentChipFontSize = assignmentFontSize;
         this.refreshSelectionOverlayUi();
+        this.pinOverlayToViewport();
     }
 
     private setExpandedItemContainer (container: Phaser.GameObjects.Container | null): void
@@ -469,6 +593,9 @@ export class SelectionInputOverlay
             ui.assignmentContainer.add([chipBody, chipLabel]);
             ui.assignmentObjects.push(chipBody, chipLabel);
 
+            this.pinObjectToViewport(chipBody);
+            this.pinObjectToViewport(chipLabel);
+
             cursor += chipWidth + chipGap;
         }
     }
@@ -484,6 +611,20 @@ export class SelectionInputOverlay
         }
 
         return this.selectionByIndex.every((entry) => entry !== null);
+    }
+
+    private submitCurrentSelection (): void
+    {
+        if (!this.isSelectionComplete()) {
+            return;
+        }
+
+        const orderedSelections = this.selectionByIndex.map((entry) => entry ?? 'none');
+        const callback = this.onSelectionSubmit;
+        this.stopActiveOverlay();
+        if (callback) {
+            callback(orderedSelections);
+        }
     }
 
     private refreshSelectionOverlayUi (): void

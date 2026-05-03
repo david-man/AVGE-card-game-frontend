@@ -15,6 +15,13 @@ export class BoardInteractionController
     register (): void
     {
         const g = this.host as any;
+        const playInteractionSound = (rawSoundKey: string): void => {
+            if (typeof g.playCommandSound !== 'function') {
+                return;
+            }
+
+            g.playCommandSound(rawSoundKey);
+        };
 
         this.scene.input.on('pointerdown', (_pointer: Phaser.Input.Pointer, currentlyOver: Phaser.GameObjects.GameObject[]) => {
             if (!g.boardInputEnabled) {
@@ -252,6 +259,7 @@ export class BoardInteractionController
                     };
 
                     const completeLocalInitMove = (): void => {
+                        playInteractionSound('card-slide.ogg');
                         g.layoutAllHolders();
                         g.redrawAllCardMarks();
                         if (g.onPregameInitLocalMove) {
@@ -315,6 +323,37 @@ export class BoardInteractionController
                 }
 
                 g.moveCardToZone(card, targetZoneId, () => {
+                    if (originZoneId === ownerBenchZone && targetZoneId === ownerActiveZone) {
+                        const activeHolder = g.cardHolderById[ownerActiveZone];
+                        const currentActive = activeHolder?.cards?.find((candidate: any) => (
+                            candidate
+                            && candidate.id !== card.id
+                            && candidate.getCardType
+                            && candidate.getCardType() === 'character'
+                        ));
+
+                        if (currentActive) {
+                            const attachedEnergyTokens = g.getAttachedEnergyTokens(currentActive.id);
+                            attachedEnergyTokens.forEach((token: any) => {
+                                const tokenFromZoneId = token.getZoneId();
+                                const tokenFromAttachedToCardId = token.getAttachedToCardId();
+                                g.moveEnergyTokenToOwnerEnergy(token);
+                                g.emitBackendEvent('energy_moved', {
+                                    energy_id: token.id,
+                                    owner_id: token.ownerId,
+                                    from_zone_id: tokenFromZoneId,
+                                    to_zone_id: g.energyZoneIdByOwner.p1,
+                                    from_attached_to_card_id: tokenFromAttachedToCardId,
+                                    to_attached_to_card_id: null,
+                                    interaction: 'retreat_swap'
+                                });
+                                playInteractionSound('play_chip.ogg');
+                            });
+
+                            g.moveCardToZone(currentActive, ownerBenchZone);
+                        }
+                    }
+
                     g.emitBackendEvent('card_moved', {
                         card_id: card.id,
                         card_type: card.getCardType(),
@@ -323,6 +362,7 @@ export class BoardInteractionController
                         to_zone_id: targetZoneId,
                         interaction: 'drag_drop'
                     });
+                    playInteractionSound('card-slide.ogg');
                     g.layoutAllHolders();
                     g.redrawAllCardMarks();
                 });
@@ -362,6 +402,7 @@ export class BoardInteractionController
                     attached_to_card_id: overlappedCard.id,
                     interaction: 'drag_drop'
                 });
+                playInteractionSound('card_shove.ogg');
                 g.layoutAllHolders();
                 g.redrawAllCardMarks();
                 return;
@@ -386,6 +427,7 @@ export class BoardInteractionController
                 }
                 else {
                     restoreToDragStart();
+                    playInteractionSound('sparkle.mp3');
                     g.emitBackendEvent('item_supporter_use', {
                         card_id: card.id,
                         card_type: card.getCardType(),
@@ -416,6 +458,7 @@ export class BoardInteractionController
                         to_zone_id: 'stadium',
                         interaction: 'drag_drop'
                     });
+                    playInteractionSound('card_shove.ogg');
                     g.layoutAllHolders();
                     g.redrawAllCardMarks();
                 });
@@ -484,6 +527,7 @@ export class BoardInteractionController
                         reason: 'item_supporter_free_drop',
                         interaction: 'drag_drop'
                     });
+                    playInteractionSound('sparkle.mp3');
                     g.layoutAllHolders();
                     g.updateAttachedChildrenPositions(card);
                     g.redrawAllCardMarks();
@@ -604,6 +648,7 @@ export class BoardInteractionController
                     to_attached_to_card_id: characterTarget.id,
                     interaction: 'drag_drop'
                 });
+                playInteractionSound('play_chip.ogg');
                 return;
             }
 
@@ -623,6 +668,7 @@ export class BoardInteractionController
                         to_attached_to_card_id: null,
                         interaction: 'drag_drop'
                     });
+                    playInteractionSound('play_chip.ogg');
                 }
                 return;
             }

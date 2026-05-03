@@ -155,6 +155,10 @@ export const handleCardActionButtonClick = (scene: CardActionButtonScene, action
         return;
     }
 
+    if (typeof scene.canUseCardAction === 'function' && !scene.canUseCardAction(actionKey, card)) {
+        return;
+    }
+
     const actionName = actionKey === 'active' ? 'activate_ability' : actionKey;
     const message = `${card.id} ${actionName}`;
 
@@ -187,16 +191,50 @@ export const refreshCardActionButtons = (scene: CardActionButtonScene): void => 
     const attackCard = selectedCard && selectedIsActiveSlot
         ? selectedCard
         : (scene.gamePhase === 'atk' ? currentTurnActiveCard : null);
+    const canUseAction = (actionKey: CardActionKey, sourceCard: Card | null): boolean => {
+        if (typeof scene.canUseCardAction !== 'function') {
+            return true;
+        }
+
+        return scene.canUseCardAction(actionKey, sourceCard);
+    };
     const canControlTurnActions = scene.activeViewMode === scene.playerTurn;
 
     const abilityCard = selectedCard;
     const abilityIsEligibleZone = abilityCard
-        ? (abilityCard.getZoneId() === `${scene.activeViewMode}-deck` || abilityCard.getZoneId() === `${scene.activeViewMode}-active`)
+        ? (
+            abilityCard.getZoneId() === `${scene.activeViewMode}-active`
+            || abilityCard.getZoneId() === `${scene.activeViewMode}-bench`
+        )
         : false;
     const canUseAbilityCardActions = Boolean(abilityCard && abilityCard.getOwnerId() === scene.activeViewMode);
-    const showAtk1 = Boolean(attackCard && scene.gamePhase === 'atk' && canControlTurnActions && attackCard.getCardType() === 'character' && attackCard.getOwnerId() === scene.playerTurn && attackCard.hasAttackOne());
-    const showAtk2 = Boolean(attackCard && scene.gamePhase === 'atk' && canControlTurnActions && attackCard.getCardType() === 'character' && attackCard.getOwnerId() === scene.playerTurn && attackCard.hasAttackTwo());
-    const showActive = Boolean(!scene.isPregameInitActive() && abilityCard && canUseAbilityCardActions && abilityCard.getCardType() === 'character' && abilityIsEligibleZone && abilityCard.hasActiveAbility());
+    const showAtk1 = Boolean(
+        attackCard
+        && scene.gamePhase === 'atk'
+        && canControlTurnActions
+        && attackCard.getCardType() === 'character'
+        && attackCard.getOwnerId() === scene.playerTurn
+        && attackCard.hasAttackOne()
+        && canUseAction('atk1', attackCard)
+    );
+    const showAtk2 = Boolean(
+        attackCard
+        && scene.gamePhase === 'atk'
+        && canControlTurnActions
+        && attackCard.getCardType() === 'character'
+        && attackCard.getOwnerId() === scene.playerTurn
+        && attackCard.hasAttackTwo()
+        && canUseAction('atk2', attackCard)
+    );
+    const showActive = Boolean(
+        !scene.isPregameInitActive()
+        && abilityCard
+        && canUseAbilityCardActions
+        && abilityCard.getCardType() === 'character'
+        && abilityIsEligibleZone
+        && abilityCard.hasActiveAbility()
+        && canUseAction('active', abilityCard)
+    );
 
     const radius = Math.max(12, Math.round((GAME_CARD_ACTION_BUTTON_LAYOUT.buttonRadiusBase / BASE_WIDTH) * GAME_WIDTH));
     const leftMargin = Math.round((GAME_CARD_ACTION_BUTTON_LAYOUT.leftMarginBase / BASE_WIDTH) * GAME_WIDTH);

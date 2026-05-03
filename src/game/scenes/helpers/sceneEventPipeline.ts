@@ -199,11 +199,16 @@ export const dispatchFrontendEvent = (
     if (eventType === 'input_result' && scene.pendingInputCommand) {
         scene.setInputAcknowledged(false);
         scene.enqueueProtocolPacket('update_frontend', {
-            command: scene.pendingInputCommand,
-            input_response: responseData,
-            context,
+            client_event: {
+                event_kind: 'input_result',
+                command: scene.pendingInputCommand,
+                command_id: scene.pendingInputCommandId,
+                response_data: responseData,
+                context,
+            },
         });
         scene.pendingInputCommand = null;
+        scene.pendingInputCommandId = null;
         scene.drainQueuedNotifyCommands();
         return;
     }
@@ -212,6 +217,9 @@ export const dispatchFrontendEvent = (
         const notifyCommand =
             (typeof responseData.command === 'string' && responseData.command.trim().length > 0 ? responseData.command : null)
             ?? scene.pendingNotifyCommand;
+        const notifyCommandId =
+            (typeof responseData.command_id === 'number' && Number.isInteger(responseData.command_id) ? responseData.command_id : null)
+            ?? scene.pendingNotifyCommandId;
 
         if (!notifyCommand) {
             return;
@@ -220,11 +228,16 @@ export const dispatchFrontendEvent = (
         scene.awaitingRemoteNotifyAck = false;
         scene.setInputAcknowledged(false);
         scene.enqueueProtocolPacket('update_frontend', {
-            command: notifyCommand,
-            notify_response: responseData,
-            context,
+            client_event: {
+                event_kind: 'notify_result',
+                command: notifyCommand,
+                command_id: notifyCommandId,
+                response_data: responseData,
+                context,
+            },
         });
         scene.pendingNotifyCommand = null;
+        scene.pendingNotifyCommandId = null;
         scene.drainQueuedNotifyCommands();
         return;
     }
@@ -233,26 +246,42 @@ export const dispatchFrontendEvent = (
         const revealCommand =
             (typeof responseData.command === 'string' && responseData.command.trim().length > 0 ? responseData.command : null)
             ?? scene.pendingNotifyCommand;
+        const revealCommandId =
+            (typeof responseData.command_id === 'number' && Number.isInteger(responseData.command_id) ? responseData.command_id : null)
+            ?? scene.pendingNotifyCommandId;
 
         if (revealCommand) {
             scene.awaitingRemoteNotifyAck = false;
             scene.setInputAcknowledged(false);
             scene.enqueueProtocolPacket('update_frontend', {
-                command: revealCommand,
-                notify_response: responseData,
-                context,
+                client_event: {
+                    event_kind: 'notify_result',
+                    command: revealCommand,
+                    command_id: revealCommandId,
+                    response_data: responseData,
+                    context,
+                },
             });
             scene.pendingNotifyCommand = null;
+            scene.pendingNotifyCommandId = null;
             scene.drainQueuedNotifyCommands();
             return;
         }
     }
 
     if (isAckEvent) {
+        const ackCommandId =
+            typeof responseData.command_id === 'number' && Number.isInteger(responseData.command_id)
+                ? responseData.command_id
+                : null;
         scene.enqueueProtocolPacket('update_frontend', {
-            command: responseData.command,
-            apply_error: responseData.apply_error ?? null,
-            context,
+            client_event: {
+                event_kind: 'ack',
+                command: responseData.command,
+                command_id: ackCommandId,
+                apply_error: responseData.apply_error ?? null,
+                context,
+            },
         });
         return;
     }
@@ -265,8 +294,11 @@ export const dispatchFrontendEvent = (
 
     scene.setInputAcknowledged(false);
     scene.enqueueProtocolPacket('frontend_event', {
-        event_type: eventType,
-        response_data: responseData,
-        context,
+        client_event: {
+            event_kind: 'frontend_event',
+            event_type: eventType,
+            response_data: responseData,
+            context,
+        },
     });
 };

@@ -1,6 +1,6 @@
 import { io } from 'socket.io-client';
 
-import { BackendProtocolPacket } from '../../Network';
+import { parseBackendProtocolPackets } from '../../protocol/backendResponseAdapter';
 import { PlayerId } from '../../entities';
 
 type ProtocolSessionScene = any;
@@ -89,12 +89,16 @@ export const initializeProtocolSocket = (
             ? payload as {
                 packets?: unknown;
                 blocked_pending_peer_ack?: unknown;
+                client_slot?: unknown;
             }
             : {};
 
-        const packets = Array.isArray(data.packets)
-            ? data.packets as BackendProtocolPacket[]
-            : [];
+        if (data.client_slot === 'p1' || data.client_slot === 'p2') {
+            scene.protocolClientSlot = data.client_slot;
+            persistProtocolClientSession(scene);
+        }
+
+        const packets = parseBackendProtocolPackets(data.packets);
 
         const blockedPendingPeerAck = data.blocked_pending_peer_ack === true;
 
