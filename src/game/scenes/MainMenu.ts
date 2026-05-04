@@ -187,7 +187,7 @@ export class MainMenu extends Scene
         this.subtitle = this.add.text(
             GAME_WIDTH - subtitleRightMargin,
             GAME_HEIGHT - subtitleBottomMargin,
-            'From: Brown AVGE'
+            'Version 0.0.1\nfrom: Brown AVGE'
         ).setFontSize(Math.max(MAIN_MENU_TEXT_LAYOUT.subtitleFontSizeMin, Math.round(MAIN_MENU_TEXT_LAYOUT.subtitleFontSizeBase * UI_SCALE)))
             .setOrigin(1, 1)
             .setAlign('right')
@@ -598,7 +598,7 @@ export class MainMenu extends Scene
         this.selectedDeckId = decksResult.ok ? (decksResult.selectedDeckId ?? null) : null;
         this.authReady = true;
         this.applyQueueUiState(false);
-        this.updateMatchmakingSubtitle(this.selectedDeckId ? 'From: Brown AVGE' : 'No deck selected. Open Deck Builder.');
+        this.updateMatchmakingSubtitle(this.selectedDeckId ? 'Version 0.0.1\nfrom: Brown AVGE' : 'No deck selected. Open Deck Builder.');
     }
 
     private async resumeAssignedRoomIfPresent (sessionId: string, currentRoomId: string | null): Promise<boolean>
@@ -747,7 +747,7 @@ export class MainMenu extends Scene
         this.applyUsernameButtonBaseStyle();
         this.setLogoutButtonVisible(false);
         this.applyLogoutButtonBaseStyle();
-        this.updateMatchmakingSubtitle('From: Brown AVGE');
+        this.updateMatchmakingSubtitle('Version 0.0.1\nfrom: Brown AVGE');
     }
 
     private async logoutAndReturnToLogin (): Promise<void>
