@@ -476,6 +476,10 @@ export class DisplayInputOverlay
                     }
                 });
 
+                this.pinObjectToViewport(body);
+                this.pinObjectToViewport(idText);
+                this.pinObjectToViewport(typeText);
+
                 this.activeObjects.push(cardContainer);
             });
         }

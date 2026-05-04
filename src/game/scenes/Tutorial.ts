@@ -461,6 +461,7 @@ export class Tutorial extends Scene
 
         this.tutorialFlowController = new TutorialFlowController(this);
         this.tutorialFlowController.start();
+        this.syncViewportOverlayLayout();
     }
 
     public isInteractionLockedByAnimation (): boolean
@@ -497,6 +498,7 @@ export class Tutorial extends Scene
                 Math.round(viewportHeight * 0.24)
             );
         this.opponentDisconnectText.setPosition(viewportCenterX, viewportCenterY);
+        this.tutorialFlowController?.syncViewportLayout();
     }
 
     public markMatchEndedAwaitingExit (): void

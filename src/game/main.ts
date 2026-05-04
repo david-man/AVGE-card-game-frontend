@@ -234,6 +234,7 @@ const installViewportResizeSync = (game: Game): void => {
         }
 
         game.scale.refresh();
+        game.scale.updateBounds();
     };
 
     const scheduleResize = (): void => {

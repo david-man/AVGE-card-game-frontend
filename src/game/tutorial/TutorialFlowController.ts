@@ -1,6 +1,5 @@
 import {
     GAME_CARD_TYPE_FILL_COLORS,
-    GAME_WIDTH,
     UI_SCALE,
 } from '../config';
 import { Card, EnergyToken } from '../entities';
@@ -11,7 +10,7 @@ type CardActionKey = 'atk1' | 'atk2' | 'active';
 type PhaseStateAction = 'phase2-attack' | 'atk-skip' | 'init-done';
 type StageMode = 'init' | 'phase2' | 'atk';
 
-const TOTAL_STAGES = 25;
+const TOTAL_STAGES = 26;
 const TUTORIAL_STAGE_HEADER_FONT_SIZE_BASE = 34;
 const TUTORIAL_STAGE_HEADER_FONT_SIZE_MIN = 20;
 const TUTORIAL_STAGE_HEADER_BACKDROP_PADDING_X_BASE = 24;
@@ -84,6 +83,34 @@ export class TutorialFlowController
         this.runCurrentStage();
     }
 
+    public syncViewportLayout (): void
+    {
+        if (!this.active) {
+            return;
+        }
+
+        const viewportWidth = Math.max(1, this.scene.scale.width);
+        const viewportHeight = Math.max(1, this.scene.scale.height);
+
+        if (this.stageText) {
+            this.stageText
+                .setX(Math.round(viewportWidth / 2))
+                .setWordWrapWidth(
+                    Math.round(viewportWidth * TUTORIAL_STAGE_HEADER_WRAP_WIDTH_RATIO),
+                    true
+                );
+        }
+
+        this.refreshStageHeaderBackdrop();
+
+        if (this.skipButtonBody && this.skipButtonLabel) {
+            const x = viewportWidth - Math.round(16 * UI_SCALE) - Math.round(this.skipButtonBody.width / 2);
+            const y = viewportHeight - Math.round(16 * UI_SCALE) - Math.round(this.skipButtonBody.height / 2);
+            this.skipButtonBody.setPosition(x, y);
+            this.skipButtonLabel.setPosition(x, y);
+        }
+    }
+
     public destroy (): void
     {
         this.active = false;
@@ -114,12 +141,12 @@ export class TutorialFlowController
             return;
         }
 
-        if (this.stageIndex === 24 && eventType === 'surrender_result') {
+        if (this.stageIndex === 25 && eventType === 'surrender_result') {
             this.scene.scene.start('MainMenu');
             return;
         }
 
-        if (this.stageIndex === 11 && eventType === 'energy_moved') {
+        if (this.stageIndex === 12 && eventType === 'energy_moved') {
             const energyId = this.readLowerString(responseData, 'energy_id');
             const attachedToCardId = this.readLowerString(responseData, 'to_attached_to_card_id');
             if (energyId === STAGE12_ENERGY_ID.toLowerCase() && attachedToCardId === STAGE12_ACTIVE_ID.toLowerCase()) {
@@ -128,7 +155,7 @@ export class TutorialFlowController
             return;
         }
 
-        if (this.stageIndex === 12 && eventType === 'item_supporter_use') {
+        if (this.stageIndex === 13 && eventType === 'item_supporter_use') {
             const cardId = this.readLowerString(responseData, 'card_id');
             if (cardId === STAGE13_ITEM_ID.toLowerCase()) {
                 this.advanceStage();
@@ -136,7 +163,7 @@ export class TutorialFlowController
             return;
         }
 
-        if (this.stageIndex === 13 && eventType === 'tool_attached') {
+        if (this.stageIndex === 14 && eventType === 'tool_attached') {
             const toolId = this.readLowerString(responseData, 'tool_card_id');
             if (toolId === STAGE14_TOOL_ID.toLowerCase()) {
                 this.advanceStageWithDelay();
@@ -144,7 +171,7 @@ export class TutorialFlowController
             return;
         }
 
-        if (this.stageIndex === 14 && eventType === 'card_moved') {
+        if (this.stageIndex === 15 && eventType === 'card_moved') {
             const cardId = this.readLowerString(responseData, 'card_id');
             const toZone = this.readLowerString(responseData, 'to_zone_id');
             if (cardId === STAGE15_STADIUM_ID.toLowerCase() && toZone === 'stadium') {
@@ -153,7 +180,7 @@ export class TutorialFlowController
             return;
         }
 
-        if (this.stageIndex === 15 && eventType === 'card_moved') {
+        if (this.stageIndex === 16 && eventType === 'card_moved') {
             const cardId = this.readLowerString(responseData, 'card_id');
             const fromZone = this.readLowerString(responseData, 'from_zone_id');
             const toZone = this.readLowerString(responseData, 'to_zone_id');
@@ -167,7 +194,7 @@ export class TutorialFlowController
             return;
         }
 
-        if (this.stageIndex === 16 && eventType === 'card_moved') {
+        if (this.stageIndex === 17 && eventType === 'card_moved') {
             const cardId = this.readLowerString(responseData, 'card_id');
             const fromZone = this.readLowerString(responseData, 'from_zone_id');
             const toZone = this.readLowerString(responseData, 'to_zone_id');
@@ -177,13 +204,13 @@ export class TutorialFlowController
             return;
         }
 
-        if (this.stageIndex === 17 && eventType === 'phase2_attack_button_clicked') {
+        if (this.stageIndex === 18 && eventType === 'phase2_attack_button_clicked') {
             this.scene.setGamePhase('atk');
             this.advanceStage();
             return;
         }
 
-        if (this.stageIndex === 19 && eventType === 'card_action') {
+        if (this.stageIndex === 20 && eventType === 'card_action') {
             const action = this.readLowerString(responseData, 'action');
             const cardId = this.readLowerString(responseData, 'card_id');
             if ((action === 'atk1' || action === 'atk2') && cardId === STAGE20_ACTIVE_ID.toLowerCase()) {
@@ -192,12 +219,12 @@ export class TutorialFlowController
             return;
         }
 
-        if (this.stageIndex === 20 && eventType === 'atk_skip_button_clicked') {
+        if (this.stageIndex === 21 && eventType === 'atk_skip_button_clicked') {
             this.advanceStage();
             return;
         }
 
-        if (this.stageIndex === 21 && eventType === 'card_action') {
+        if (this.stageIndex === 22 && eventType === 'card_action') {
             const action = this.readLowerString(responseData, 'action');
             const cardId = this.readLowerString(responseData, 'card_id');
             if (action === 'activate_ability' && cardId === STAGE22_ABILITY_ID.toLowerCase()) {
@@ -212,7 +239,7 @@ export class TutorialFlowController
             return;
         }
 
-        if (this.stageIndex !== 7) {
+        if (this.stageIndex !== 8) {
             return;
         }
 
@@ -223,7 +250,7 @@ export class TutorialFlowController
 
     public handleInitSetupDone (): boolean
     {
-        if (!this.active || this.stageIndex !== 9) {
+        if (!this.active || this.stageIndex !== 10) {
             return false;
         }
 
@@ -249,27 +276,27 @@ export class TutorialFlowController
             return false;
         }
 
-        if (this.stageIndex === 7 || this.stageIndex === 9) {
+        if (this.stageIndex === 8 || this.stageIndex === 10) {
             return this.isP1SetupCharacter(card);
         }
 
-        if (this.stageIndex === 12) {
+        if (this.stageIndex === 13) {
             return card.id === STAGE13_ITEM_ID && card.getZoneId() === 'p1-hand';
         }
 
-        if (this.stageIndex === 13) {
+        if (this.stageIndex === 14) {
             return card.id === STAGE14_TOOL_ID && card.getZoneId() === 'p1-hand';
         }
 
-        if (this.stageIndex === 14) {
+        if (this.stageIndex === 15) {
             return card.id === STAGE15_STADIUM_ID && card.getZoneId() === 'p1-hand';
         }
 
-        if (this.stageIndex === 15) {
+        if (this.stageIndex === 16) {
             return card.id === STAGE16_BENCH_ID && card.getZoneId() === 'p1-bench';
         }
 
-        if (this.stageIndex === 16) {
+        if (this.stageIndex === 17) {
             return card.id === STAGE17_HAND_ID && card.getZoneId() === 'p1-hand';
         }
 
@@ -282,7 +309,7 @@ export class TutorialFlowController
             return false;
         }
 
-        if (this.stageIndex === 15) {
+        if (this.stageIndex === 16) {
             return this.hasEnoughRetreatEnergy(STAGE16_ACTIVE_ID);
         }
 
@@ -295,7 +322,7 @@ export class TutorialFlowController
             return false;
         }
 
-        if (this.stageIndex === 11) {
+        if (this.stageIndex === 12) {
             return token.id === STAGE12_ENERGY_ID;
         }
 
@@ -313,15 +340,15 @@ export class TutorialFlowController
             return false;
         }
 
-        if (this.stageIndex === 9) {
+        if (this.stageIndex === 10) {
             return action === 'init-done';
         }
 
-        if (this.stageIndex === 17) {
+        if (this.stageIndex === 18) {
             return action === 'phase2-attack';
         }
 
-        if (this.stageIndex === 20) {
+        if (this.stageIndex === 21) {
             return action === 'atk-skip';
         }
 
@@ -334,11 +361,11 @@ export class TutorialFlowController
             return false;
         }
 
-        if (this.stageIndex === 19) {
+        if (this.stageIndex === 20) {
             return card.id === STAGE20_ACTIVE_ID && (actionKey === 'atk1' || actionKey === 'atk2');
         }
 
-        if (this.stageIndex === 21) {
+        if (this.stageIndex === 22) {
             return card.id === STAGE22_ABILITY_ID && actionKey === 'active';
         }
 
@@ -347,25 +374,27 @@ export class TutorialFlowController
 
     public shouldHidePhaseStateActionButton (): boolean
     {
-        return this.active && this.stageIndex === 7;
+        return this.active && this.stageIndex === 8;
     }
 
     public canUseSurrender (): boolean
     {
-        return this.active && this.stageIndex === 24;
+        return this.active && this.stageIndex === 25;
     }
 
     private createChrome (): void
     {
+        const viewportWidth = Math.max(1, this.scene.scale.width);
+        const viewportHeight = Math.max(1, this.scene.scale.height);
         const stageFont = Math.max(TUTORIAL_STAGE_HEADER_FONT_SIZE_MIN, Math.round(TUTORIAL_STAGE_HEADER_FONT_SIZE_BASE * UI_SCALE));
         this.stageText = this.scene.add.text(
-            Math.round(GAME_WIDTH / 2),
+            Math.round(viewportWidth / 2),
             Math.round(12 * UI_SCALE),
             'Tutorial',
             {
                 align: 'center',
                 wordWrap: {
-                    width: Math.round(GAME_WIDTH * TUTORIAL_STAGE_HEADER_WRAP_WIDTH_RATIO),
+                    width: Math.round(viewportWidth * TUTORIAL_STAGE_HEADER_WRAP_WIDTH_RATIO),
                     useAdvancedWrap: true,
                 }
             }
@@ -373,10 +402,11 @@ export class TutorialFlowController
             .setFontSize(stageFont)
             .setOrigin(0.5, 0)
             .setTint(0xf8fafc)
+            .setScrollFactor(0)
             .setDepth(900);
 
         this.stageTextBackdrop = this.scene.add.rectangle(
-            Math.round(GAME_WIDTH / 2),
+            Math.round(viewportWidth / 2),
             Math.round(12 * UI_SCALE),
             10,
             10,
@@ -384,16 +414,18 @@ export class TutorialFlowController
             0.88
         )
             .setStrokeStyle(2, 0xffffff, 0.35)
+            .setScrollFactor(0)
             .setDepth(899);
         this.refreshStageHeaderBackdrop();
 
         const skipWidth = Math.max(120, Math.round(150 * UI_SCALE));
         const skipHeight = Math.max(38, Math.round(44 * UI_SCALE));
-        const x = GAME_WIDTH - Math.round(16 * UI_SCALE) - Math.round(skipWidth / 2);
-        const y = this.scene.scale.height - Math.round(16 * UI_SCALE) - Math.round(skipHeight / 2);
+        const x = viewportWidth - Math.round(16 * UI_SCALE) - Math.round(skipWidth / 2);
+        const y = viewportHeight - Math.round(16 * UI_SCALE) - Math.round(skipHeight / 2);
 
         this.skipButtonBody = this.scene.add.rectangle(x, y, skipWidth, skipHeight, 0x7f1d1d, 0.94)
             .setStrokeStyle(2, 0xffffff, 0.9)
+            .setScrollFactor(0)
             .setDepth(900)
             .setInteractive({ useHandCursor: true });
 
@@ -401,6 +433,7 @@ export class TutorialFlowController
             .setFontSize(Math.max(10, Math.round(15 * UI_SCALE)))
             .setOrigin(0.5)
             .setTint(0xffffff)
+            .setScrollFactor(0)
             .setDepth(901);
 
         const skipButtonBody = this.skipButtonBody;
@@ -421,6 +454,8 @@ export class TutorialFlowController
         skipButtonBody.on('pointerdown', () => {
             this.scene.scene.start('MainMenu');
         });
+
+        this.syncViewportLayout();
     }
 
     private refreshStageHeaderBackdrop (): void
@@ -439,7 +474,7 @@ export class TutorialFlowController
         );
 
         const width = Math.min(
-            Math.round(GAME_WIDTH * 0.94),
+            Math.round(this.scene.scale.width * 0.94),
             Math.round(this.stageText.width + (paddingX * 2))
         );
         const height = Math.round(this.stageText.height + (paddingY * 2));
@@ -494,13 +529,21 @@ export class TutorialFlowController
                 this.createFakeRevealCard('TUT-STADIUM-A', 'Grand Hall', 'STADIUM'),
                 this.createFakeRevealCard('TUT-SUPPORTER-A', 'Stage Manager', 'SUPPORTER'),
                 this.createFakeRevealCard('TUT-TOOL-A', 'Precision Baton', 'TOOL')
-            ], 'To play TCG, you need to form a deck of 20 cards, which consist of character, item, stadium, supporter, and tool cards. At least one of these cards must be a character card. You set your deck through the Deck Builder on the home screen, through which you can browse through all the cards in the game and either create your own deck with them or import someone else\'s.', false, () => {
+            ], 'To play TCG, you need to form a deck of 20 cards, which consist of character, item, stadium, supporter, and tool cards. At least one of these cards must be a character card.', false, () => {
                 this.advanceStage();
             });
             return;
         }
 
         if (this.stageIndex === 4) {
+            this.setStageHeader('Deck Building');
+            this.runNotifyStage('To make a deck (or import from someone else\'s), you should use the Deck Builder, accessible in the Main Menu.', () => {
+                this.advanceStage();
+            });
+            return;
+        }
+
+        if (this.stageIndex === 5) {
             this.setStageHeader('Queueing');
             this.runNotifyStage('Once you create a deck and queue into a game, you will be randomly matched with another player.', () => {
                 this.advanceStage();
@@ -508,7 +551,7 @@ export class TutorialFlowController
             return;
         }
 
-        if (this.stageIndex === 5) {
+        if (this.stageIndex === 6) {
             this.setStageHeader('Preparation Phase');
             this.runNotifyStage('At the beginning of a game, during the \"preparation phase\" 4 cards will be randomly put into your hand, and 1 character card in your deck will immediately be set as the active character.', () => {
                 this.advanceStage();
@@ -516,7 +559,7 @@ export class TutorialFlowController
             return;
         }
 
-        if (this.stageIndex === 6) {
+        if (this.stageIndex === 7) {
             this.setStageHeader('Setup Movement Rules');
             this.runNotifyStage('Through dragging and dropping, you can move character cards from your hand to your deck, from your deck to your hand, and from your deck to replace your active slot.', () => {
                 this.advanceStage();
@@ -524,12 +567,12 @@ export class TutorialFlowController
             return;
         }
 
-        if (this.stageIndex === 7) {
+        if (this.stageIndex === 8) {
             this.setupStage8Board();
             return;
         }
 
-        if (this.stageIndex === 8) {
+        if (this.stageIndex === 9) {
             this.setStageHeader('Setup Complete');
             this.runNotifyStage('Nice work! Once you\'re ready to start the game, you can find the \"->Done\" button in the corner. After both players hit this button, the game will start.', () => {
                 this.advanceStage();
@@ -537,12 +580,12 @@ export class TutorialFlowController
             return;
         }
 
-        if (this.stageIndex === 9) {
+        if (this.stageIndex === 10) {
             this.setupStage10Board();
             return;
         }
 
-        if (this.stageIndex === 10) {
+        if (this.stageIndex === 11) {
             this.setStageHeader('Phase Overview');
             this.runNotifyStage('Each player\'s turn consists of Phase 2 and the Attack Phase. During Phase 2, you can do things like...', () => {
                 this.advanceStage();
@@ -550,42 +593,42 @@ export class TutorialFlowController
             return;
         }
 
-        if (this.stageIndex === 11) {
+        if (this.stageIndex === 12) {
             this.setupStage12Board();
             return;
         }
 
-        if (this.stageIndex === 12) {
+        if (this.stageIndex === 13) {
             this.setupStage13Board();
             return;
         }
 
-        if (this.stageIndex === 13) {
+        if (this.stageIndex === 14) {
             this.setupStage14Board();
             return;
         }
 
-        if (this.stageIndex === 14) {
+        if (this.stageIndex === 15) {
             this.setupStage15Board();
             return;
         }
 
-        if (this.stageIndex === 15) {
+        if (this.stageIndex === 16) {
             this.setupStage16Board();
             return;
         }
 
-        if (this.stageIndex === 16) {
+        if (this.stageIndex === 17) {
             this.setupStage17Board();
             return;
         }
 
-        if (this.stageIndex === 17) {
+        if (this.stageIndex === 18) {
             this.setupStage18Board();
             return;
         }
 
-        if (this.stageIndex === 18) {
+        if (this.stageIndex === 19) {
             this.setStageHeader('Attack Phase Basics');
             this.runNotifyStage('Nice! Once you\'re in the attack phase, you can only do an attack with your character or skip the phase.', () => {
                 this.advanceStage();
@@ -593,27 +636,27 @@ export class TutorialFlowController
             return;
         }
 
-        if (this.stageIndex === 19) {
+        if (this.stageIndex === 20) {
             this.setupStage20Board();
             return;
         }
 
-        if (this.stageIndex === 20) {
+        if (this.stageIndex === 21) {
             this.setupStage21Board();
             return;
         }
 
-        if (this.stageIndex === 21) {
+        if (this.stageIndex === 22) {
             this.setupStage22Board();
             return;
         }
 
-        if (this.stageIndex === 22) {
+        if (this.stageIndex === 23) {
             this.startStage23Selection();
             return;
         }
 
-        if (this.stageIndex === 23) {
+        if (this.stageIndex === 24) {
             this.startStage24Selection();
             return;
         }

@@ -82,6 +82,7 @@ export class KeiWatanabeDrumkidWorkshopInputOverlay
 
         for (const ui of this.cardUis) {
             this.pinObjectToViewport(ui.container);
+            this.pinObjectToViewport(ui.body);
         }
 
         for (const button of this.atkButtons) {
