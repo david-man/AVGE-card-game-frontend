@@ -127,9 +127,78 @@ const installGlobalPhaserRectangleRounding = (): void => {
     factoryProto.__avgeRectangleFactoryPatched__ = true;
 };
 
-const installConfiguredFont = (): void => {
+type InstalledFontConfig = {
+    stylesheetLinkId: string;
+    hasStylesheet: boolean;
+};
+
+const normalizeFontFamilyToken = (token: string): string => token.trim().replace(/^['"]+|['"]+$/g, '');
+
+const waitForFontFamilyLoad = async (familyName: string, timeoutMs: number): Promise<boolean> => {
+    if (typeof document === 'undefined' || typeof window === 'undefined') {
+        return true;
+    }
+
+    const normalizedFamilyName = normalizeFontFamilyToken(familyName);
+    if (!normalizedFamilyName) {
+        return false;
+    }
+
+    const fontsApi = (document as Document & {
+        fonts?: {
+            check?: (font: string, text?: string) => boolean;
+            load?: (font: string, text?: string) => Promise<unknown[]>;
+        };
+    }).fonts;
+
+    if (!fontsApi || typeof fontsApi.load !== 'function') {
+        return true;
+    }
+
+    const safeFamilyName = normalizedFamilyName.replace(/"/g, '\\"');
+    const fontDescriptor = `16px "${safeFamilyName}"`;
+    if (typeof fontsApi.check === 'function' && fontsApi.check(fontDescriptor)) {
+        return true;
+    }
+
+    return await new Promise<boolean>((resolve) => {
+        let settled = false;
+        const timeoutId = window.setTimeout(() => {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            resolve(false);
+        }, timeoutMs);
+
+        void fontsApi.load?.(fontDescriptor).then((loadedFaces) => {
+            if (settled) {
+                return;
+            }
+
+            const loadedCount = Array.isArray(loadedFaces) ? loadedFaces.length : 0;
+            const didLoad = loadedCount > 0 || (typeof fontsApi.check === 'function' && fontsApi.check(fontDescriptor));
+
+            settled = true;
+            window.clearTimeout(timeoutId);
+            resolve(didLoad);
+        }).catch(() => {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            window.clearTimeout(timeoutId);
+            resolve(false);
+        });
+    });
+};
+
+const installConfiguredFont = (): InstalledFontConfig => {
     if (typeof document === 'undefined') {
-        return;
+        return {
+            stylesheetLinkId: 'avge-configured-font-link',
+            hasStylesheet: false,
+        };
     }
 
     const runtimeConfig = window as Window & {
@@ -163,6 +232,7 @@ const installConfiguredFont = (): void => {
 
     const stylesheetSource = runtimeStylesheet.trim() || FONT_STYLESHEET;
     const fontFileSource = runtimeTtf.trim() || FONT_TTF;
+    const normalizedFile = fontFileSource.trim();
 
     const normalizedStylesheetHref = parseStylesheetHref(stylesheetSource);
     if (normalizedStylesheetHref) {
@@ -174,44 +244,113 @@ const installConfiguredFont = (): void => {
             document.head.appendChild(stylesheetLink);
         }
         stylesheetLink.href = normalizedStylesheetHref;
-
-        const fontStyle = document.getElementById(fontStyleId);
-        if (fontStyle) {
-            fontStyle.remove();
-        }
     }
     else {
         const existingStylesheetLink = document.getElementById(stylesheetLinkId);
         if (existingStylesheetLink) {
             existingStylesheetLink.remove();
         }
+    }
 
-        const normalizedFile = fontFileSource.trim();
-        if (normalizedFile) {
-            const lowered = normalizedFile.toLowerCase();
-            const format = lowered.endsWith('.ttf')
-                ? 'truetype'
-                : (lowered.endsWith('.otf') ? 'opentype' : 'truetype');
+    if (normalizedFile) {
+        const lowered = normalizedFile.toLowerCase();
+        const format = lowered.endsWith('.ttf')
+            ? 'truetype'
+            : (lowered.endsWith('.otf') ? 'opentype' : 'truetype');
 
-            let fontStyle = document.getElementById(fontStyleId) as HTMLStyleElement | null;
-            if (!fontStyle) {
-                fontStyle = document.createElement('style');
-                fontStyle.id = fontStyleId;
-                document.head.appendChild(fontStyle);
-            }
+        let fontStyle = document.getElementById(fontStyleId) as HTMLStyleElement | null;
+        if (!fontStyle) {
+            fontStyle = document.createElement('style');
+            fontStyle.id = fontStyleId;
+            document.head.appendChild(fontStyle);
+        }
 
-            fontStyle.textContent = [
-                '@font-face {',
-                `  font-family: '${UI_FONT_FAMILY_NAME}';`,
-                `  src: url('assets/${normalizedFile}') format('${format}');`,
-                '  font-display: swap;',
-                '}',
-            ].join('\n');
+        fontStyle.textContent = [
+            '@font-face {',
+            `  font-family: '${UI_FONT_FAMILY_NAME}';`,
+            `  src: url('assets/${normalizedFile}') format('${format}');`,
+            '  font-display: swap;',
+            '}',
+        ].join('\n');
+    }
+    else {
+        const fontStyle = document.getElementById(fontStyleId);
+        if (fontStyle) {
+            fontStyle.remove();
         }
     }
 
     document.documentElement.style.setProperty('--avge-font-family', UI_FONT_FAMILY);
     document.body.style.fontFamily = UI_FONT_FAMILY;
+
+    return {
+        stylesheetLinkId,
+        hasStylesheet: normalizedStylesheetHref.length > 0,
+    };
+};
+
+const waitForConfiguredFontReady = async (installedFontConfig: InstalledFontConfig): Promise<void> => {
+    if (typeof document === 'undefined' || typeof window === 'undefined') {
+        return;
+    }
+
+    const awaitCurrentFontSetReady = async (timeoutMs: number): Promise<boolean> => {
+        const fontsApi = (document as Document & {
+            fonts?: {
+                ready?: Promise<unknown>;
+            };
+        }).fonts;
+        const readyPromise = fontsApi?.ready;
+        if (!readyPromise || typeof readyPromise.then !== 'function') {
+            return true;
+        }
+
+        return await new Promise<boolean>((resolve) => {
+            let settled = false;
+            const timeoutId = window.setTimeout(() => {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                resolve(false);
+            }, timeoutMs);
+
+            void readyPromise.then(() => {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                window.clearTimeout(timeoutId);
+                resolve(true);
+            }).catch(() => {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                window.clearTimeout(timeoutId);
+                resolve(false);
+            });
+        });
+    };
+
+    const preferredFamily = normalizeFontFamilyToken(UI_FONT_FAMILY.split(',')[0] ?? '');
+    if (installedFontConfig.hasStylesheet && preferredFamily) {
+        const externalReady = await waitForFontFamilyLoad(preferredFamily, 2200);
+        if (externalReady) {
+            await awaitCurrentFontSetReady(600);
+            return;
+        }
+
+        // In guest / no-cookie contexts external font CDNs can stall; remove stylesheet and rely on local face.
+        const stylesheetLink = document.getElementById(installedFontConfig.stylesheetLinkId);
+        if (stylesheetLink) {
+            stylesheetLink.remove();
+        }
+    }
+
+    await waitForFontFamilyLoad(UI_FONT_FAMILY_NAME, 2200);
+
+    await awaitCurrentFontSetReady(600);
 };
 
 const installViewportResizeSync = (game: Game): void => {
@@ -268,8 +407,9 @@ const installViewportResizeSync = (game: Game): void => {
     scheduleResize();
 };
 
-const StartGame = (parent: string) => {
-    installConfiguredFont();
+const StartGame = async (parent: string): Promise<Game> => {
+    const installedFontConfig = installConfiguredFont();
+    await waitForConfiguredFontReady(installedFontConfig);
     installGlobalPhaserTextFontDefaults();
     installGlobalPhaserRectangleRounding();
 
@@ -277,6 +417,6 @@ const StartGame = (parent: string) => {
     installViewportResizeSync(game);
     return game;
 
-}
+};
 
 export default StartGame;

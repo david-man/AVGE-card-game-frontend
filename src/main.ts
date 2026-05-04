@@ -4,6 +4,6 @@ import { installFontSizeFloor } from './game/ui/fontSizeFloor';
 document.addEventListener('DOMContentLoaded', () => {
     installFontSizeFloor();
 
-    StartGame('game-container');
+    void StartGame('game-container');
 
 });
