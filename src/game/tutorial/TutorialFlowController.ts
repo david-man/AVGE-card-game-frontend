@@ -494,7 +494,7 @@ export class TutorialFlowController
                 this.createFakeRevealCard('TUT-STADIUM-A', 'Grand Hall', 'STADIUM'),
                 this.createFakeRevealCard('TUT-SUPPORTER-A', 'Stage Manager', 'SUPPORTER'),
                 this.createFakeRevealCard('TUT-TOOL-A', 'Precision Baton', 'TOOL')
-            ], 'To play TCG, you need to form a deck of 20 cards, which consist of character, item, stadium, supporter, and tool cards. At least one of these cards must be a character card. You can create a deck by using the Deck Builder on the home screen.', false, () => {
+            ], 'To play TCG, you need to form a deck of 20 cards, which consist of character, item, stadium, supporter, and tool cards. At least one of these cards must be a character card. You set your deck through the Deck Builder on the home screen, through which you can browse through all the cards in the game and either create your own deck with them or import someone else\'s.', false, () => {
                 this.advanceStage();
             });
             return;
@@ -956,10 +956,8 @@ export class TutorialFlowController
         this.scene.remoteInputLockActive = false;
         this.scene.awaitingRemoteNotifyAck = false;
         this.scene.pendingNotifyCommand = null;
-        this.scene.pendingNotifyCommandId = null;
         this.scene.pendingNotifyCommandQueue = [];
         this.scene.pendingInputCommand = null;
-        this.scene.pendingInputCommandId = null;
         this.scene.pregameInitStage = mode === 'init' ? 'init' : 'live';
         this.scene.initSetupConfirmed = false;
         this.scene.opponentInitSetupConfirmed = mode !== 'init';
