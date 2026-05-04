@@ -300,9 +300,11 @@ export class CardPreviewController
         });
         this.idText.setText(previewClassFit.text);
         this.idText.setFontSize(previewClassFit.fontSize);
+        const rawPreviewSubtype = String(card.getAVGECardType() ?? '').trim();
+        const hasExplicitPreviewSubtype = rawPreviewSubtype.length > 0 && rawPreviewSubtype.toUpperCase() !== 'NONE';
         const previewTypeText = card.getCardType() === 'character'
-            ? (String(card.getAVGECardType() ?? '').trim().toUpperCase() || 'NONE')
-            : card.getCardType().toUpperCase();
+            ? (rawPreviewSubtype.toUpperCase() || 'NONE')
+            : (hasExplicitPreviewSubtype ? rawPreviewSubtype.toUpperCase() : card.getCardType().toUpperCase());
         const previewTypeTint = CARD_TEXT_COLORS.typeTagTintByCardType[card.getCardType()] ?? CARD_TEXT_COLORS.typeTint;
         this.typeText.setVisible(true).setTint(previewTypeTint).setText(previewTypeText);
         this.typeText.setFontSize(fitTextToSingleLine({

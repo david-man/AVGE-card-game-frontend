@@ -9,6 +9,7 @@ import { PhaseHudController } from '../ui/PhaseHudController';
 import { PlayerStatsHudController } from '../ui/PlayerStatsHudController';
 import { SurrenderController } from '../ui/SurrenderController';
 import { setImageToSceneCover } from '../ui/backgroundCover';
+import { createCardPreviewPanel as createSharedCardPreviewPanel } from '../ui/cardPreviewPanelFactory';
 import { registerUiClickSoundForScene } from '../ui/clickSfx';
 import { createVolumeControlForScene, preloadVolumeControlAssets } from '../ui/volumeControl';
 import {
@@ -605,7 +606,14 @@ export class Tutorial extends Scene
 
     private createCardPreviewPanel (): void
     {
-        this.cardPreviewController.create(this.objectWidth, this.objectHeight);
+        const { previewController } = createSharedCardPreviewPanel(this, {
+            variant: 'standard',
+            previewController: this.cardPreviewController,
+            previewObjectWidth: this.objectWidth,
+            previewObjectHeight: this.objectHeight,
+        });
+
+        this.cardPreviewController = previewController;
     }
 
     private createInitStartCountdownOverlay (): void

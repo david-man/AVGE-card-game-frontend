@@ -820,7 +820,7 @@ export class DeckBuilder extends Scene
 
     private buildDeckPreviewPanel (): void
     {
-        const { previewObjectWidth, previewObjectHeight, previewController } = sceneBuildDeckPreviewPanel(this);
+        const { previewObjectWidth, previewObjectHeight, previewController } = sceneBuildDeckPreviewPanel(this, this.deckCardPreviewController);
         this.deckPreviewObjectWidth = previewObjectWidth;
         this.deckPreviewObjectHeight = previewObjectHeight;
         this.deckCardPreviewController = previewController;

@@ -238,6 +238,10 @@ export class Card
     private resolveDisplayTypeLabel (): string
     {
         if (this.cardType !== 'character') {
+            // Allow non-character cards to render a subtype label when one is provided.
+            if (this.avgeCardType !== 'NONE') {
+                return this.avgeCardType;
+            }
             return this.cardType.toUpperCase();
         }
 

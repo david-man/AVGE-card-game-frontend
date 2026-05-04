@@ -208,7 +208,7 @@
       "abilityName": "Ability"
     },
     "Concert Roster": {
-      "abilityDescription": "Look at the top 3 cards of your deck. You may choose one character or stadium you find there, reveal it, and put it in your hand.",
+      "abilityDescription": "Look at the top 3 cards of your deck. You may choose one tool or stadium you find there, reveal it, and put it in your hand.",
       "abilityName": "Ability"
     },
     "Concert Ticket": {
@@ -706,7 +706,7 @@
       "retreatCost": 1
     },
     "Miku Otamatone": {
-      "abilityDescription": "You can only play this card in concert halls. During this turn only, your active character has two additional energy attached. Cannot be played on the first turn.",
+      "abilityDescription": "You can only play this card in performance halls. During this turn only, your active character has two additional energy attached. Cannot be played on the first turn.",
       "abilityName": "Ability"
     },
     "Musescore Subscription": {

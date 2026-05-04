@@ -15,11 +15,13 @@ export type CharacterCardType =
     | 'strings'
     | 'woodwinds';
 
+export type StadiumCardType = 'Performance Hall';
+
 export type CardCatalogEntry = {
     id: string;
     label: string;
     category: CardCatalogCategory;
-    cardType?: CharacterCardType;
+    cardType?: CharacterCardType | StadiumCardType;
     // Future-ready icon hook. If an asset is loaded under this key, UI can render it.
     iconKey?: string;
     // Fallback text/icon token when iconKey is unavailable.
@@ -132,14 +134,14 @@ export const CARD_CATALOG: CardCatalogEntry[] = [
     { id: 'Richard', label: 'Richard', category: 'supporter', iconFallback: 'RIC' },
     { id: 'Victoria', label: 'Victoria', category: 'supporter', iconFallback: 'VIC' },
     { id: 'Will', label: 'Will', category: 'supporter', iconFallback: 'WIL' },
-    { id: 'AlumnaeHall', label: 'Alumnae Hall', category: 'stadium', iconFallback: 'ALU' },
+    { id: 'AlumnaeHall', label: 'Alumnae Hall', category: 'stadium', cardType: 'Performance Hall', iconFallback: 'ALU' },
     { id: 'FriedmanHall', label: 'Friedman Hall', category: 'stadium', iconFallback: 'FRI' },
     { id: 'LindemannPracticeRoom', label: 'Lindemann Practice Room', category: 'stadium', iconFallback: 'LIN' },
-    { id: 'MainHall', label: 'Main Hall', category: 'stadium', iconFallback: 'MAI' },
+    { id: 'MainHall', label: 'Main Hall', category: 'stadium', cardType: 'Performance Hall', iconFallback: 'MAI' },
     { id: 'PetterutiLounge', label: 'Petteruti Lounge', category: 'stadium', iconFallback: 'PET' },
     { id: 'RedRoom', label: 'Red Room', category: 'stadium', iconFallback: 'RED' },
-    { id: 'RileyHall', label: 'Riley Hall', category: 'stadium', iconFallback: 'RIL' },
-    { id: 'SalomonDECI', label: 'Salomon DECI', category: 'stadium', iconFallback: 'SAL' },
+    { id: 'RileyHall', label: 'Riley Hall', category: 'stadium', cardType: 'Performance Hall', iconFallback: 'RIL' },
+    { id: 'SalomonDECI', label: 'Salomon DECI', category: 'stadium', cardType: 'Performance Hall', iconFallback: 'SAL' },
     { id: 'SteinertBasement', label: 'Steinert Basement', category: 'stadium', iconFallback: 'STE' },
     { id: 'SteinertPracticeRoom', label: 'Steinert Practice Room', category: 'stadium', iconFallback: 'STE' },
     { id: 'AVGEShowcaseSticker', label: 'AVGE Showcase Sticker', category: 'tool', iconFallback: 'AVG' },

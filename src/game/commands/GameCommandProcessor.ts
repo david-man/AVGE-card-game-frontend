@@ -104,6 +104,27 @@ export class GameCommandProcessor
             return resolveCardCatalogLabel(rawClass) ?? rawClass;
         };
 
+        const resolveCardTypePreviewLabel = (card: any): string => {
+            const rawCategory = typeof card?.getCardType === 'function'
+                ? String(card.getCardType() ?? '').trim()
+                : '';
+
+            if (rawCategory.length === 0) {
+                return 'CARD';
+            }
+
+            if (rawCategory.toLowerCase() !== 'character') {
+                const rawSubtype = typeof card?.getAVGECardType === 'function'
+                    ? String(card.getAVGECardType() ?? '').trim()
+                    : '';
+                if (rawSubtype.length > 0 && rawSubtype.toUpperCase() !== 'NONE') {
+                    return rawSubtype.toUpperCase();
+                }
+            }
+
+            return rawCategory.toUpperCase();
+        };
+
         const resolveEnergyTokenById = (rawId: string): any => {
             const direct = g.energyTokenById[rawId] ?? g.energyTokenById[rawId.toUpperCase()] ?? g.energyTokenById[rawId.toLowerCase()];
             if (direct) {
@@ -1012,7 +1033,7 @@ export class GameCommandProcessor
                         isCard: Boolean(card),
                         cardColor: card?.baseColor,
                         cardClassLabel: card ? resolveCardDisplayLabel(card) : undefined,
-                        cardTypeLabel: card?.getCardType().toUpperCase()
+                        cardTypeLabel: card ? resolveCardTypePreviewLabel(card) : undefined
                     });
                 }
 
@@ -1144,7 +1165,7 @@ export class GameCommandProcessor
                         id: card.id,
                         cardClassLabel: resolveCardDisplayLabel(card),
                         cardColor: card.baseColor,
-                        cardTypeLabel: card.getCardType().toUpperCase(),
+                        cardTypeLabel: resolveCardTypePreviewLabel(card),
                         hasAtk1: card.hasAttackOne(),
                         hasAtk2: card.hasAttackTwo()
                     });
@@ -1621,7 +1642,7 @@ export class GameCommandProcessor
                             id: card.id,
                             cardClassLabel: resolveCardDisplayLabel(card),
                             cardColor: card.baseColor,
-                            cardTypeLabel: card.getCardType().toUpperCase(),
+                            cardTypeLabel: resolveCardTypePreviewLabel(card),
                             isKnownCard: true
                         };
                     }

@@ -133,8 +133,8 @@ export const renderSearchMenu = (
         row.container.setVisible(true);
         row.cardName.setText(card.label.toUpperCase());
         const categoryLabel = scene.getCategoryLabel(card.category);
-        const typeLabel = card.cardType ? ` ${card.cardType.toUpperCase()}` : '';
-        row.cardMeta.setText(`${categoryLabel}${typeLabel}`);
+        const metaLabel = card.cardType ? card.cardType.toUpperCase() : categoryLabel;
+        row.cardMeta.setText(metaLabel);
 
         const count = scene.state.countsByCardId.get(card.id) ?? 0;
         row.countLabel.setText(String(count));

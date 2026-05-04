@@ -1,38 +1,22 @@
-import {
-    BASE_HEIGHT,
-    BASE_WIDTH,
-    BOARD_SCALE,
-    CARD_BASE_HEIGHT,
-    CARD_BASE_WIDTH,
-    GAME_HEIGHT,
-    GAME_WIDTH,
-} from '../config';
 import { CardCatalogCategory, CardCatalogEntry } from '../data/cardCatalog';
 import { Card, CardType } from '../entities';
 import { CardPreviewController } from '../ui/CardPreviewController';
+import { createCardPreviewPanel as createSharedCardPreviewPanel } from '../ui/cardPreviewPanelFactory';
 
 type DeckBuilderPreviewScene = any;
 
 export const buildDeckPreviewPanel = (
-    scene: DeckBuilderPreviewScene
+    scene: DeckBuilderPreviewScene,
+    previewController?: CardPreviewController
 ): {
     previewObjectWidth: number;
     previewObjectHeight: number;
     previewController: CardPreviewController;
 } => {
-    const xRatio = GAME_WIDTH / BASE_WIDTH;
-    const yRatio = GAME_HEIGHT / BASE_HEIGHT;
-    const previewObjectWidth = Math.round(CARD_BASE_WIDTH * xRatio * BOARD_SCALE);
-    const previewObjectHeight = Math.round(CARD_BASE_HEIGHT * yRatio * BOARD_SCALE);
-
-    const previewController = new CardPreviewController(scene);
-    previewController.create(previewObjectWidth, previewObjectHeight, { side: 'left' });
-
-    return {
-        previewObjectWidth,
-        previewObjectHeight,
+    return createSharedCardPreviewPanel(scene, {
+        variant: 'deck-builder',
         previewController,
-    };
+    });
 };
 
 export const mapCatalogCategoryToCardType = (category: CardCatalogCategory): CardType => {
@@ -90,10 +74,15 @@ export const createPreviewProxyCard = (
     toCardType: (category: CardCatalogCategory) => CardType,
     toAVGECardType: (entry: CardCatalogEntry) => 'NONE' | 'WW' | 'PERC' | 'PIANO' | 'STRING' | 'GUITAR' | 'CHOIR' | 'BRASS'
 ): Card => {
+    const previewCardType = toCardType(card.category);
+    const previewAVGECardType = card.category === 'character'
+        ? toAVGECardType(card)
+        : (card.cardType ?? 'NONE');
+
     const proxy = new Card(scene, {
         id: `deck_builder_preview_${card.id}_${Date.now()}`,
-        cardType: toCardType(card.category),
-        AVGECardType: toAVGECardType(card),
+        cardType: previewCardType,
+        AVGECardType: previewAVGECardType,
         AVGECardClass: card.id,
         statusEffect: {},
         ownerId: 'p1',

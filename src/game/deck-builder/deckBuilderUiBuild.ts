@@ -1,4 +1,5 @@
 import {
+    DECK_BUILDER_SEARCH_MENU_LAYOUT,
     DECK_BUILDER_TEXT_LAYOUT,
     GAME_CENTER_X,
     GAME_HEIGHT,
@@ -336,8 +337,8 @@ export const buildSearchMenu = (
     scene: DeckBuilderUiBuildScene,
     searchResultsPerPage: number
 ): void => {
-    const panelWidth = Math.round(620 * UI_SCALE);
-    const panelHeight = Math.round(540 * UI_SCALE);
+    const panelWidth = Math.round(DECK_BUILDER_SEARCH_MENU_LAYOUT.panelWidthBase * UI_SCALE);
+    const panelHeight = Math.round(DECK_BUILDER_SEARCH_MENU_LAYOUT.panelHeightBase * UI_SCALE);
     const panelX = GAME_CENTER_X;
     const panelY = Math.round(GAME_HEIGHT * 0.5);
     const panelTop = panelY - Math.round(panelHeight * 0.5);
@@ -365,26 +366,30 @@ export const buildSearchMenu = (
         .setDepth(1201)
         .setInteractive({ useHandCursor: true });
 
-    scene.searchTitle = scene.add.text(panelX, panelTop + Math.round(30 * UI_SCALE), 'CARD SEARCH').setFontSize(Math.max(DECK_BUILDER_TEXT_LAYOUT.searchTitleFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.searchTitleFontSizeBase * UI_SCALE)))
+    scene.searchTitle = scene.add.text(panelX, panelTop + Math.round(DECK_BUILDER_SEARCH_MENU_LAYOUT.titleOffsetYBase * UI_SCALE), 'CARD SEARCH').setFontSize(Math.max(DECK_BUILDER_TEXT_LAYOUT.searchTitleFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.searchTitleFontSizeBase * UI_SCALE)))
         .setOrigin(0.5)
         .setTint(0xffffff)
         .setDepth(1202);
 
-    scene.searchHint = scene.add.text(panelX, panelTop + Math.round(58 * UI_SCALE), 'Type to search all cards. Enter = add first result. Esc = close.').setFontSize(Math.max(DECK_BUILDER_TEXT_LAYOUT.searchHintFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.searchHintFontSizeBase * UI_SCALE)))
+    scene.searchHint = scene.add.text(panelX, panelTop + Math.round(DECK_BUILDER_SEARCH_MENU_LAYOUT.hintOffsetYBase * UI_SCALE), 'Type to search all cards. Enter = add first result. Esc = close.').setFontSize(Math.max(DECK_BUILDER_TEXT_LAYOUT.searchHintFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.searchHintFontSizeBase * UI_SCALE)))
         .setOrigin(0.5)
         .setTint(0xcbd5e1)
         .setDepth(1202);
 
-    scene.searchQueryLabel = scene.add.text(panelX - Math.round(panelWidth * 0.5) + Math.round(22 * UI_SCALE), panelTop + Math.round(88 * UI_SCALE), '').setFontSize(Math.max(DECK_BUILDER_TEXT_LAYOUT.searchQueryFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.searchQueryFontSizeBase * UI_SCALE)))
+    scene.searchQueryLabel = scene.add.text(
+        panelX - Math.round(panelWidth * 0.5) + Math.round(DECK_BUILDER_SEARCH_MENU_LAYOUT.queryOffsetXBase * UI_SCALE),
+        panelTop + Math.round(DECK_BUILDER_SEARCH_MENU_LAYOUT.queryOffsetYBase * UI_SCALE),
+        ''
+    ).setFontSize(Math.max(DECK_BUILDER_TEXT_LAYOUT.searchQueryFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.searchQueryFontSizeBase * UI_SCALE)))
         .setOrigin(0, 0.5)
         .setTint(0xf8fafc)
         .setDepth(1202);
 
     scene.searchSaveButton = scene.add.rectangle(
-        panelX + Math.round(panelWidth * 0.5) - Math.round(214 * UI_SCALE),
-        panelTop + Math.round(88 * UI_SCALE),
-        Math.round(82 * UI_SCALE),
-        Math.round(34 * UI_SCALE),
+        panelX + Math.round(panelWidth * 0.5) - Math.round(DECK_BUILDER_SEARCH_MENU_LAYOUT.saveButtonOffsetXBase * UI_SCALE),
+        panelTop + Math.round(DECK_BUILDER_SEARCH_MENU_LAYOUT.actionButtonOffsetYBase * UI_SCALE),
+        Math.round(DECK_BUILDER_SEARCH_MENU_LAYOUT.saveButtonWidthBase * UI_SCALE),
+        Math.round(DECK_BUILDER_SEARCH_MENU_LAYOUT.saveButtonHeightBase * UI_SCALE),
         0x14532d,
         0.95
     )
@@ -398,10 +403,10 @@ export const buildSearchMenu = (
         .setDepth(1203);
 
     scene.searchClearButton = scene.add.rectangle(
-        panelX + Math.round(panelWidth * 0.5) - Math.round(124 * UI_SCALE),
-        panelTop + Math.round(88 * UI_SCALE),
-        Math.round(86 * UI_SCALE),
-        Math.round(34 * UI_SCALE),
+        panelX + Math.round(panelWidth * 0.5) - Math.round(DECK_BUILDER_SEARCH_MENU_LAYOUT.clearButtonOffsetXBase * UI_SCALE),
+        panelTop + Math.round(DECK_BUILDER_SEARCH_MENU_LAYOUT.actionButtonOffsetYBase * UI_SCALE),
+        Math.round(DECK_BUILDER_SEARCH_MENU_LAYOUT.clearButtonWidthBase * UI_SCALE),
+        Math.round(DECK_BUILDER_SEARCH_MENU_LAYOUT.clearButtonHeightBase * UI_SCALE),
         0x334155,
         0.95
     )
@@ -415,10 +420,10 @@ export const buildSearchMenu = (
         .setDepth(1203);
 
     scene.searchCloseButton = scene.add.rectangle(
-        panelX + Math.round(panelWidth * 0.5) - Math.round(42 * UI_SCALE),
-        panelTop + Math.round(88 * UI_SCALE),
-        Math.round(62 * UI_SCALE),
-        Math.round(34 * UI_SCALE),
+        panelX + Math.round(panelWidth * 0.5) - Math.round(DECK_BUILDER_SEARCH_MENU_LAYOUT.closeButtonOffsetXBase * UI_SCALE),
+        panelTop + Math.round(DECK_BUILDER_SEARCH_MENU_LAYOUT.actionButtonOffsetYBase * UI_SCALE),
+        Math.round(DECK_BUILDER_SEARCH_MENU_LAYOUT.closeButtonWidthBase * UI_SCALE),
+        Math.round(DECK_BUILDER_SEARCH_MENU_LAYOUT.closeButtonHeightBase * UI_SCALE),
         0x7f1d1d,
         0.95
     )
@@ -431,13 +436,13 @@ export const buildSearchMenu = (
         .setTint(0xffffff)
         .setDepth(1203);
 
-    const rowsStartY = panelTop + Math.round(132 * UI_SCALE);
-    const rowsBottomY = panelTop + Math.round(458 * UI_SCALE);
-    const rowGap = Math.max(38, Math.floor((rowsBottomY - rowsStartY) / Math.max(1, searchResultsPerPage - 1)));
+    const rowsStartY = panelTop + Math.round(DECK_BUILDER_SEARCH_MENU_LAYOUT.rowsStartOffsetYBase * UI_SCALE);
+    const rowsBottomY = panelTop + Math.round(DECK_BUILDER_SEARCH_MENU_LAYOUT.rowsBottomOffsetYBase * UI_SCALE);
+    const rowGap = Math.max(DECK_BUILDER_SEARCH_MENU_LAYOUT.rowGapMin, Math.floor((rowsBottomY - rowsStartY) / Math.max(1, searchResultsPerPage - 1)));
 
-    const nameX = panelX - Math.round(panelWidth * 0.5) + Math.round(26 * UI_SCALE);
-    const countX = panelX + Math.round(panelWidth * 0.5) - Math.round(98 * UI_SCALE);
-    const plusX = panelX + Math.round(panelWidth * 0.5) - Math.round(36 * UI_SCALE);
+    const nameX = panelX - Math.round(panelWidth * 0.5) + Math.round(DECK_BUILDER_SEARCH_MENU_LAYOUT.nameOffsetXBase * UI_SCALE);
+    const countX = panelX + Math.round(panelWidth * 0.5) - Math.round(DECK_BUILDER_SEARCH_MENU_LAYOUT.countOffsetXBase * UI_SCALE);
+    const plusX = panelX + Math.round(panelWidth * 0.5) - Math.round(DECK_BUILDER_SEARCH_MENU_LAYOUT.plusOffsetXBase * UI_SCALE);
 
     for (let i = 0; i < searchResultsPerPage; i += 1) {
         const y = rowsStartY + (i * rowGap);
@@ -446,20 +451,20 @@ export const buildSearchMenu = (
         const rowBackground = scene.add.rectangle(
             panelX,
             y,
-            panelWidth - Math.round(28 * UI_SCALE),
-            Math.round(36 * UI_SCALE),
+            panelWidth - Math.round(DECK_BUILDER_SEARCH_MENU_LAYOUT.rowInsetXBase * UI_SCALE),
+            Math.round(DECK_BUILDER_SEARCH_MENU_LAYOUT.rowHeightBase * UI_SCALE),
             0x1e293b,
             0.45
         )
             .setStrokeStyle(1, 0xffffff, 0.18)
             .setDepth(1202);
 
-        const cardName = scene.add.text(nameX, y - Math.round(7 * UI_SCALE), '').setFontSize(Math.max(DECK_BUILDER_TEXT_LAYOUT.searchRowNameFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.searchRowNameFontSizeBase * UI_SCALE)))
+        const cardName = scene.add.text(nameX, y - Math.round(DECK_BUILDER_SEARCH_MENU_LAYOUT.rowNameOffsetYBase * UI_SCALE), '').setFontSize(Math.max(DECK_BUILDER_TEXT_LAYOUT.searchRowNameFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.searchRowNameFontSizeBase * UI_SCALE)))
             .setOrigin(0, 0.5)
             .setTint(0xffffff)
             .setDepth(1203);
 
-        const cardMeta = scene.add.text(nameX, y + Math.round(9 * UI_SCALE), '').setFontSize(Math.max(DECK_BUILDER_TEXT_LAYOUT.searchRowMetaFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.searchRowMetaFontSizeBase * UI_SCALE)))
+        const cardMeta = scene.add.text(nameX, y + Math.round(DECK_BUILDER_SEARCH_MENU_LAYOUT.rowMetaOffsetYBase * UI_SCALE), '').setFontSize(Math.max(DECK_BUILDER_TEXT_LAYOUT.searchRowMetaFontSizeMin, Math.round(DECK_BUILDER_TEXT_LAYOUT.searchRowMetaFontSizeBase * UI_SCALE)))
             .setOrigin(0, 0.5)
             .setTint(0xcbd5e1)
             .setDepth(1203);
@@ -472,8 +477,8 @@ export const buildSearchMenu = (
         const plusButton = scene.add.rectangle(
             plusX,
             y,
-            Math.round(36 * UI_SCALE),
-            Math.round(30 * UI_SCALE),
+            Math.round(DECK_BUILDER_SEARCH_MENU_LAYOUT.plusButtonWidthBase * UI_SCALE),
+            Math.round(DECK_BUILDER_SEARCH_MENU_LAYOUT.plusButtonHeightBase * UI_SCALE),
             0x0f766e,
             0.95
         )
@@ -522,10 +527,10 @@ export const buildSearchMenu = (
     }
 
     scene.searchPrevButton = scene.add.rectangle(
-        panelX - Math.round(96 * UI_SCALE),
-        panelTop + Math.round(500 * UI_SCALE),
-        Math.round(92 * UI_SCALE),
-        Math.round(36 * UI_SCALE),
+        panelX - Math.round(DECK_BUILDER_SEARCH_MENU_LAYOUT.pagerOffsetXBase * UI_SCALE),
+        panelTop + Math.round(DECK_BUILDER_SEARCH_MENU_LAYOUT.pagerOffsetYBase * UI_SCALE),
+        Math.round(DECK_BUILDER_SEARCH_MENU_LAYOUT.pagerWidthBase * UI_SCALE),
+        Math.round(DECK_BUILDER_SEARCH_MENU_LAYOUT.pagerHeightBase * UI_SCALE),
         0x0f172a,
         0.95
     )
@@ -539,10 +544,10 @@ export const buildSearchMenu = (
         .setDepth(1203);
 
     scene.searchNextButton = scene.add.rectangle(
-        panelX + Math.round(96 * UI_SCALE),
-        panelTop + Math.round(500 * UI_SCALE),
-        Math.round(92 * UI_SCALE),
-        Math.round(36 * UI_SCALE),
+        panelX + Math.round(DECK_BUILDER_SEARCH_MENU_LAYOUT.pagerOffsetXBase * UI_SCALE),
+        panelTop + Math.round(DECK_BUILDER_SEARCH_MENU_LAYOUT.pagerOffsetYBase * UI_SCALE),
+        Math.round(DECK_BUILDER_SEARCH_MENU_LAYOUT.pagerWidthBase * UI_SCALE),
+        Math.round(DECK_BUILDER_SEARCH_MENU_LAYOUT.pagerHeightBase * UI_SCALE),
         0x0f172a,
         0.95
     )
